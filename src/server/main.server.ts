@@ -1,7 +1,6 @@
-import { makeHello } from "shared/module";
-import { services } from "./services";
+import { services } from "./services/index";
 
-print(makeHello("main.server.ts"));
+print("Main.server init")
 
 for (const service of services) {
 	service.init();

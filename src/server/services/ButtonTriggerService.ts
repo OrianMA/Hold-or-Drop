@@ -5,7 +5,7 @@ export const ButtonTriggerService = {
 
 		for (const buttonModel of buttons.GetChildren()) {
 			const proximityPrompt = buttonModel
-				.FindFirstChild("buttonPart")
+				.FindFirstChild("ButtonPart")
 				?.FindFirstChildOfClass("ProximityPrompt") as ProximityPrompt | undefined;
 			const placeholder = buttonModel.FindFirstChild("PlayerPosPlaceHolder") as BasePart | undefined;
 
