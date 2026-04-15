@@ -1,4 +1,9 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
-local makeHello = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "module").makeHello
-print(makeHello("main.client.ts"))
+local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
+local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
+Events.InteractionCameraEvent.OnClientEvent:Connect(function(cameraPosPart)
+	print(cameraPosPart.Name)
+	CameraController.SetCinematic()
+	CameraController.AnimateTo(cameraPosPart.CFrame)
+end)

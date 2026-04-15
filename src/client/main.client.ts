@@ -1,3 +1,8 @@
-import { makeHello } from "shared/module";
+import { Events } from "shared/Event";
+import { CameraController } from "shared/CameraController";
 
-print(makeHello("main.client.ts"));
+Events.InteractionCameraEvent.OnClientEvent.Connect((cameraPosPart: BasePart) => {
+	print(cameraPosPart.Name);
+	CameraController.SetCinematic();
+	CameraController.AnimateTo(cameraPosPart.CFrame);
+});
