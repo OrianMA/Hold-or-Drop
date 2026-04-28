@@ -1,4 +1,6 @@
+import { UiService } from "server/services/UiService";
 import { Events } from "shared/Event";
+import { PopupType } from "shared/PopupType";
 
 export class ButtonModule {
 	private playerPosPart!: BasePart;
@@ -24,11 +26,12 @@ export class ButtonModule {
 		const character = player.Character;
 		if (!character) return;
 
-		Events.InteractionCameraEvent.FireClient(player, this.cameraPosPart);
+		Events.ButtonTriggerEvent.FireClient(player, this.cameraPosPart);
 
 		this.teleportPlayer(character);
-
 		this.proximityPrompt.Enabled = false;
+
+		UiService.Show(player, PopupType.ButtonMenu);
 	}
 
 	private teleportPlayer(character: Model) {

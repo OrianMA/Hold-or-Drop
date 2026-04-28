@@ -1,8 +1,7 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
 
-Events.InteractionCameraEvent.OnClientEvent.Connect((cameraPosPart: BasePart) => {
-	print(cameraPosPart.Name);
+Events.ButtonTriggerEvent.OnClientEvent.Connect((cameraPosPart: BasePart) => {
 	CameraController.SetCinematic();
 	CameraController.AnimateTo(cameraPosPart.CFrame);
 });

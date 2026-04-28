@@ -2,8 +2,7 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
-Events.InteractionCameraEvent.OnClientEvent:Connect(function(cameraPosPart)
-	print(cameraPosPart.Name)
+Events.ButtonTriggerEvent.OnClientEvent:Connect(function(cameraPosPart)
 	CameraController.SetCinematic()
 	CameraController.AnimateTo(cameraPosPart.CFrame)
 end)

@@ -21,7 +21,7 @@
   "homepage": "https://github.com/OrianMA/Hold-or-Drop#readme",
   "devDependencies": {
     "@rbxts/compiler-types": "^3.0.0-types.0",
-    "@rbxts/types": "^1.0.915",
+    "@rbxts/types": "^1.0.916",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
     "eslint": "^10.2.0",
