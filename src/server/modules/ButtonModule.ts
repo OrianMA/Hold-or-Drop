@@ -1,4 +1,5 @@
 import { UiService } from "server/services/UiService";
+import { ButtonSessionService } from "server/services/ButtonSessionService";
 import { Events } from "shared/Event";
 import { PopupType } from "shared/PopupType";
 
@@ -6,6 +7,7 @@ export class ButtonModule {
 	private playerPosPart!: BasePart;
 	private cameraPosPart!: BasePart;
 	private proximityPrompt!: ProximityPrompt;
+	private baseCash!: number;
 
 	init(model: Instance) {
 		this.playerPosPart = model.FindFirstChild("PlayerPosPlaceHolder") as BasePart;
@@ -19,12 +21,19 @@ export class ButtonModule {
 			return;
 		}
 
+		this.baseCash = (model.GetAttribute("BaseCash") as number) ?? 10000;
+
 		this.proximityPrompt.Triggered.Connect((player) => this.onTriggered(player));
 	}
 
 	private onTriggered(player: Player) {
 		const character = player.Character;
 		if (!character) return;
+
+		ButtonSessionService.setSession(player, {
+			baseCash: this.baseCash,
+			proximityPrompt: this.proximityPrompt,
+		});
 
 		Events.ButtonTriggerEvent.FireClient(player, this.cameraPosPart);
 
