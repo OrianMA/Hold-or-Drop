@@ -6,6 +6,7 @@ export namespace Events {
 
 	// ButtonInGame — client → server
 	export const ReleaseButtonEvent = DefineEvent("ReleaseButtonEvent", script);
+	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
 
 	// ButtonInGame — server → client
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);

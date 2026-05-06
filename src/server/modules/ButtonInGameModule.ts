@@ -1,7 +1,6 @@
 import { Events } from "shared/Event";
 import { ButtonSession, ButtonSessionService } from "server/services/ButtonSessionService";
 import { UiService } from "server/services/UiService";
-import { PopupType } from "shared/PopupType";
 
 interface MultiplierStage {
 	multiplicatorAdded: number;
@@ -33,19 +32,14 @@ function getRisk(timeHeld: number): number {
 	return MAX_RISK * (t * t);
 }
 
-function endGame(player: Player, proximityPrompt: ProximityPrompt): void {
-	ButtonSessionService.clearSession(player);
-	proximityPrompt.Enabled = true;
-
-	const character = player.Character;
-	if (character) {
-		const hrp = character.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
-		if (hrp) hrp.Anchored = false;
-	}
+// Single exit point for all outcomes: release, explosion, and quit from ButtonMenu
+export function endButtonGame(player: Player): void {
+	ButtonSessionService.cleanup(player);
+	UiService.HideCurrent(player);
 }
 
 export function startButtonGame(player: Player, session: ButtonSession): void {
-	const { baseCash, proximityPrompt } = session;
+	const { baseCash } = session;
 	let currentMultiplier = 1;
 	let isActive = true;
 
@@ -59,7 +53,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 		const earned = baseCash * currentMultiplier;
 		Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-		endGame(player, proximityPrompt);
+		endButtonGame(player);
 	});
 
 	task.spawn(() => {
@@ -101,9 +95,8 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					const earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER);
 					Events.ButtonExplodedEvent.FireClient(player);
 					task.wait(0.5);
-					UiService.Hide(player, PopupType.ButtonInGame);
 					Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
-					endGame(player, proximityPrompt);
+					endButtonGame(player);
 					return;
 				}
 

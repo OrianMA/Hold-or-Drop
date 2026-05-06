@@ -24,6 +24,11 @@ export const UiService = {
 		if (currentPopup.get(player) === popupType) currentPopup.delete(player);
 	},
 
+	HideCurrent(player: Player): void {
+		const current = currentPopup.get(player);
+		if (current !== undefined) this.Hide(player, current);
+	},
+
 	FindPopup(popupType: PopupType): Popup | undefined {
 		const entry = config.find((c) => c.type === popupType);
 		if (!entry) return undefined;
