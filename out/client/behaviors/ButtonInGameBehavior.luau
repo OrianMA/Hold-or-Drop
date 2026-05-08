@@ -2,24 +2,16 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
-local UserInputService = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").UserInputService
+local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local TweenService = _services.TweenService
+local UserInputService = _services.UserInputService
 -- Called once at startup — registers all game-state event listeners
 local function init()
-	Events.MultiplierUpdateEvent.OnClientEvent:Connect(function(multiplier)
-		-- TODO: update multiplier label in ButtonInGame UI
-		print(`Multiplier: {multiplier}x`)
-	end)
-	Events.RiskUpdateEvent.OnClientEvent:Connect(function(risk)
-		-- TODO: update risk indicator in ButtonInGame UI (risk is 0–1)
-		print(`Risk: {math.round(risk * 100)}%`)
-	end)
 	Events.ButtonExplodedEvent.OnClientEvent:Connect(function()
-		-- TODO: screenshake, stress effect, explosion sound/particles
 		print("Button exploded!")
 	end)
 	Events.GameResultEvent.OnClientEvent:Connect(function(exploded, cashEarned, multiplier)
 		CameraController.BringBackPlayerCamera()
-		-- TODO: show result popup (cash earned, whether it exploded)
 		print(`Game over — exploded: {exploded} | cash: {cashEarned} | {multiplier}x`)
 	end)
 end
@@ -27,6 +19,20 @@ end
 local function setup(mainUI)
 	local buttonInGame = mainUI:WaitForChild("ButtonInGame")
 	local releaseButton = buttonInGame:WaitForChild("ReleaseButton")
+	local multiplierLabel = buttonInGame:WaitForChild("MultiplierLabel")
+	local progressBar = buttonInGame:WaitForChild("ProgressBar")
+	local fill = progressBar:WaitForChild("Fill")
+	multiplierLabel.Text = "1x"
+	fill.Size = UDim2.new(0, 0, fill.Size.Y.Scale, 0)
+	Events.MultiplierUpdateEvent.OnClientEvent:Connect(function(multiplier)
+		multiplierLabel.Text = `{multiplier}x`
+	end)
+	local fillTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+	Events.ProgressUpdateEvent.OnClientEvent:Connect(function(progress)
+		TweenService:Create(fill, fillTweenInfo, {
+			Size = UDim2.new(progress, 0, fill.Size.Y.Scale, 0),
+		}):Play()
+	end)
 	local released = false
 	local spaceConn
 	local fireRelease = function()

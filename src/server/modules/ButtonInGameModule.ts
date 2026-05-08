@@ -87,6 +87,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 				const risk = getRisk(timeHeld);
 				Events.RiskUpdateEvent.FireClient(player, risk);
 
+				const progress = math.min(timeHeld / TOTAL_DURATION, 1);
+				Events.ProgressUpdateEvent.FireClient(player, progress);
+
 				// Explosion check
 				if (math.random() < risk) {
 					isActive = false;

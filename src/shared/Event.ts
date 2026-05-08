@@ -12,5 +12,6 @@ export namespace Events {
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script);
 	export const RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script);
+	export const ProgressUpdateEvent = DefineEvent("ProgressUpdateEvent", script);
 	export const GameResultEvent = DefineEvent("GameResultEvent", script);
 }

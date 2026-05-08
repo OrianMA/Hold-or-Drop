@@ -82,6 +82,8 @@ local function startButtonGame(player, session)
 				-- Risk follows a sine curve over the total stage duration
 				local risk = getRisk(timeHeld)
 				Events.RiskUpdateEvent:FireClient(player, risk)
+				local progress = math.min(timeHeld / TOTAL_DURATION, 1)
+				Events.ProgressUpdateEvent:FireClient(player, progress)
 				-- Explosion check
 				if math.random() < risk then
 					isActive = false

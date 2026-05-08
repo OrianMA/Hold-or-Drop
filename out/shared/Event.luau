@@ -20,6 +20,8 @@ do
 	_container.MultiplierUpdateEvent = MultiplierUpdateEvent
 	local RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script)
 	_container.RiskUpdateEvent = RiskUpdateEvent
+	local ProgressUpdateEvent = DefineEvent("ProgressUpdateEvent", script)
+	_container.ProgressUpdateEvent = ProgressUpdateEvent
 	local GameResultEvent = DefineEvent("GameResultEvent", script)
 	_container.GameResultEvent = GameResultEvent
 end
