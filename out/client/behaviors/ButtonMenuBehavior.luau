@@ -5,23 +5,42 @@ local CameraController = TS.import(script, game:GetService("ReplicatedStorage"),
 local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Players
 -- onGameStart is called with mainUI once the player clicks StartButton
 local function init(onGameStart)
+	local startConn
+	local quitConn
+	-- UI is guaranteed to exist after the server triggered this event
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local mainUI = playerGui:WaitForChild("MainUI")
+	local buttonMenu = mainUI:WaitForChild("ButtonMenu")
+	local startButton = buttonMenu:WaitForChild("StartButton")
+	local quitButton = buttonMenu:WaitForChild("QuitButton")
+	local DisconnectEvents
 	Events.ButtonTriggerEvent.OnClientEvent:Connect(function(cameraPosPart)
+		print("game supposed to start")
 		CameraController.SetCinematic()
 		CameraController.AnimateTo(cameraPosPart.CFrame)
-		local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-		local mainUI = playerGui:WaitForChild("MainUI")
-		local buttonMenu = mainUI:WaitForChild("ButtonMenu")
-		local startButton = buttonMenu:WaitForChild("StartButton")
-		local quitButton = buttonMenu:WaitForChild("QuitButton")
-		startButton.Activated:Connect(function()
+		DisconnectEvents()
+		startConn = startButton.Activated:Connect(function()
+			DisconnectEvents()
 			Events.StartButtonClickedEvent:FireServer()
 			onGameStart(mainUI)
+			print("game supposed to start")
 		end)
-		quitButton.Activated:Connect(function()
+		quitConn = quitButton.Activated:Connect(function()
+			DisconnectEvents()
 			Events.QuitButtonClickedEvent:FireServer()
 			CameraController.BringBackPlayerCamera()
 		end)
 	end)
+	function DisconnectEvents()
+		local _result = startConn
+		if _result ~= nil then
+			_result:Disconnect()
+		end
+		local _result_1 = quitConn
+		if _result_1 ~= nil then
+			_result_1:Disconnect()
+		end
+	end
 end
 return {
 	init = init,
