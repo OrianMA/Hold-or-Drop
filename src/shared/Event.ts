@@ -9,6 +9,7 @@ export namespace Events {
 	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
 
 	// ButtonInGame — server → client
+	export const BaseCashEvent = DefineEvent("BaseCashEvent", script);
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script);
 	export const RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script);

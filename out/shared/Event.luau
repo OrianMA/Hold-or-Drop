@@ -14,6 +14,8 @@ do
 	local QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script)
 	_container.QuitButtonClickedEvent = QuitButtonClickedEvent
 	-- ButtonInGame — server → client
+	local BaseCashEvent = DefineEvent("BaseCashEvent", script)
+	_container.BaseCashEvent = BaseCashEvent
 	local ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script)
 	_container.ButtonExplodedEvent = ButtonExplodedEvent
 	local MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script)

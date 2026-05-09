@@ -10,9 +10,9 @@ interface MultiplierStage {
 const MULTIPLIER_STAGES: MultiplierStage[] = [
 	{ multiplicatorAdded: 1, duration: 5 },
 	{ multiplicatorAdded: 2, duration: 4 },
-	{ multiplicatorAdded: 3, duration: 3 },
 	{ multiplicatorAdded: 5, duration: 3 },
-	{ multiplicatorAdded: 10, duration: 3 }, // last stage — runs forever
+	{ multiplicatorAdded: 8, duration: 3 },
+	{ multiplicatorAdded: 15, duration: 3 }, // last stage — runs forever
 ];
 
 const MAX_RISK = 0.8;
@@ -43,6 +43,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	let currentMultiplier = 1;
 	let isActive = true;
 
+	Events.BaseCashEvent.FireClient(player, baseCash);
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 	Events.RiskUpdateEvent.FireClient(player, 0);
 
@@ -95,10 +96,28 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					isActive = false;
 					releaseConn.Disconnect();
 
-					const earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER);
 					Events.ButtonExplodedEvent.FireClient(player);
-					task.wait(0.5);
-					Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
+
+					// 0.2s grace period — player can still release to cancel the explosion
+					let cancelledByPlayer = false;
+					const gracePeriodConn = Events.ReleaseButtonEvent.OnServerEvent.Connect((p) => {
+						if (p !== player) return;
+						cancelledByPlayer = true;
+						gracePeriodConn.Disconnect();
+					});
+
+					task.wait(0.2);
+					gracePeriodConn.Disconnect();
+
+					if (cancelledByPlayer) {
+						const earned = baseCash * currentMultiplier;
+						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
+					} else {
+						const earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER);
+						task.wait(0.8);
+						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
+					}
+
 					endButtonGame(player);
 					return;
 				}

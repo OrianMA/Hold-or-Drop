@@ -10,13 +10,13 @@ local MULTIPLIER_STAGES = { {
 	multiplicatorAdded = 2,
 	duration = 4,
 }, {
-	multiplicatorAdded = 3,
-	duration = 3,
-}, {
 	multiplicatorAdded = 5,
 	duration = 3,
 }, {
-	multiplicatorAdded = 10,
+	multiplicatorAdded = 8,
+	duration = 3,
+}, {
+	multiplicatorAdded = 15,
 	duration = 3,
 } }
 local MAX_RISK = 0.8
@@ -43,6 +43,7 @@ local function startButtonGame(player, session)
 	local baseCash = _binding.baseCash
 	local currentMultiplier = 1
 	local isActive = true
+	Events.BaseCashEvent:FireClient(player, baseCash)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 	Events.RiskUpdateEvent:FireClient(player, 0)
 	local releaseConn
@@ -88,10 +89,27 @@ local function startButtonGame(player, session)
 				if math.random() < risk then
 					isActive = false
 					releaseConn:Disconnect()
-					local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
 					Events.ButtonExplodedEvent:FireClient(player)
-					task.wait(0.5)
-					Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
+					-- 0.2s grace period — player can still release to cancel the explosion
+					local cancelledByPlayer = false
+					local gracePeriodConn
+					gracePeriodConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
+						if p ~= player then
+							return nil
+						end
+						cancelledByPlayer = true
+						gracePeriodConn:Disconnect()
+					end)
+					task.wait(0.2)
+					gracePeriodConn:Disconnect()
+					if cancelledByPlayer then
+						local earned = baseCash * currentMultiplier
+						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
+					else
+						local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
+						task.wait(0.8)
+						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
+					end
 					endButtonGame(player)
 					return nil
 				end
