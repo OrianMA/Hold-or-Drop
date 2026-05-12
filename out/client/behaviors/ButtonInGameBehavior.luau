@@ -11,16 +11,20 @@ local baseCashText
 local multiplierLabel
 local progressionIndicator
 local buttonOriginalSize
+local multiplierTextOriginalSize
+local multiplierTextOriginalColor
 -- Per-game state
 local isGameActive = false
 local released = false
 local multiplierTextSize = 0
+local baseMultiplierTextSize = 0
 local spaceConn
 local activatedConn
-local SIZE_GROWTH_PER_UPDATE = 3
-local elasticTweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out)
-local shrinkTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.In)
-local fillTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+local SIZE_GROWTH_PER_UPDATE = 4
+local MAX_MULTIPLIER_SIZE_INCREASE = 80
+local UpgradeMultiplayerTI = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local ReleaseButtonDesapearTI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local FillProgressBarTI = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
 local function endInput()
 	isGameActive = false
 	released = true
@@ -31,7 +35,7 @@ local function endInput()
 	spaceConn = nil
 	if releaseButton then
 		releaseButton.Active = false
-		local tween = TweenService:Create(releaseButton, shrinkTweenInfo, {
+		local tween = TweenService:Create(releaseButton, ReleaseButtonDesapearTI, {
 			Size = UDim2.new(0, 0, 0, 0),
 		})
 		tween:Play()
@@ -57,15 +61,23 @@ local function init()
 		end
 		multiplierLabel.Text = `{multiplier}x`
 		multiplierTextSize += SIZE_GROWTH_PER_UPDATE
-		TweenService:Create(multiplierLabel, elasticTweenInfo, {
+		local _exp = multiplierTextSize
+		local _condition = multiplierTextOriginalSize
+		if _condition == nil then
+			_condition = 0
+		end
+		local factor = math.clamp((_exp - _condition) / MAX_MULTIPLIER_SIZE_INCREASE, 0, 1)
+		local targetColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
+		TweenService:Create(multiplierLabel, UpgradeMultiplayerTI, {
 			TextSize = multiplierTextSize,
+			TextColor3 = targetColor,
 		}):Play()
 	end)
 	Events.ProgressUpdateEvent.OnClientEvent:Connect(function(progress)
 		if not isGameActive or not progressionIndicator then
 			return nil
 		end
-		TweenService:Create(progressionIndicator, fillTweenInfo, {
+		TweenService:Create(progressionIndicator, FillProgressBarTI, {
 			Position = UDim2.new(progress, 0, 0.5, 0),
 		}):Play()
 	end)
@@ -95,10 +107,18 @@ local function setup(mainUI)
 	if not buttonOriginalSize then
 		buttonOriginalSize = releaseButton.Size
 	end
+	if not (multiplierTextOriginalSize ~= 0 and multiplierTextOriginalSize == multiplierTextOriginalSize and multiplierTextOriginalSize) then
+		multiplierTextOriginalSize = multiplierLabel.TextSize
+	end
+	if not multiplierTextOriginalColor then
+		multiplierTextOriginalColor = multiplierLabel.TextColor3
+	end
 	-- Reset per-game state
 	isGameActive = true
 	released = false
-	multiplierTextSize = multiplierLabel.TextSize
+	multiplierLabel.TextSize = multiplierTextOriginalSize
+	multiplierLabel.TextColor3 = multiplierTextOriginalColor
+	multiplierTextSize = multiplierTextOriginalSize
 	-- Restore button to full size and re-enable it
 	releaseButton.Size = buttonOriginalSize
 	releaseButton.Active = true

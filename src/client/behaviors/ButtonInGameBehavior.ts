@@ -8,18 +8,22 @@ let baseCashText: TextLabel | undefined;
 let multiplierLabel: TextLabel | undefined;
 let progressionIndicator: Frame | undefined;
 let buttonOriginalSize: UDim2 | undefined;
+let multiplierTextOriginalSize: number | undefined;
+let multiplierTextOriginalColor: Color3 | undefined;
 
 // Per-game state
 let isGameActive = false;
 let released = false;
 let multiplierTextSize = 0;
+let baseMultiplierTextSize = 0;
 let spaceConn: RBXScriptConnection | undefined;
 let activatedConn: RBXScriptConnection | undefined;
 
-const SIZE_GROWTH_PER_UPDATE = 3;
-const elasticTweenInfo = new TweenInfo(0.35, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out);
-const shrinkTweenInfo = new TweenInfo(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.In);
-const fillTweenInfo = new TweenInfo(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out);
+const SIZE_GROWTH_PER_UPDATE = 4;
+const MAX_MULTIPLIER_SIZE_INCREASE = 80;
+const UpgradeMultiplayerTI = new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
+const ReleaseButtonDesapearTI = new TweenInfo(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
+const FillProgressBarTI = new TweenInfo(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out);
 
 function endInput(): void {
 	isGameActive = false;
@@ -28,7 +32,7 @@ function endInput(): void {
 	spaceConn = undefined;
 	if (releaseButton) {
 		releaseButton.Active = false;
-		let tween = TweenService.Create(releaseButton, shrinkTweenInfo, { Size: new UDim2(0, 0, 0, 0) });
+		let tween = TweenService.Create(releaseButton, ReleaseButtonDesapearTI, { Size: new UDim2(0, 0, 0, 0) });
 		tween.Play();
 		tween.Completed.Wait();
 		releaseButton.Visible = false;
@@ -51,12 +55,17 @@ export function init(): void {
 		if (!isGameActive || !multiplierLabel) return;
 		multiplierLabel.Text = `${multiplier}x`;
 		multiplierTextSize += SIZE_GROWTH_PER_UPDATE;
-		TweenService.Create(multiplierLabel, elasticTweenInfo, { TextSize: multiplierTextSize }).Play();
+		const factor = math.clamp((multiplierTextSize - (multiplierTextOriginalSize ?? 0)) / MAX_MULTIPLIER_SIZE_INCREASE, 0, 1);
+		const targetColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(new Color3(1, 0, 0), factor);
+		TweenService.Create(multiplierLabel, UpgradeMultiplayerTI, {
+			TextSize: multiplierTextSize,
+			TextColor3: targetColor,
+		}).Play();
 	});
 
 	Events.ProgressUpdateEvent.OnClientEvent.Connect((progress: number) => {
 		if (!isGameActive || !progressionIndicator) return;
-		TweenService.Create(progressionIndicator, fillTweenInfo, {
+		TweenService.Create(progressionIndicator, FillProgressBarTI, {
 			Position: new UDim2(progress, 0, 0.5, 0),
 		}).Play();
 	});
@@ -83,11 +92,15 @@ export function setup(mainUI: ScreenGui): void {
 
 	// Save original button size on first run so we can restore it each game
 	if (!buttonOriginalSize) buttonOriginalSize = releaseButton.Size;
+	if (!multiplierTextOriginalSize) multiplierTextOriginalSize = multiplierLabel.TextSize;
+	if (!multiplierTextOriginalColor) multiplierTextOriginalColor = multiplierLabel.TextColor3;
 
 	// Reset per-game state
 	isGameActive = true;
 	released = false;
-	multiplierTextSize = multiplierLabel.TextSize;
+	multiplierLabel.TextSize = multiplierTextOriginalSize;
+	multiplierLabel.TextColor3 = multiplierTextOriginalColor;
+	multiplierTextSize = multiplierTextOriginalSize;
 
 	// Restore button to full size and re-enable it
 	releaseButton.Size = buttonOriginalSize;
