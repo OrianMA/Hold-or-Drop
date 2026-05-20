@@ -4,12 +4,13 @@ local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_i
 local ButtonTriggerService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ButtonTriggerService").ButtonTriggerService
 local ButtonSessionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ButtonSessionService").ButtonSessionService
 local UiService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "UiService").UiService
+local CharacterService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "CharacterService").CharacterService
 local PopupConfig = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "PopupConfig").PopupConfig
 local services = { {
 	init = function(self)
 		UiService:init(PopupConfig)
 	end,
-}, ButtonTriggerService, {
+}, ButtonTriggerService, CharacterService, {
 	init = function(self)
 		Players.PlayerRemoving:Connect(function(player)
 			ButtonSessionService:cleanup(player)
