@@ -38,10 +38,20 @@ let activatedConn: RBXScriptConnection | undefined;
 let parryKnockbackCamConn: RBXScriptConnection | undefined;
 let parryAnimTrack: AnimationTrack | undefined;
 
-// Sons — remplace les IDs par les tiens si besoin
-const SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284"; // Son joué quand le bouton explose (fenêtre parry)
-const SOUND_EXPLOSION_ID = "rbxassetid://139771888058836";
+// Son bouton — joué via playSound() (non-3D, personnel)
+const SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284";
 const SOUND_PARRY_ID = "rbxassetid://119580857539801";
+
+// Template persistant en SoundService : le client garde l'asset en mémoire dès le démarrage.
+// Cloner ce template au moment du parry élimine le fetch CDN et le délai de buffering.
+const parrySoundTemplate = (() => {
+	const sound = new Instance("Sound");
+	sound.Name = "ParrySoundTemplate";
+	sound.SoundId = SOUND_PARRY_ID;
+	sound.Volume = 1;
+	sound.Parent = SoundService;
+	return sound;
+})();
 
 // Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
 const ANIM_PARRY_ID = "rbxassetid://6481315203";
@@ -212,16 +222,13 @@ function startParryWindow(): void {
 
 // Called once at startup — all event listeners live here, gated by isGameActive
 export function init(): void {
-	// Préchargement des sons pour éviter le décalage au premier play
+	// Préchargement du son bouton (non-template : joué via playSound à la demande)
 	task.spawn(() => {
-		const preload = [SOUND_BUTTON_EXPLODE_ID, SOUND_EXPLOSION_ID, SOUND_PARRY_ID].map((id) => {
-			const s = new Instance("Sound");
-			s.SoundId = id;
-			s.Parent = SoundService;
-			return s;
-		});
-		ContentProvider.PreloadAsync(preload);
-		preload.forEach((s) => s.Destroy());
+		const s = new Instance("Sound");
+		s.SoundId = SOUND_BUTTON_EXPLODE_ID;
+		s.Parent = SoundService;
+		ContentProvider.PreloadAsync([s]);
+		s.Destroy();
 	});
 
 	colorCorrection = new Instance("ColorCorrectionEffect");
@@ -255,8 +262,11 @@ export function init(): void {
 
 	Events.PerfectParryEffectEvent.OnClientEvent.Connect(() => {
 		// Son d'explosion joué côté serveur (3D, entendu par tous)
-		// Son d'épée : personnel, reste côté client
-		playSound(SOUND_PARRY_ID, 1);
+		// Son d'épée : clone du template — asset déjà en mémoire, aucun délai de buffering
+		const parrySound = parrySoundTemplate.Clone();
+		parrySound.Parent = SoundService;
+		parrySound.Play();
+		parrySound.Ended.Connect(() => parrySound.Destroy());
 
 		const character = Players.LocalPlayer.Character;
 		const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
@@ -320,12 +330,12 @@ export function init(): void {
 		const humanoid = character?.FindFirstChildOfClass("Humanoid");
 		const animator = humanoid?.FindFirstChildOfClass("Animator");
 		if (animator) {
-			const anim = new Instance("Animation");
+			/* 			const anim = new Instance("Animation");
 			anim.AnimationId = ANIM_PARRY_ID;
 			parryAnimTrack?.Stop();
 			parryAnimTrack = animator.LoadAnimation(anim);
 			parryAnimTrack.Priority = Enum.AnimationPriority.Action4;
-			parryAnimTrack.Play();
+			parryAnimTrack.Play(); */
 		}
 	});
 

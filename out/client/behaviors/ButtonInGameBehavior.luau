@@ -35,10 +35,19 @@ local spaceConn
 local activatedConn
 local parryKnockbackCamConn
 local parryAnimTrack
--- Sons — remplace les IDs par les tiens si besoin
+-- Son bouton — joué via playSound() (non-3D, personnel)
 local SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284"
-local SOUND_EXPLOSION_ID = "rbxassetid://139771888058836"
 local SOUND_PARRY_ID = "rbxassetid://119580857539801"
+-- Template persistant en SoundService : le client garde l'asset en mémoire dès le démarrage.
+-- Cloner ce template au moment du parry élimine le fetch CDN et le délai de buffering.
+local parrySoundTemplate = (function()
+	local sound = Instance.new("Sound")
+	sound.Name = "ParrySoundTemplate"
+	sound.SoundId = SOUND_PARRY_ID
+	sound.Volume = 1
+	sound.Parent = SoundService
+	return sound
+end)()
 -- Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
 local ANIM_PARRY_ID = "rbxassetid://6481315203"
 local function playSound(id, volume, pitch)
@@ -234,31 +243,13 @@ local function startParryWindow()
 end
 -- Called once at startup — all event listeners live here, gated by isGameActive
 local function init()
-	-- Préchargement des sons pour éviter le décalage au premier play
+	-- Préchargement du son bouton (non-template : joué via playSound à la demande)
 	task.spawn(function()
-		local _exp = { SOUND_BUTTON_EXPLODE_ID, SOUND_EXPLOSION_ID, SOUND_PARRY_ID }
-		-- ▼ ReadonlyArray.map ▼
-		local _newValue = table.create(#_exp)
-		local _callback = function(id)
-			local s = Instance.new("Sound")
-			s.SoundId = id
-			s.Parent = SoundService
-			return s
-		end
-		for _k, _v in _exp do
-			_newValue[_k] = _callback(_v, _k - 1, _exp)
-		end
-		-- ▲ ReadonlyArray.map ▲
-		local preload = _newValue
-		ContentProvider:PreloadAsync(preload)
-		-- ▼ ReadonlyArray.forEach ▼
-		local _callback_1 = function(s)
-			return s:Destroy()
-		end
-		for _k, _v in preload do
-			_callback_1(_v, _k - 1, preload)
-		end
-		-- ▲ ReadonlyArray.forEach ▲
+		local s = Instance.new("Sound")
+		s.SoundId = SOUND_BUTTON_EXPLODE_ID
+		s.Parent = SoundService
+		ContentProvider:PreloadAsync({ s })
+		s:Destroy()
 	end)
 	colorCorrection = Instance.new("ColorCorrectionEffect")
 	colorCorrection.Name = "HoldOrDropCC"
@@ -287,8 +278,13 @@ local function init()
 	end)
 	Events.PerfectParryEffectEvent.OnClientEvent:Connect(function()
 		-- Son d'explosion joué côté serveur (3D, entendu par tous)
-		-- Son d'épée : personnel, reste côté client
-		playSound(SOUND_PARRY_ID, 1)
+		-- Son d'épée : clone du template — asset déjà en mémoire, aucun délai de buffering
+		local parrySound = parrySoundTemplate:Clone()
+		parrySound.Parent = SoundService
+		parrySound:Play()
+		parrySound.Ended:Connect(function()
+			return parrySound:Destroy()
+		end)
 		local character = Players.LocalPlayer.Character
 		local _result = character
 		if _result ~= nil then
@@ -362,15 +358,14 @@ local function init()
 		end
 		local animator = _animator
 		if animator then
-			local anim = Instance.new("Animation")
-			anim.AnimationId = ANIM_PARRY_ID
-			local _result_1 = parryAnimTrack
-			if _result_1 ~= nil then
-				_result_1:Stop()
-			end
-			parryAnimTrack = animator:LoadAnimation(anim)
-			parryAnimTrack.Priority = Enum.AnimationPriority.Action4
-			parryAnimTrack:Play()
+			--[[
+				 			const anim = new Instance("Animation");
+							anim.AnimationId = ANIM_PARRY_ID;
+							parryAnimTrack?.Stop();
+							parryAnimTrack = animator.LoadAnimation(anim);
+							parryAnimTrack.Priority = Enum.AnimationPriority.Action4;
+							parryAnimTrack.Play(); 
+			]]
 		end
 	end)
 	Players.LocalPlayer.CharacterAdded:Connect(function()
