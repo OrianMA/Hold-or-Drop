@@ -1,10 +1,12 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
+import { spawnFloatingMultiplierLabel } from "client/ui/FloatingMultiplierLabel";
 import {
 	ContentProvider,
 	GuiService,
 	Lighting,
 	Players,
+	ReplicatedStorage,
 	RunService,
 	SoundService,
 	TweenService,
@@ -18,6 +20,7 @@ let baseCashText: TextLabel | undefined;
 let multiplierLabel: TextLabel | undefined;
 let progressionIndicator: Frame | undefined;
 let vignetteCanvas: CanvasGroup | undefined;
+let floatingTemplate: Frame | undefined;
 let buttonOriginalSize: UDim2 | undefined;
 let multiplierTextOriginalSize: number | undefined;
 let multiplierTextOriginalColor: Color3 | undefined;
@@ -30,8 +33,9 @@ let bloomEffect: BloomEffect | undefined;
 let isGameActive = false;
 let released = false;
 let multiplierTextSize = 0;
-let baseMultiplierTextSize = 0;
+let previousMultiplier = 1;
 let shakeAmplitude = 0;
+let shakeUndoCFrame: CFrame | undefined; // clean CFrame saved each frame to undo before next Roblox camera tick
 let baseFov = 70;
 let spaceConn: RBXScriptConnection | undefined;
 let activatedConn: RBXScriptConnection | undefined;
@@ -118,7 +122,7 @@ function buildVignette(mainUI: ScreenGui): CanvasGroup {
 	canvas.Position = new UDim2(0, 0, 0, -insetY);
 	canvas.BackgroundTransparency = 1;
 	canvas.GroupTransparency = 1;
-	canvas.ZIndex = 10;
+	canvas.ZIndex = 1;
 	canvas.Parent = mainUI;
 
 	// Four gradient edges: top, bottom, left, right
@@ -231,6 +235,9 @@ export function init(): void {
 		s.Destroy();
 	});
 
+	// Template du label flottant — stocké dans ReplicatedStorage, accessible par tous les clients
+	floatingTemplate = ReplicatedStorage.WaitForChild("FloatingMultiplierTemplate") as Frame;
+
 	colorCorrection = new Instance("ColorCorrectionEffect");
 	colorCorrection.Name = "HoldOrDropCC";
 	colorCorrection.Parent = Lighting;
@@ -242,17 +249,37 @@ export function init(): void {
 	bloomEffect.Threshold = 0.95;
 	bloomEffect.Parent = Lighting;
 
-	// Shake loop — runs after the camera updates each frame, amplitude controlled per-game
+	// ── Camera shake — two-binding design ────────────────────────────────────────
+	// Problem: Roblox's default camera in Custom mode uses an internal spring that
+	// may read camera.CFrame as its starting point each tick. If we only apply shake
+	// AFTER the Roblox camera update, the shaken CFrame bleeds into the spring state
+	// of the next frame → the "base" look direction drifts over time.
+	//
+	// Fix: bind at Camera-1 to RESTORE the clean CFrame before Roblox's camera runs,
+	// so its spring always starts from an unshaken base. Then bind at Camera+1 to save
+	// that clean CFrame and apply a fresh shake offset.
+	//
+	// new CFrame(pos, lookAt) forces world-up orientation → no roll accumulation.
+	RunService.BindToRenderStep("HoldOrDropShakeUndo", Enum.RenderPriority.Camera.Value - 1, () => {
+		if (!shakeUndoCFrame) return;
+		const camera = Workspace.CurrentCamera;
+		if (camera) camera.CFrame = shakeUndoCFrame; // restore clean CFrame for Roblox camera
+		shakeUndoCFrame = undefined;
+	});
+
 	RunService.BindToRenderStep("HoldOrDropShake", Enum.RenderPriority.Camera.Value + 1, () => {
-		if (shakeAmplitude <= 0) return;
+		if (shakeAmplitude <= 0) {
+			shakeUndoCFrame = undefined; // nothing shaken last frame, nothing to undo
+			return;
+		}
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
-		const offset = CFrame.Angles(
-			(math.random() - 0.5) * shakeAmplitude,
-			(math.random() - 0.5) * shakeAmplitude,
-			(math.random() - 0.5) * shakeAmplitude * 0.3,
-		);
-		camera.CFrame = camera.CFrame.mul(offset);
+		const cf = camera.CFrame; // clean CFrame just set by Roblox's camera
+		shakeUndoCFrame = cf; // save so the undo binding can restore it next frame
+		const newLookDir = cf.LookVector
+			.add(cf.RightVector.mul((math.random() - 0.5) * shakeAmplitude))
+			.add(cf.UpVector.mul((math.random() - 0.5) * shakeAmplitude));
+		camera.CFrame = new CFrame(cf.Position, cf.Position.add(newLookDir));
 	});
 
 	Events.PlayerKilledEvent.OnClientEvent.Connect(() => {
@@ -372,7 +399,10 @@ export function init(): void {
 
 	Events.MultiplierUpdateEvent.OnClientEvent.Connect((multiplier: number) => {
 		if (!isGameActive || !multiplierLabel) return;
-		multiplierLabel.Text = `${multiplier}x`;
+
+		const delta = multiplier - previousMultiplier;
+		previousMultiplier = multiplier;
+
 		multiplierTextSize += SIZE_GROWTH_PER_UPDATE;
 
 		const factor = math.clamp(
@@ -381,33 +411,51 @@ export function init(): void {
 			1,
 		);
 
-		const targetTextColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(new Color3(1, 0, 0), factor);
-		TweenService.Create(multiplierLabel, UpgradeMultiplayerTI, {
-			TextSize: multiplierTextSize,
-			TextColor3: targetTextColor,
-		}).Play();
+		// Capture pour la closure : plusieurs labels peuvent voler en même temps
+		const capturedLabel = multiplierLabel;
+		const capturedMultiplier = multiplier;
+		const capturedSize = multiplierTextSize;
+		const capturedColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(
+			new Color3(1, 0, 0),
+			factor,
+		);
 
+		// Texte + bump déclenchés à l'impact du label flottant
+		const onLabelArrived = () => {
+			capturedLabel.Text = `${capturedMultiplier}x`;
+			TweenService.Create(capturedLabel, UpgradeMultiplayerTI, {
+				TextSize: capturedSize,
+				TextColor3: capturedColor,
+			}).Play();
+		};
+
+		if (delta > 0) {
+			const screenGui = multiplierLabel.FindFirstAncestorOfClass("ScreenGui") as ScreenGui | undefined;
+			if (screenGui && floatingTemplate) {
+				spawnFloatingMultiplierLabel(screenGui, floatingTemplate, delta, multiplierLabel, onLabelArrived);
+			} else {
+				onLabelArrived();
+			}
+		}
+
+		// Effets ambiants immédiats (game-feel, indépendants du label flottant)
 		if (vignetteCanvas) {
 			TweenService.Create(vignetteCanvas, PostProcessTI, {
 				GroupTransparency: 1 - factor * (1 - MIN_VIGNETTE_TRANSPARENCY),
 			}).Play();
 		}
-
 		if (colorCorrection) {
 			TweenService.Create(colorCorrection, PostProcessTI, {
 				TintColor: new Color3(1, 1 - factor * 0.5, 1 - factor * 0.5),
 				Saturation: -factor * 0.4,
 			}).Play();
 		}
-
 		if (bloomEffect) {
 			TweenService.Create(bloomEffect, PostProcessTI, {
 				Intensity: factor * MAX_BLOOM_INTENSITY,
 			}).Play();
 		}
-
 		shakeAmplitude = factor * MAX_SHAKE_AMPLITUDE;
-
 		const camera = Workspace.CurrentCamera;
 		if (camera) {
 			TweenService.Create(camera, PostProcessTI, {
@@ -455,6 +503,7 @@ export function setup(mainUI: ScreenGui): void {
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	released = false;
+	previousMultiplier = 1;
 	multiplierLabel.TextSize = multiplierTextOriginalSize;
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor;
 	multiplierTextSize = multiplierTextOriginalSize;

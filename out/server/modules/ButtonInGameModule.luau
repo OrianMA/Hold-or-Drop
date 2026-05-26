@@ -7,22 +7,28 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local ReplicatedStorage = _services.ReplicatedStorage
 local TweenService = _services.TweenService
 local Workspace = _services.Workspace
+local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").invincible
 -- ── Game tuning ───────────────────────────────────────────────────────────────
 local MULTIPLIER_STAGES = { {
 	multiplicatorAdded = 1,
 	duration = 5,
+	tickInterval = 1.0,
 }, {
 	multiplicatorAdded = 2,
 	duration = 4,
+	tickInterval = 0.75,
 }, {
 	multiplicatorAdded = 5,
-	duration = 3,
+	duration = 4,
+	tickInterval = 0.6,
 }, {
 	multiplicatorAdded = 8,
-	duration = 3,
+	duration = 4,
+	tickInterval = 0.5,
 }, {
 	multiplicatorAdded = 15,
-	duration = 3,
+	duration = 4,
+	tickInterval = 0.4,
 } }
 local MAX_RISK = 0.8
 local TICK_RATE = 0.5
@@ -114,180 +120,182 @@ local function startButtonGame(player, session)
 		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 		endButtonGame(player)
 	end)
+	-- ── Boucle multiplier ─────────────────────────────────────────────────────
+	-- Tourne à sa propre fréquence (tickInterval), totalement indépendante du
+	-- TICK_RATE. Chaque tick attend exactement tickInterval secondes — pas de
+	-- rattrapage en lot possible.
 	task.spawn(function()
 		local lastIndex = #MULTIPLIER_STAGES - 1
 		local stageIndex = 0
-		local timeHeld = 0
+		local timeInStage = 0
 		while isActive do
 			local stage = MULTIPLIER_STAGES[stageIndex + 1]
-			local isLastStage = stageIndex == lastIndex
-			local timeInStage = 0
-			local nextMultiplierTick = 1
-			local advanceStage = false
-			while isActive do
-				task.wait(TICK_RATE)
-				if not isActive then
-					break
-				end
-				timeInStage += TICK_RATE
-				timeHeld += TICK_RATE
-				-- +multiplicatorAdded to the multiplier once per elapsed second
-				while timeInStage >= nextMultiplierTick do
-					currentMultiplier += stage.multiplicatorAdded
-					Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
-					nextMultiplierTick += 1
-				end
-				local risk = getRisk(timeHeld)
-				Events.RiskUpdateEvent:FireClient(player, risk)
-				local progress = math.min(timeHeld / TOTAL_DURATION, 1)
-				Events.ProgressUpdateEvent:FireClient(player, progress)
-				if math.random() < risk then
-					isActive = false
-					releaseConn:Disconnect()
-					Events.ButtonExplodedEvent:FireClient(player)
-					-- 0.2s grace period — player can still release to cancel the explosion
-					local cancelledByPlayer = false
-					local gracePeriodConn
-					gracePeriodConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
+			task.wait(stage.tickInterval)
+			if not isActive then
+				break
+			end
+			timeInStage += stage.tickInterval
+			currentMultiplier += stage.multiplicatorAdded
+			Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
+			-- Passage au stage suivant quand la durée est écoulée
+			if stageIndex < lastIndex and timeInStage >= stage.duration then
+				stageIndex += 1
+				timeInStage = 0
+			end
+		end
+	end)
+	-- ── Boucle risque & progression ───────────────────────────────────────────
+	-- Tourne à TICK_RATE pour les checks d'explosion, le risque et la progress bar.
+	task.spawn(function()
+		local timeHeld = 0
+		while isActive do
+			task.wait(TICK_RATE)
+			if not isActive then
+				break
+			end
+			timeHeld += TICK_RATE
+			local risk = getRisk(timeHeld)
+			Events.RiskUpdateEvent:FireClient(player, risk)
+			local progress = math.min(timeHeld / TOTAL_DURATION, 1)
+			Events.ProgressUpdateEvent:FireClient(player, progress)
+			if not invincible and math.random() < risk then
+				isActive = false
+				releaseConn:Disconnect()
+				Events.ButtonExplodedEvent:FireClient(player)
+				-- 0.2s grace period — player can still release to cancel the explosion
+				local cancelledByPlayer = false
+				local gracePeriodConn
+				gracePeriodConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
+					if p ~= player then
+						return nil
+					end
+					cancelledByPlayer = true
+					gracePeriodConn:Disconnect()
+				end)
+				task.wait(0.2)
+				gracePeriodConn:Disconnect()
+				if cancelledByPlayer then
+					local earned = baseCash * currentMultiplier
+					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
+					endButtonGame(player)
+				else
+					local character = player.Character
+					local _result = character
+					if _result ~= nil then
+						_result = _result:FindFirstChild("HumanoidRootPart")
+					end
+					local hrp = _result
+					local _humanoid = character
+					if _humanoid ~= nil then
+						_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
+					end
+					local humanoid = _humanoid
+					-- Capture button reference before session is cleared
+					local buttonPart = session.proximityPrompt.Parent
+					-- Deregister button immediately (avoids WaitForChild blocking the UI)
+					ButtonSessionService:cleanup(player)
+					-- Freeze movement for the parry window
+					local _result_1 = humanoid
+					if _result_1 ~= nil then
+						_result_1 = _result_1.WalkSpeed
+					end
+					local _condition = _result_1
+					if _condition == nil then
+						_condition = 16
+					end
+					local origWalkSpeed = _condition
+					local _result_2 = humanoid
+					if _result_2 ~= nil then
+						_result_2 = _result_2.JumpPower
+					end
+					local _condition_1 = _result_2
+					if _condition_1 == nil then
+						_condition_1 = 50
+					end
+					local origJumpPower = _condition_1
+					local _result_3 = humanoid
+					if _result_3 ~= nil then
+						_result_3 = _result_3.JumpHeight
+					end
+					local _condition_2 = _result_3
+					if _condition_2 == nil then
+						_condition_2 = 7.2
+					end
+					local origJumpHeight = _condition_2
+					if humanoid then
+						humanoid.WalkSpeed = 0
+						humanoid.JumpPower = 0
+						humanoid.JumpHeight = 0
+					end
+					local isPerfectParry = false
+					local parryConn
+					parryConn = Events.PerfectParryEvent.OnServerEvent:Connect(function(p)
 						if p ~= player then
 							return nil
 						end
-						cancelledByPlayer = true
-						gracePeriodConn:Disconnect()
+						isPerfectParry = true
+						parryConn:Disconnect()
 					end)
-					task.wait(0.2)
-					gracePeriodConn:Disconnect()
-					if cancelledByPlayer then
+					task.wait(0.5)
+					parryConn:Disconnect()
+					if isPerfectParry then
+						if hrp then
+							hrp.Anchored = true
+						end
+						if buttonPart then
+							triggerExplosionAt(buttonPart.Position, 0)
+						end
+						-- Trigger sparkle effect on the parrying player's client
+						Events.PerfectParryEffectEvent:FireClient(player)
+						if hrp and buttonPart then
+							local rawDir = Vector3.new(hrp.Position.X - buttonPart.Position.X, 0, hrp.Position.Z - buttonPart.Position.Z)
+							local dir = if rawDir.Magnitude > 0 then rawDir.Unit else Vector3.new(0, 0, 1)
+							local _cFrame = hrp.CFrame
+							local _arg0 = dir * KNOCKBACK_DISTANCE
+							local targetCFrame = _cFrame + _arg0
+							local tween = TweenService:Create(hrp, TweenInfo.new(KNOCKBACK_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+								CFrame = targetCFrame,
+							})
+							tween:Play()
+							task.wait(KNOCKBACK_DURATION)
+						end
+						if hrp then
+							hrp.Anchored = false
+						end
+						task.wait(0.5)
+						if humanoid then
+							humanoid.WalkSpeed = origWalkSpeed
+							humanoid.JumpPower = origJumpPower
+							humanoid.JumpHeight = origJumpHeight
+						end
 						local earned = baseCash * currentMultiplier
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-						endButtonGame(player)
+						UiService:HideCurrent(player)
 					else
-						local character = player.Character
-						local _result = character
-						if _result ~= nil then
-							_result = _result:FindFirstChild("HumanoidRootPart")
+						if hrp then
+							hrp.Anchored = false
 						end
-						local hrp = _result
-						local _humanoid = character
-						if _humanoid ~= nil then
-							_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
-						end
-						local humanoid = _humanoid
-						-- Capture button reference before session is cleared
-						local buttonPart = session.proximityPrompt.Parent
-						-- Deregister button immediately (avoids WaitForChild blocking the UI)
-						ButtonSessionService:cleanup(player)
-						-- Freeze movement for the parry window
-						local _result_1 = humanoid
-						if _result_1 ~= nil then
-							_result_1 = _result_1.WalkSpeed
-						end
-						local _condition = _result_1
-						if _condition == nil then
-							_condition = 16
-						end
-						local origWalkSpeed = _condition
-						local _result_2 = humanoid
-						if _result_2 ~= nil then
-							_result_2 = _result_2.JumpPower
-						end
-						local _condition_1 = _result_2
-						if _condition_1 == nil then
-							_condition_1 = 50
-						end
-						local origJumpPower = _condition_1
-						local _result_3 = humanoid
-						if _result_3 ~= nil then
-							_result_3 = _result_3.JumpHeight
-						end
-						local _condition_2 = _result_3
-						if _condition_2 == nil then
-							_condition_2 = 7.2
-						end
-						local origJumpHeight = _condition_2
-						if humanoid then
-							humanoid.WalkSpeed = 0
-							humanoid.JumpPower = 0
-							humanoid.JumpHeight = 0
-						end
-						local isPerfectParry = false
-						local parryConn
-						parryConn = Events.PerfectParryEvent.OnServerEvent:Connect(function(p)
-							if p ~= player then
-								return nil
-							end
-							isPerfectParry = true
-							parryConn:Disconnect()
-						end)
-						task.wait(0.5)
-						parryConn:Disconnect()
-						if isPerfectParry then
-							if hrp then
-								hrp.Anchored = true
-							end
-							if buttonPart then
-								triggerExplosionAt(buttonPart.Position, 0)
-							end
-							-- Trigger sparkle effect on the parrying player's client
-							Events.PerfectParryEffectEvent:FireClient(player)
-							if hrp and buttonPart then
-								local rawDir = Vector3.new(hrp.Position.X - buttonPart.Position.X, 0, hrp.Position.Z - buttonPart.Position.Z)
-								local dir = if rawDir.Magnitude > 0 then rawDir.Unit else Vector3.new(0, 0, 1)
-								local _cFrame = hrp.CFrame
-								local _arg0 = dir * KNOCKBACK_DISTANCE
-								local targetCFrame = _cFrame + _arg0
-								local tween = TweenService:Create(hrp, TweenInfo.new(KNOCKBACK_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-									CFrame = targetCFrame,
-								})
-								tween:Play()
-								task.wait(KNOCKBACK_DURATION)
-							end
-							if hrp then
-								hrp.Anchored = false
-							end
-							task.wait(0.5)
-							if humanoid then
-								humanoid.WalkSpeed = origWalkSpeed
-								humanoid.JumpPower = origJumpPower
-								humanoid.JumpHeight = origJumpHeight
-							end
-							local earned = baseCash * currentMultiplier
-							Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-							UiService:HideCurrent(player)
-						else
-							if hrp then
-								hrp.Anchored = false
-							end
-							if character then
-								for _, desc in character:GetDescendants() do
-									if desc:IsA("Motor6D") then
-										desc.Enabled = false
-									end
+						if character then
+							for _, desc in character:GetDescendants() do
+								if desc:IsA("Motor6D") then
+									desc.Enabled = false
 								end
 							end
-							if buttonPart then
-								triggerExplosionAt(buttonPart.Position, 180000)
-							end
-							if humanoid then
-								humanoid.Health = 0
-							end
-							Events.PlayerKilledEvent:FireClient(player)
-							local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
-							Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
-							UiService:HideCurrent(player)
 						end
+						if buttonPart then
+							triggerExplosionAt(buttonPart.Position, 180000)
+						end
+						if humanoid then
+							humanoid.Health = 0
+						end
+						Events.PlayerKilledEvent:FireClient(player)
+						local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
+						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
+						UiService:HideCurrent(player)
 					end
-					return nil
 				end
-				if not isLastStage and timeInStage >= stage.duration then
-					advanceStage = true
-					break
-				end
+				return nil
 			end
-			if not advanceStage then
-				break
-			end
-			stageIndex += 1
 		end
 	end)
 end

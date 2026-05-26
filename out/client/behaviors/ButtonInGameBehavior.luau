@@ -2,11 +2,13 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
+local spawnFloatingMultiplierLabel = TS.import(script, script.Parent.Parent, "ui", "FloatingMultiplierLabel").spawnFloatingMultiplierLabel
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
 local Lighting = _services.Lighting
 local Players = _services.Players
+local ReplicatedStorage = _services.ReplicatedStorage
 local RunService = _services.RunService
 local SoundService = _services.SoundService
 local TweenService = _services.TweenService
@@ -18,6 +20,7 @@ local baseCashText
 local multiplierLabel
 local progressionIndicator
 local vignetteCanvas
+local floatingTemplate
 local buttonOriginalSize
 local multiplierTextOriginalSize
 local multiplierTextOriginalColor
@@ -28,8 +31,9 @@ local bloomEffect
 local isGameActive = false
 local released = false
 local multiplierTextSize = 0
-local baseMultiplierTextSize = 0
+local previousMultiplier = 1
 local shakeAmplitude = 0
+local shakeUndoCFrame
 local baseFov = 70
 local spaceConn
 local activatedConn
@@ -106,7 +110,7 @@ local function buildVignette(mainUI)
 	canvas.Position = UDim2.new(0, 0, 0, -insetY)
 	canvas.BackgroundTransparency = 1
 	canvas.GroupTransparency = 1
-	canvas.ZIndex = 10
+	canvas.ZIndex = 1
 	canvas.Parent = mainUI
 	-- Four gradient edges: top, bottom, left, right
 	-- Rotation controls which side is opaque (0 = opaque at start of gradient direction)
@@ -251,6 +255,8 @@ local function init()
 		ContentProvider:PreloadAsync({ s })
 		s:Destroy()
 	end)
+	-- Template du label flottant — stocké dans ReplicatedStorage, accessible par tous les clients
+	floatingTemplate = ReplicatedStorage:WaitForChild("FloatingMultiplierTemplate")
 	colorCorrection = Instance.new("ColorCorrectionEffect")
 	colorCorrection.Name = "HoldOrDropCC"
 	colorCorrection.Parent = Lighting
@@ -260,17 +266,45 @@ local function init()
 	bloomEffect.Size = 24
 	bloomEffect.Threshold = 0.95
 	bloomEffect.Parent = Lighting
-	-- Shake loop — runs after the camera updates each frame, amplitude controlled per-game
+	-- ── Camera shake — two-binding design ────────────────────────────────────────
+	-- Problem: Roblox's default camera in Custom mode uses an internal spring that
+	-- may read camera.CFrame as its starting point each tick. If we only apply shake
+	-- AFTER the Roblox camera update, the shaken CFrame bleeds into the spring state
+	-- of the next frame → the "base" look direction drifts over time.
+	--
+	-- Fix: bind at Camera-1 to RESTORE the clean CFrame before Roblox's camera runs,
+	-- so its spring always starts from an unshaken base. Then bind at Camera+1 to save
+	-- that clean CFrame and apply a fresh shake offset.
+	--
+	-- new CFrame(pos, lookAt) forces world-up orientation → no roll accumulation.
+	RunService:BindToRenderStep("HoldOrDropShakeUndo", Enum.RenderPriority.Camera.Value - 1, function()
+		if not shakeUndoCFrame then
+			return nil
+		end
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera.CFrame = shakeUndoCFrame
+		end
+		shakeUndoCFrame = nil
+	end)
 	RunService:BindToRenderStep("HoldOrDropShake", Enum.RenderPriority.Camera.Value + 1, function()
 		if shakeAmplitude <= 0 then
+			shakeUndoCFrame = nil
 			return nil
 		end
 		local camera = Workspace.CurrentCamera
 		if not camera then
 			return nil
 		end
-		local offset = CFrame.Angles((math.random() - 0.5) * shakeAmplitude, (math.random() - 0.5) * shakeAmplitude, (math.random() - 0.5) * shakeAmplitude * 0.3)
-		camera.CFrame = camera.CFrame * offset
+		local cf = camera.CFrame
+		shakeUndoCFrame = cf
+		local _lookVector = cf.LookVector
+		local _rightVector = cf.RightVector
+		local _arg0 = (math.random() - 0.5) * shakeAmplitude
+		local _upVector = cf.UpVector
+		local _arg0_1 = (math.random() - 0.5) * shakeAmplitude
+		local newLookDir = _lookVector + (_rightVector * _arg0) + (_upVector * _arg0_1)
+		camera.CFrame = CFrame.new(cf.Position, cf.Position + newLookDir)
 	end)
 	Events.PlayerKilledEvent.OnClientEvent:Connect(function()
 		-- Son joué côté serveur (3D, entendu par tous)
@@ -410,7 +444,8 @@ local function init()
 		if not isGameActive or not multiplierLabel then
 			return nil
 		end
-		multiplierLabel.Text = `{multiplier}x`
+		local delta = multiplier - previousMultiplier
+		previousMultiplier = multiplier
 		multiplierTextSize += SIZE_GROWTH_PER_UPDATE
 		local _exp = multiplierTextSize
 		local _condition = multiplierTextOriginalSize
@@ -418,11 +453,28 @@ local function init()
 			_condition = 0
 		end
 		local factor = math.clamp((_exp - _condition) / MAX_MULTIPLIER_SIZE_INCREASE, 0, 1)
-		local targetTextColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
-		TweenService:Create(multiplierLabel, UpgradeMultiplayerTI, {
-			TextSize = multiplierTextSize,
-			TextColor3 = targetTextColor,
-		}):Play()
+		-- Capture pour la closure : plusieurs labels peuvent voler en même temps
+		local capturedLabel = multiplierLabel
+		local capturedMultiplier = multiplier
+		local capturedSize = multiplierTextSize
+		local capturedColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
+		-- Texte + bump déclenchés à l'impact du label flottant
+		local onLabelArrived = function()
+			capturedLabel.Text = `{capturedMultiplier}x`
+			TweenService:Create(capturedLabel, UpgradeMultiplayerTI, {
+				TextSize = capturedSize,
+				TextColor3 = capturedColor,
+			}):Play()
+		end
+		if delta > 0 then
+			local screenGui = multiplierLabel:FindFirstAncestorOfClass("ScreenGui")
+			if screenGui and floatingTemplate then
+				spawnFloatingMultiplierLabel(screenGui, floatingTemplate, delta, multiplierLabel, onLabelArrived)
+			else
+				onLabelArrived()
+			end
+		end
+		-- Effets ambiants immédiats (game-feel, indépendants du label flottant)
 		if vignetteCanvas then
 			TweenService:Create(vignetteCanvas, PostProcessTI, {
 				GroupTransparency = 1 - factor * (1 - MIN_VIGNETTE_TRANSPARENCY),
@@ -504,6 +556,7 @@ local function setup(mainUI)
 	baseFov = _condition
 	isGameActive = true
 	released = false
+	previousMultiplier = 1
 	multiplierLabel.TextSize = multiplierTextOriginalSize
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor
 	multiplierTextSize = multiplierTextOriginalSize
