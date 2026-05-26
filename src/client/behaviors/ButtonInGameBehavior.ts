@@ -1,6 +1,16 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
-import { Lighting, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import {
+	ContentProvider,
+	GuiService,
+	Lighting,
+	Players,
+	RunService,
+	SoundService,
+	TweenService,
+	UserInputService,
+	Workspace,
+} from "@rbxts/services";
 
 // UI refs — assigned on first setup(), never change after
 let releaseButton: TextButton | undefined;
@@ -22,20 +32,47 @@ let released = false;
 let multiplierTextSize = 0;
 let baseMultiplierTextSize = 0;
 let shakeAmplitude = 0;
+let baseFov = 70;
 let spaceConn: RBXScriptConnection | undefined;
 let activatedConn: RBXScriptConnection | undefined;
+let parryKnockbackCamConn: RBXScriptConnection | undefined;
+let parryAnimTrack: AnimationTrack | undefined;
+
+// Sons — remplace les IDs par les tiens si besoin
+const SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284"; // Son joué quand le bouton explose (fenêtre parry)
+const SOUND_EXPLOSION_ID = "rbxassetid://139771888058836";
+const SOUND_PARRY_ID = "rbxassetid://119580857539801";
+
+// Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
+const ANIM_PARRY_ID = "rbxassetid://6481315203";
+
+function playSound(id: string, volume = 1, pitch = 1): void {
+	const sound = new Instance("Sound");
+	sound.SoundId = id;
+	sound.Volume = volume;
+	sound.PlaybackSpeed = pitch;
+	sound.Parent = SoundService;
+	sound.Play();
+	sound.Ended.Connect(() => sound.Destroy());
+}
 
 const SIZE_GROWTH_PER_UPDATE = 4;
 const MAX_MULTIPLIER_SIZE_INCREASE = 80;
 const MAX_SHAKE_AMPLITUDE = 0.08;
 const MAX_BLOOM_INTENSITY = 1.5;
 const MIN_VIGNETTE_TRANSPARENCY = 0.2;
+const MIN_FOV = 58;
 
 const UpgradeMultiplayerTI = new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 const ReleaseButtonDesapearTI = new TweenInfo(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 const FillProgressBarTI = new TweenInfo(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out);
 const PostProcessTI = new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const ResetPostProcessTI = new TweenInfo(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+const ZoomResetTI = new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+const ExplodeFovPunchTI = new TweenInfo(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+const EXPLODE_FOV_OVERSHOOT = 18;
+
+const PerfectParrytime = 1.6;
 
 function createVignetteEdge(
 	parent: Instance,
@@ -54,10 +91,7 @@ function createVignetteEdge(
 	frame.Parent = parent;
 
 	const gradient = new Instance("UIGradient");
-	gradient.Transparency = new NumberSequence([
-		new NumberSequenceKeypoint(0, 0),
-		new NumberSequenceKeypoint(1, 1),
-	]);
+	gradient.Transparency = new NumberSequence([new NumberSequenceKeypoint(0, 0), new NumberSequenceKeypoint(1, 1)]);
 	gradient.Rotation = rotation;
 	gradient.Parent = frame;
 
@@ -65,10 +99,13 @@ function createVignetteEdge(
 }
 
 function buildVignette(mainUI: ScreenGui): CanvasGroup {
+	const [topLeft] = GuiService.GetGuiInset();
+	const insetY = topLeft.Y;
+
 	const canvas = new Instance("CanvasGroup");
 	canvas.Name = "VignetteCanvas";
-	canvas.Size = new UDim2(1, 0, 1, 0);
-	canvas.Position = new UDim2(0, 0, 0, 0);
+	canvas.Size = new UDim2(1, 0, 1, insetY);
+	canvas.Position = new UDim2(0, 0, 0, -insetY);
 	canvas.BackgroundTransparency = 1;
 	canvas.GroupTransparency = 1;
 	canvas.ZIndex = 10;
@@ -84,8 +121,8 @@ function buildVignette(mainUI: ScreenGui): CanvasGroup {
 	return canvas;
 }
 
-function resetPostProcess(instant = false): void {
-	const ti = instant ? new TweenInfo(0) : ResetPostProcessTI;
+function resetPostProcess(instant = false, explode = false): void {
+	const ti = instant || explode ? new TweenInfo(0) : ResetPostProcessTI;
 	if (vignetteCanvas) {
 		TweenService.Create(vignetteCanvas, ti, { GroupTransparency: 1 }).Play();
 	}
@@ -98,6 +135,15 @@ function resetPostProcess(instant = false): void {
 	if (bloomEffect) {
 		TweenService.Create(bloomEffect, ti, { Intensity: 0 }).Play();
 	}
+	const camera = Workspace.CurrentCamera;
+	if (camera) {
+		if (explode) {
+			TweenService.Create(camera, ExplodeFovPunchTI, { FieldOfView: baseFov + EXPLODE_FOV_OVERSHOOT }).Play();
+		} else {
+			const fovTi = instant ? new TweenInfo(0) : ZoomResetTI;
+			TweenService.Create(camera, fovTi, { FieldOfView: baseFov }).Play();
+		}
+	}
 	shakeAmplitude = 0;
 }
 
@@ -109,15 +155,75 @@ function endInput(): void {
 	resetPostProcess();
 	if (releaseButton) {
 		releaseButton.Active = false;
-		let tween = TweenService.Create(releaseButton, ReleaseButtonDesapearTI, { Size: new UDim2(0, 0, 0, 0) });
+		const tween = TweenService.Create(releaseButton, ReleaseButtonDesapearTI, { Size: new UDim2(0, 0, 0, 0) });
 		tween.Play();
 		tween.Completed.Wait();
 		releaseButton.Visible = false;
 	}
 }
 
+function startParryWindow(): void {
+	isGameActive = false;
+	resetPostProcess(false, true); // FOV punch + post-process instantané
+
+	spaceConn?.Disconnect();
+	spaceConn = undefined;
+	activatedConn?.Disconnect();
+	activatedConn = undefined;
+
+	if (!releaseButton) {
+		released = true;
+		return;
+	}
+
+	// Le bouton disparaît pendant la fenêtre de parry
+	releaseButton.Active = true;
+	const tween = TweenService.Create(releaseButton, ReleaseButtonDesapearTI, { Size: new UDim2(0, 0, 0, 0) });
+	tween.Play();
+
+	const fireParry = () => {
+		if (released) return;
+		released = true;
+		spaceConn?.Disconnect();
+		spaceConn = undefined;
+		activatedConn?.Disconnect();
+		activatedConn = undefined;
+		print("perfect parry");
+		Events.PerfectParryEvent.FireServer();
+	};
+
+	spaceConn = UserInputService.InputBegan.Connect((input, gameProcessed) => {
+		if (gameProcessed) return;
+		if (input.KeyCode === Enum.KeyCode.Space) fireParry();
+	});
+	activatedConn = releaseButton.Activated.Connect(fireParry);
+
+	// Fin de la fenêtre de parry
+	task.delay(PerfectParrytime, () => {
+		spaceConn?.Disconnect();
+		spaceConn = undefined;
+		activatedConn?.Disconnect();
+		activatedConn = undefined;
+		released = true;
+		releaseButton!.Active = false;
+		releaseButton!.Visible = false;
+	});
+}
+
 // Called once at startup — all event listeners live here, gated by isGameActive
 export function init(): void {
+	// Préchargement des sons pour éviter le décalage au premier play
+	task.spawn(() => {
+		const preload = [SOUND_BUTTON_EXPLODE_ID, SOUND_EXPLOSION_ID, SOUND_PARRY_ID].map((id) => {
+			const s = new Instance("Sound");
+			s.SoundId = id;
+			s.Parent = SoundService;
+			return s;
+		});
+		ContentProvider.PreloadAsync(preload);
+		preload.forEach((s) => s.Destroy());
+	});
+
 	colorCorrection = new Instance("ColorCorrectionEffect");
 	colorCorrection.Name = "HoldOrDropCC";
 	colorCorrection.Parent = Lighting;
@@ -142,8 +248,110 @@ export function init(): void {
 		camera.CFrame = camera.CFrame.mul(offset);
 	});
 
+	Events.PlayerKilledEvent.OnClientEvent.Connect(() => {
+		// Son joué côté serveur (3D, entendu par tous)
+		CameraController.BringBackPlayerCamera(0);
+	});
+
+	Events.PerfectParryEffectEvent.OnClientEvent.Connect(() => {
+		// Son d'explosion joué côté serveur (3D, entendu par tous)
+		// Son d'épée : personnel, reste côté client
+		playSound(SOUND_PARRY_ID, 1);
+
+		const character = Players.LocalPlayer.Character;
+		const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+
+		// Caméra cinématique : au-dessus et derrière le joueur pour voir la projection
+		CameraController.SetCinematic();
+		const camera = Workspace.CurrentCamera;
+		if (camera) camera.FieldOfView = baseFov; // reset FOV instantanément (évite le zoom glitch)
+
+		if (hrp) {
+			// Au moment du parry, le joueur faisait face au bouton → LookVector pointe vers lui
+			// On positionne la caméra dans cette direction pour voir le joueur s'envoler
+			const behindDir = hrp.CFrame.LookVector;
+			const CAM_BEHIND = 12;
+			const CAM_HEIGHT = 8;
+
+			parryKnockbackCamConn?.Disconnect();
+			parryKnockbackCamConn = RunService.RenderStepped.Connect(() => {
+				const cam = Workspace.CurrentCamera;
+				if (!cam) return;
+				const camPos = hrp.Position.add(behindDir.mul(CAM_BEHIND)).add(new Vector3(0, CAM_HEIGHT, 0));
+				cam.CFrame = new CFrame(camPos, hrp.Position.add(new Vector3(0, 1, 0)));
+			});
+		}
+
+		if (!hrp) return;
+
+		const attachment = new Instance("Attachment");
+		attachment.Position = Vector3.zero;
+		attachment.Parent = hrp;
+
+		const emitter = new Instance("ParticleEmitter");
+		emitter.Color = new ColorSequence([
+			new ColorSequenceKeypoint(0, new Color3(1, 1, 1)),
+			new ColorSequenceKeypoint(0.4, new Color3(1, 0.9, 0.2)),
+			new ColorSequenceKeypoint(1, new Color3(1, 1, 0.6)),
+		]);
+		emitter.Size = new NumberSequence([
+			new NumberSequenceKeypoint(0, 0.5),
+			new NumberSequenceKeypoint(0.3, 0.3),
+			new NumberSequenceKeypoint(1, 0),
+		]);
+		emitter.Transparency = new NumberSequence([new NumberSequenceKeypoint(0, 0), new NumberSequenceKeypoint(1, 1)]);
+		emitter.Lifetime = new NumberRange(0.3, 0.6);
+		emitter.Speed = new NumberRange(12, 22);
+		emitter.SpreadAngle = new Vector2(180, 180);
+		emitter.Rate = 0; // burst uniquement
+		emitter.LightEmission = 1;
+		emitter.LightInfluence = 0;
+		emitter.Brightness = 4;
+		emitter.RotSpeed = new NumberRange(-180, 180);
+		emitter.Rotation = new NumberRange(0, 360);
+		emitter.Parent = attachment;
+
+		// Burst instantané
+		emitter.Emit(50);
+
+		task.delay(1.5, () => attachment.Destroy());
+
+		// Animation de projection
+		const humanoid = character?.FindFirstChildOfClass("Humanoid");
+		const animator = humanoid?.FindFirstChildOfClass("Animator");
+		if (animator) {
+			const anim = new Instance("Animation");
+			anim.AnimationId = ANIM_PARRY_ID;
+			parryAnimTrack?.Stop();
+			parryAnimTrack = animator.LoadAnimation(anim);
+			parryAnimTrack.Priority = Enum.AnimationPriority.Action4;
+			parryAnimTrack.Play();
+		}
+	});
+
+	Players.LocalPlayer.CharacterAdded.Connect(() => {
+		const camera = Workspace.CurrentCamera;
+		if (camera) camera.FieldOfView = baseFov;
+	});
+
 	Events.GameResultEvent.OnClientEvent.Connect((exploded: boolean, cashEarned: number, multiplier: number) => {
-		CameraController.BringBackPlayerCamera();
+		if (!exploded) {
+			const wasParry = parryKnockbackCamConn !== undefined;
+			parryKnockbackCamConn?.Disconnect();
+			parryKnockbackCamConn = undefined;
+			// Parry : reset instantané (la caméra trackait déjà le joueur, pas besoin de tween)
+			// Release normal : tween fluide depuis la position cinématique de jeu
+			if (wasParry) {
+				parryAnimTrack?.Stop();
+				parryAnimTrack = undefined;
+				CameraController.BringBackPlayerCamera(0);
+			} else {
+				CameraController.BringBackPlayerCamera();
+			}
+			// resetPostProcess() retiré ici : déjà appelé dans endInput() pour la release,
+			// et la FOV est reset instantanément dans PerfectParryEffectEvent pour la parry.
+			// L'appel ici créait un double tween → zoom glitch.
+		}
 		print(`Game over — exploded: ${exploded} | cash: ${cashEarned} | ${multiplier}x`);
 	});
 
@@ -189,6 +397,13 @@ export function init(): void {
 		}
 
 		shakeAmplitude = factor * MAX_SHAKE_AMPLITUDE;
+
+		const camera = Workspace.CurrentCamera;
+		if (camera) {
+			TweenService.Create(camera, PostProcessTI, {
+				FieldOfView: baseFov - factor * (baseFov - MIN_FOV),
+			}).Play();
+		}
 	});
 
 	Events.ProgressUpdateEvent.OnClientEvent.Connect((progress: number) => {
@@ -200,10 +415,12 @@ export function init(): void {
 
 	Events.ButtonExplodedEvent.OnClientEvent.Connect(() => {
 		if (!isGameActive) return;
-		print("Button exploded!");
-		// Grace period: player can still release to cancel the explosion
+		playSound(SOUND_BUTTON_EXPLODE_ID, 1); // son au moment où le bouton explose
+		// 0.2s grace period : release normal encore possible
 		task.delay(0.2, () => {
-			if (!released) endInput();
+			if (released) return;
+			// Fenêtre de perfect parry : 0.2s supplémentaires avec espace/clic
+			startParryWindow();
 		});
 	});
 }
@@ -225,6 +442,7 @@ export function setup(mainUI: ScreenGui): void {
 	if (!vignetteCanvas) vignetteCanvas = buildVignette(mainUI);
 
 	// Reset per-game state
+	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	released = false;
 	multiplierLabel.TextSize = multiplierTextOriginalSize;

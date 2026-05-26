@@ -7,10 +7,13 @@ export namespace Events {
 	// ButtonInGame — client → server
 	export const ReleaseButtonEvent = DefineEvent("ReleaseButtonEvent", script);
 	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
+	export const PerfectParryEvent = DefineEvent("PerfectParryEvent", script);
 
 	// ButtonInGame — server → client
+	export const PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script);
 	export const BaseCashEvent = DefineEvent("BaseCashEvent", script);
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
+	export const PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script);
 	export const MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script);
 	export const RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script);
 	export const ProgressUpdateEvent = DefineEvent("ProgressUpdateEvent", script);

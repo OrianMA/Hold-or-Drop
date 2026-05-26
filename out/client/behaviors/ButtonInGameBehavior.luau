@@ -3,8 +3,12 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local ContentProvider = _services.ContentProvider
+local GuiService = _services.GuiService
 local Lighting = _services.Lighting
+local Players = _services.Players
 local RunService = _services.RunService
+local SoundService = _services.SoundService
 local TweenService = _services.TweenService
 local UserInputService = _services.UserInputService
 local Workspace = _services.Workspace
@@ -26,18 +30,49 @@ local released = false
 local multiplierTextSize = 0
 local baseMultiplierTextSize = 0
 local shakeAmplitude = 0
+local baseFov = 70
 local spaceConn
 local activatedConn
+local parryKnockbackCamConn
+local parryAnimTrack
+-- Sons — remplace les IDs par les tiens si besoin
+local SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284"
+local SOUND_EXPLOSION_ID = "rbxassetid://139771888058836"
+local SOUND_PARRY_ID = "rbxassetid://119580857539801"
+-- Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
+local ANIM_PARRY_ID = "rbxassetid://6481315203"
+local function playSound(id, volume, pitch)
+	if volume == nil then
+		volume = 1
+	end
+	if pitch == nil then
+		pitch = 1
+	end
+	local sound = Instance.new("Sound")
+	sound.SoundId = id
+	sound.Volume = volume
+	sound.PlaybackSpeed = pitch
+	sound.Parent = SoundService
+	sound:Play()
+	sound.Ended:Connect(function()
+		return sound:Destroy()
+	end)
+end
 local SIZE_GROWTH_PER_UPDATE = 4
 local MAX_MULTIPLIER_SIZE_INCREASE = 80
 local MAX_SHAKE_AMPLITUDE = 0.08
 local MAX_BLOOM_INTENSITY = 1.5
 local MIN_VIGNETTE_TRANSPARENCY = 0.2
+local MIN_FOV = 58
 local UpgradeMultiplayerTI = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local ReleaseButtonDesapearTI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local FillProgressBarTI = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
 local PostProcessTI = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ResetPostProcessTI = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local ZoomResetTI = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local ExplodeFovPunchTI = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local EXPLODE_FOV_OVERSHOOT = 18
+local PerfectParrytime = 1.6
 local function createVignetteEdge(parent, rotation, anchorPoint, position, size)
 	local frame = Instance.new("Frame")
 	frame.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -54,10 +89,12 @@ local function createVignetteEdge(parent, rotation, anchorPoint, position, size)
 	return frame
 end
 local function buildVignette(mainUI)
+	local topLeft = GuiService:GetGuiInset()
+	local insetY = topLeft.Y
 	local canvas = Instance.new("CanvasGroup")
 	canvas.Name = "VignetteCanvas"
-	canvas.Size = UDim2.new(1, 0, 1, 0)
-	canvas.Position = UDim2.new(0, 0, 0, 0)
+	canvas.Size = UDim2.new(1, 0, 1, insetY)
+	canvas.Position = UDim2.new(0, 0, 0, -insetY)
 	canvas.BackgroundTransparency = 1
 	canvas.GroupTransparency = 1
 	canvas.ZIndex = 10
@@ -70,11 +107,14 @@ local function buildVignette(mainUI)
 	createVignetteEdge(canvas, 180, Vector2.new(1, 0.5), UDim2.new(1, 0, 0.5, 0), UDim2.new(0.45, 0, 1, 0))
 	return canvas
 end
-local function resetPostProcess(instant)
+local function resetPostProcess(instant, explode)
 	if instant == nil then
 		instant = false
 	end
-	local ti = if instant then TweenInfo.new(0) else ResetPostProcessTI
+	if explode == nil then
+		explode = false
+	end
+	local ti = if instant or explode then TweenInfo.new(0) else ResetPostProcessTI
 	if vignetteCanvas then
 		TweenService:Create(vignetteCanvas, ti, {
 			GroupTransparency = 1,
@@ -90,6 +130,19 @@ local function resetPostProcess(instant)
 		TweenService:Create(bloomEffect, ti, {
 			Intensity = 0,
 		}):Play()
+	end
+	local camera = Workspace.CurrentCamera
+	if camera then
+		if explode then
+			TweenService:Create(camera, ExplodeFovPunchTI, {
+				FieldOfView = baseFov + EXPLODE_FOV_OVERSHOOT,
+			}):Play()
+		else
+			local fovTi = if instant then TweenInfo.new(0) else ZoomResetTI
+			TweenService:Create(camera, fovTi, {
+				FieldOfView = baseFov,
+			}):Play()
+		end
 	end
 	shakeAmplitude = 0
 end
@@ -112,8 +165,101 @@ local function endInput()
 		releaseButton.Visible = false
 	end
 end
+local function startParryWindow()
+	isGameActive = false
+	resetPostProcess(false, true)
+	local _result = spaceConn
+	if _result ~= nil then
+		_result:Disconnect()
+	end
+	spaceConn = nil
+	local _result_1 = activatedConn
+	if _result_1 ~= nil then
+		_result_1:Disconnect()
+	end
+	activatedConn = nil
+	if not releaseButton then
+		released = true
+		return nil
+	end
+	-- Le bouton disparaît pendant la fenêtre de parry
+	releaseButton.Active = true
+	local tween = TweenService:Create(releaseButton, ReleaseButtonDesapearTI, {
+		Size = UDim2.new(0, 0, 0, 0),
+	})
+	tween:Play()
+	local fireParry = function()
+		if released then
+			return nil
+		end
+		released = true
+		local _result_2 = spaceConn
+		if _result_2 ~= nil then
+			_result_2:Disconnect()
+		end
+		spaceConn = nil
+		local _result_3 = activatedConn
+		if _result_3 ~= nil then
+			_result_3:Disconnect()
+		end
+		activatedConn = nil
+		print("perfect parry")
+		Events.PerfectParryEvent:FireServer()
+	end
+	spaceConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return nil
+		end
+		if input.KeyCode == Enum.KeyCode.Space then
+			fireParry()
+		end
+	end)
+	activatedConn = releaseButton.Activated:Connect(fireParry)
+	-- Fin de la fenêtre de parry
+	task.delay(PerfectParrytime, function()
+		local _result_2 = spaceConn
+		if _result_2 ~= nil then
+			_result_2:Disconnect()
+		end
+		spaceConn = nil
+		local _result_3 = activatedConn
+		if _result_3 ~= nil then
+			_result_3:Disconnect()
+		end
+		activatedConn = nil
+		released = true
+		releaseButton.Active = false
+		releaseButton.Visible = false
+	end)
+end
 -- Called once at startup — all event listeners live here, gated by isGameActive
 local function init()
+	-- Préchargement des sons pour éviter le décalage au premier play
+	task.spawn(function()
+		local _exp = { SOUND_BUTTON_EXPLODE_ID, SOUND_EXPLOSION_ID, SOUND_PARRY_ID }
+		-- ▼ ReadonlyArray.map ▼
+		local _newValue = table.create(#_exp)
+		local _callback = function(id)
+			local s = Instance.new("Sound")
+			s.SoundId = id
+			s.Parent = SoundService
+			return s
+		end
+		for _k, _v in _exp do
+			_newValue[_k] = _callback(_v, _k - 1, _exp)
+		end
+		-- ▲ ReadonlyArray.map ▲
+		local preload = _newValue
+		ContentProvider:PreloadAsync(preload)
+		-- ▼ ReadonlyArray.forEach ▼
+		local _callback_1 = function(s)
+			return s:Destroy()
+		end
+		for _k, _v in preload do
+			_callback_1(_v, _k - 1, preload)
+		end
+		-- ▲ ReadonlyArray.forEach ▲
+	end)
 	colorCorrection = Instance.new("ColorCorrectionEffect")
 	colorCorrection.Name = "HoldOrDropCC"
 	colorCorrection.Parent = Lighting
@@ -135,8 +281,128 @@ local function init()
 		local offset = CFrame.Angles((math.random() - 0.5) * shakeAmplitude, (math.random() - 0.5) * shakeAmplitude, (math.random() - 0.5) * shakeAmplitude * 0.3)
 		camera.CFrame = camera.CFrame * offset
 	end)
+	Events.PlayerKilledEvent.OnClientEvent:Connect(function()
+		-- Son joué côté serveur (3D, entendu par tous)
+		CameraController.BringBackPlayerCamera(0)
+	end)
+	Events.PerfectParryEffectEvent.OnClientEvent:Connect(function()
+		-- Son d'explosion joué côté serveur (3D, entendu par tous)
+		-- Son d'épée : personnel, reste côté client
+		playSound(SOUND_PARRY_ID, 1)
+		local character = Players.LocalPlayer.Character
+		local _result = character
+		if _result ~= nil then
+			_result = _result:FindFirstChild("HumanoidRootPart")
+		end
+		local hrp = _result
+		-- Caméra cinématique : au-dessus et derrière le joueur pour voir la projection
+		CameraController.SetCinematic()
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera.FieldOfView = baseFov
+		end
+		if hrp then
+			-- Au moment du parry, le joueur faisait face au bouton → LookVector pointe vers lui
+			-- On positionne la caméra dans cette direction pour voir le joueur s'envoler
+			local behindDir = hrp.CFrame.LookVector
+			local CAM_BEHIND = 12
+			local CAM_HEIGHT = 8
+			local _result_1 = parryKnockbackCamConn
+			if _result_1 ~= nil then
+				_result_1:Disconnect()
+			end
+			parryKnockbackCamConn = RunService.RenderStepped:Connect(function()
+				local cam = Workspace.CurrentCamera
+				if not cam then
+					return nil
+				end
+				local _position = hrp.Position
+				local _arg0 = behindDir * CAM_BEHIND
+				local _vector3 = Vector3.new(0, CAM_HEIGHT, 0)
+				local camPos = _position + _arg0 + _vector3
+				local _position_1 = hrp.Position
+				local _vector3_1 = Vector3.new(0, 1, 0)
+				cam.CFrame = CFrame.new(camPos, _position_1 + _vector3_1)
+			end)
+		end
+		if not hrp then
+			return nil
+		end
+		local attachment = Instance.new("Attachment")
+		attachment.Position = Vector3.zero
+		attachment.Parent = hrp
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.4, Color3.new(1, 0.9, 0.2)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 0.6)) })
+		emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(0.3, 0.3), NumberSequenceKeypoint.new(1, 0) })
+		emitter.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) })
+		emitter.Lifetime = NumberRange.new(0.3, 0.6)
+		emitter.Speed = NumberRange.new(12, 22)
+		emitter.SpreadAngle = Vector2.new(180, 180)
+		emitter.Rate = 0
+		emitter.LightEmission = 1
+		emitter.LightInfluence = 0
+		emitter.Brightness = 4
+		emitter.RotSpeed = NumberRange.new(-180, 180)
+		emitter.Rotation = NumberRange.new(0, 360)
+		emitter.Parent = attachment
+		-- Burst instantané
+		emitter:Emit(50)
+		task.delay(1.5, function()
+			return attachment:Destroy()
+		end)
+		-- Animation de projection
+		local _humanoid = character
+		if _humanoid ~= nil then
+			_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
+		end
+		local humanoid = _humanoid
+		local _animator = humanoid
+		if _animator ~= nil then
+			_animator = _animator:FindFirstChildOfClass("Animator")
+		end
+		local animator = _animator
+		if animator then
+			local anim = Instance.new("Animation")
+			anim.AnimationId = ANIM_PARRY_ID
+			local _result_1 = parryAnimTrack
+			if _result_1 ~= nil then
+				_result_1:Stop()
+			end
+			parryAnimTrack = animator:LoadAnimation(anim)
+			parryAnimTrack.Priority = Enum.AnimationPriority.Action4
+			parryAnimTrack:Play()
+		end
+	end)
+	Players.LocalPlayer.CharacterAdded:Connect(function()
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera.FieldOfView = baseFov
+		end
+	end)
 	Events.GameResultEvent.OnClientEvent:Connect(function(exploded, cashEarned, multiplier)
-		CameraController.BringBackPlayerCamera()
+		if not exploded then
+			local wasParry = parryKnockbackCamConn ~= nil
+			local _result = parryKnockbackCamConn
+			if _result ~= nil then
+				_result:Disconnect()
+			end
+			parryKnockbackCamConn = nil
+			-- Parry : reset instantané (la caméra trackait déjà le joueur, pas besoin de tween)
+			-- Release normal : tween fluide depuis la position cinématique de jeu
+			if wasParry then
+				local _result_1 = parryAnimTrack
+				if _result_1 ~= nil then
+					_result_1:Stop()
+				end
+				parryAnimTrack = nil
+				CameraController.BringBackPlayerCamera(0)
+			else
+				CameraController.BringBackPlayerCamera()
+			end
+			-- resetPostProcess() retiré ici : déjà appelé dans endInput() pour la release,
+			-- et la FOV est reset instantanément dans PerfectParryEffectEvent pour la parry.
+			-- L'appel ici créait un double tween → zoom glitch.
+		end
 		print(`Game over — exploded: {exploded} | cash: {cashEarned} | {multiplier}x`)
 	end)
 	Events.BaseCashEvent.OnClientEvent:Connect(function(baseCash)
@@ -179,6 +445,12 @@ local function init()
 			}):Play()
 		end
 		shakeAmplitude = factor * MAX_SHAKE_AMPLITUDE
+		local camera = Workspace.CurrentCamera
+		if camera then
+			TweenService:Create(camera, PostProcessTI, {
+				FieldOfView = baseFov - factor * (baseFov - MIN_FOV),
+			}):Play()
+		end
 	end)
 	Events.ProgressUpdateEvent.OnClientEvent:Connect(function(progress)
 		if not isGameActive or not progressionIndicator then
@@ -192,12 +464,14 @@ local function init()
 		if not isGameActive then
 			return nil
 		end
-		print("Button exploded!")
-		-- Grace period: player can still release to cancel the explosion
+		playSound(SOUND_BUTTON_EXPLODE_ID, 1)
+		-- 0.2s grace period : release normal encore possible
 		task.delay(0.2, function()
-			if not released then
-				endInput()
+			if released then
+				return nil
 			end
+			-- Fenêtre de perfect parry : 0.2s supplémentaires avec espace/clic
+			startParryWindow()
 		end)
 	end)
 end
@@ -224,6 +498,15 @@ local function setup(mainUI)
 		vignetteCanvas = buildVignette(mainUI)
 	end
 	-- Reset per-game state
+	local _result = Workspace.CurrentCamera
+	if _result ~= nil then
+		_result = _result.FieldOfView
+	end
+	local _condition = _result
+	if _condition == nil then
+		_condition = 70
+	end
+	baseFov = _condition
 	isGameActive = true
 	released = false
 	multiplierLabel.TextSize = multiplierTextOriginalSize
@@ -239,13 +522,13 @@ local function setup(mainUI)
 	multiplierLabel.Text = "1x"
 	progressionIndicator.Position = UDim2.new(0, 0, 0.5, 0)
 	-- Clean up any leftover connections from a previous game
-	local _result = spaceConn
-	if _result ~= nil then
-		_result:Disconnect()
-	end
-	local _result_1 = activatedConn
+	local _result_1 = spaceConn
 	if _result_1 ~= nil then
 		_result_1:Disconnect()
+	end
+	local _result_2 = activatedConn
+	if _result_2 ~= nil then
+		_result_2:Disconnect()
 	end
 	local fireRelease = function()
 		if not isGameActive or released then

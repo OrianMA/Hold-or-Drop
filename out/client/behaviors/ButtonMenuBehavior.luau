@@ -7,15 +7,15 @@ local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_i
 local function init(onGameStart)
 	local startConn
 	local quitConn
-	-- UI is guaranteed to exist after the server triggered this event
 	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	local mainUI = playerGui:WaitForChild("MainUI")
-	local buttonMenu = mainUI:WaitForChild("ButtonMenu")
-	local startButton = buttonMenu:WaitForChild("StartButton")
-	local quitButton = buttonMenu:WaitForChild("QuitButton")
 	local DisconnectEvents
 	Events.ButtonTriggerEvent.OnClientEvent:Connect(function(cameraPosPart)
 		print("game supposed to start")
+		-- Re-fetch UI elements each time — references become stale after respawn if ResetOnSpawn=true
+		local mainUI = playerGui:WaitForChild("MainUI")
+		local buttonMenu = mainUI:WaitForChild("ButtonMenu")
+		local startButton = buttonMenu:WaitForChild("StartButton")
+		local quitButton = buttonMenu:WaitForChild("QuitButton")
 		CameraController.SetCinematic()
 		CameraController.AnimateTo(cameraPosPart.CFrame)
 		DisconnectEvents()

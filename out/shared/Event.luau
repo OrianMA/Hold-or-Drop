@@ -13,11 +13,17 @@ do
 	_container.ReleaseButtonEvent = ReleaseButtonEvent
 	local QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script)
 	_container.QuitButtonClickedEvent = QuitButtonClickedEvent
+	local PerfectParryEvent = DefineEvent("PerfectParryEvent", script)
+	_container.PerfectParryEvent = PerfectParryEvent
 	-- ButtonInGame — server → client
+	local PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script)
+	_container.PerfectParryEffectEvent = PerfectParryEffectEvent
 	local BaseCashEvent = DefineEvent("BaseCashEvent", script)
 	_container.BaseCashEvent = BaseCashEvent
 	local ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script)
 	_container.ButtonExplodedEvent = ButtonExplodedEvent
+	local PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script)
+	_container.PlayerKilledEvent = PlayerKilledEvent
 	local MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script)
 	_container.MultiplierUpdateEvent = MultiplierUpdateEvent
 	local RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script)

@@ -3,6 +3,11 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local ButtonSessionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ButtonSessionService").ButtonSessionService
 local UiService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "UiService").UiService
+local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local ReplicatedStorage = _services.ReplicatedStorage
+local TweenService = _services.TweenService
+local Workspace = _services.Workspace
+-- ── Game tuning ───────────────────────────────────────────────────────────────
 local MULTIPLIER_STAGES = { {
 	multiplicatorAdded = 1,
 	duration = 5,
@@ -22,17 +27,69 @@ local MULTIPLIER_STAGES = { {
 local MAX_RISK = 0.8
 local TICK_RATE = 0.5
 local LOOSE_WIN_MULTIPLIER = 0.3
--- Sum of all finite stage durations — defines the full length of the sine curve
+local KNOCKBACK_DISTANCE = 15
+local KNOCKBACK_DURATION = 0.5
+local EXPLOSION_BLAST_RADIUS = 32
+local EXPLOSION_SOUND_ID = "rbxassetid://139771888058836"
+local EXPLOSION_SOUND_VOLUME = 0.8
+local EXPLOSION_SOUND_ROLLOFF = 120
+-- Sum of all finite stage durations — defines the full length of the risk curve
 local TOTAL_DURATION = 0
 for _, stage in MULTIPLIER_STAGES do
 	TOTAL_DURATION += stage.duration
 end
+-- ── Sound preloading ──────────────────────────────────────────────────────────
+-- A template Sound in ReplicatedStorage replicates to all clients on join,
+-- causing them to pre-buffer the audio asset before any explosion fires.
+-- Cloning a pre-buffered template eliminates the CDN fetch delay at runtime.
+local assetsFolder = (function()
+	local existing = ReplicatedStorage:FindFirstChild("HoldOrDropAssets")
+	if existing ~= nil then
+		return existing
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "HoldOrDropAssets"
+	folder.Parent = ReplicatedStorage
+	return folder
+end)()
+local explosionSoundTemplate = (function()
+	local sound = Instance.new("Sound")
+	sound.Name = "ExplosionSound"
+	sound.SoundId = EXPLOSION_SOUND_ID
+	sound.Volume = EXPLOSION_SOUND_VOLUME
+	sound.RollOffMaxDistance = EXPLOSION_SOUND_ROLLOFF
+	sound.Parent = assetsFolder
+	return sound
+end)()
+-- ── Helpers ───────────────────────────────────────────────────────────────────
 -- EaseInQuad: risk starts near 0 and accelerates — reaches MAX_RISK at TOTAL_DURATION seconds
--- After that, risk stays capped at MAX_RISK
 local function getRisk(timeHeld)
 	local t = math.min(timeHeld / TOTAL_DURATION, 1)
 	return MAX_RISK * (t * t)
 end
+-- Triggers a 3D explosion at `pos`: visual and sound fire together from the
+-- same replication batch, so clients see and hear them simultaneously.
+-- blastPressure = 0 for parry (visual-only), non-zero for lethal explosions.
+local function triggerExplosionAt(pos, blastPressure)
+	-- Sound cloned from the pre-buffered template — no CDN fetch on the client.
+	-- Parented to Terrain via an Attachment for proper 3D rolloff.
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = Workspace.Terrain
+	attachment.WorldPosition = pos
+	local sound = explosionSoundTemplate:Clone()
+	sound.Parent = attachment
+	sound:Play()
+	sound.Ended:Connect(function()
+		return attachment:Destroy()
+	end)
+	local explosion = Instance.new("Explosion")
+	explosion.Position = pos
+	explosion.BlastRadius = EXPLOSION_BLAST_RADIUS
+	explosion.BlastPressure = blastPressure
+	explosion.DestroyJointRadiusPercent = 0
+	explosion.Parent = Workspace
+end
+-- ── Public API ────────────────────────────────────────────────────────────────
 -- Single exit point for all outcomes: release, explosion, and quit from ButtonMenu
 local function endButtonGame(player)
 	ButtonSessionService:cleanup(player)
@@ -80,12 +137,10 @@ local function startButtonGame(player, session)
 					Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 					nextMultiplierTick += 1
 				end
-				-- Risk follows a sine curve over the total stage duration
 				local risk = getRisk(timeHeld)
 				Events.RiskUpdateEvent:FireClient(player, risk)
 				local progress = math.min(timeHeld / TOTAL_DURATION, 1)
 				Events.ProgressUpdateEvent:FireClient(player, progress)
-				-- Explosion check
 				if math.random() < risk then
 					isActive = false
 					releaseConn:Disconnect()
@@ -105,12 +160,123 @@ local function startButtonGame(player, session)
 					if cancelledByPlayer then
 						local earned = baseCash * currentMultiplier
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
+						endButtonGame(player)
 					else
-						local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
-						task.wait(0.8)
-						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
+						local character = player.Character
+						local _result = character
+						if _result ~= nil then
+							_result = _result:FindFirstChild("HumanoidRootPart")
+						end
+						local hrp = _result
+						local _humanoid = character
+						if _humanoid ~= nil then
+							_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
+						end
+						local humanoid = _humanoid
+						-- Capture button reference before session is cleared
+						local buttonPart = session.proximityPrompt.Parent
+						-- Deregister button immediately (avoids WaitForChild blocking the UI)
+						ButtonSessionService:cleanup(player)
+						-- Freeze movement for the parry window
+						local _result_1 = humanoid
+						if _result_1 ~= nil then
+							_result_1 = _result_1.WalkSpeed
+						end
+						local _condition = _result_1
+						if _condition == nil then
+							_condition = 16
+						end
+						local origWalkSpeed = _condition
+						local _result_2 = humanoid
+						if _result_2 ~= nil then
+							_result_2 = _result_2.JumpPower
+						end
+						local _condition_1 = _result_2
+						if _condition_1 == nil then
+							_condition_1 = 50
+						end
+						local origJumpPower = _condition_1
+						local _result_3 = humanoid
+						if _result_3 ~= nil then
+							_result_3 = _result_3.JumpHeight
+						end
+						local _condition_2 = _result_3
+						if _condition_2 == nil then
+							_condition_2 = 7.2
+						end
+						local origJumpHeight = _condition_2
+						if humanoid then
+							humanoid.WalkSpeed = 0
+							humanoid.JumpPower = 0
+							humanoid.JumpHeight = 0
+						end
+						local isPerfectParry = false
+						local parryConn
+						parryConn = Events.PerfectParryEvent.OnServerEvent:Connect(function(p)
+							if p ~= player then
+								return nil
+							end
+							isPerfectParry = true
+							parryConn:Disconnect()
+						end)
+						task.wait(0.5)
+						parryConn:Disconnect()
+						if isPerfectParry then
+							if hrp then
+								hrp.Anchored = true
+							end
+							if buttonPart then
+								triggerExplosionAt(buttonPart.Position, 0)
+							end
+							-- Trigger sparkle effect on the parrying player's client
+							Events.PerfectParryEffectEvent:FireClient(player)
+							if hrp and buttonPart then
+								local rawDir = Vector3.new(hrp.Position.X - buttonPart.Position.X, 0, hrp.Position.Z - buttonPart.Position.Z)
+								local dir = if rawDir.Magnitude > 0 then rawDir.Unit else Vector3.new(0, 0, 1)
+								local _cFrame = hrp.CFrame
+								local _arg0 = dir * KNOCKBACK_DISTANCE
+								local targetCFrame = _cFrame + _arg0
+								local tween = TweenService:Create(hrp, TweenInfo.new(KNOCKBACK_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+									CFrame = targetCFrame,
+								})
+								tween:Play()
+								task.wait(KNOCKBACK_DURATION)
+							end
+							if hrp then
+								hrp.Anchored = false
+							end
+							task.wait(0.5)
+							if humanoid then
+								humanoid.WalkSpeed = origWalkSpeed
+								humanoid.JumpPower = origJumpPower
+								humanoid.JumpHeight = origJumpHeight
+							end
+							local earned = baseCash * currentMultiplier
+							Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
+							UiService:HideCurrent(player)
+						else
+							if hrp then
+								hrp.Anchored = false
+							end
+							if character then
+								for _, desc in character:GetDescendants() do
+									if desc:IsA("Motor6D") then
+										desc.Enabled = false
+									end
+								end
+							end
+							if buttonPart then
+								triggerExplosionAt(buttonPart.Position, 180000)
+							end
+							if humanoid then
+								humanoid.Health = 0
+							end
+							Events.PlayerKilledEvent:FireClient(player)
+							local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
+							Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
+							UiService:HideCurrent(player)
+						end
 					end
-					endButtonGame(player)
 					return nil
 				end
 				if not isLastStage and timeInStage >= stage.duration then
