@@ -1,6 +1,7 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
 import { spawnFloatingMultiplierLabel } from "client/ui/FloatingMultiplierLabel";
+import { STAGE_TIMING_CONFIGS, TOTAL_STAGE_DURATION } from "shared/ButtonGameConfig";
 import {
 	ContentProvider,
 	GuiService,
@@ -24,6 +25,9 @@ let floatingTemplate: Frame | undefined;
 let buttonOriginalSize: UDim2 | undefined;
 let multiplierTextOriginalSize: number | undefined;
 let multiplierTextOriginalColor: Color3 | undefined;
+// Level marker labels — Level1 (leftmost) and Level5 (rightmost) stay in Studio position;
+// Level2–4 are repositioned at runtime based on cumulative stage durations.
+let levelLabels: (TextLabel | undefined)[] = [];
 
 // Lighting effects — created once in init()
 let colorCorrection: ColorCorrectionEffect | undefined;
@@ -72,10 +76,10 @@ function playSound(id: string, volume = 1, pitch = 1): void {
 
 const SIZE_GROWTH_PER_UPDATE = 4;
 const MAX_MULTIPLIER_SIZE_INCREASE = 80;
-const MAX_SHAKE_AMPLITUDE = 0.08;
+const MAX_SHAKE_AMPLITUDE = 0.06;
 const MAX_BLOOM_INTENSITY = 1.5;
-const MIN_VIGNETTE_TRANSPARENCY = 0.2;
-const MIN_FOV = 58;
+const MIN_VIGNETTE_TRANSPARENCY = 0.1;
+const MIN_FOV = 52;
 
 const UpgradeMultiplayerTI = new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 const ReleaseButtonDesapearTI = new TweenInfo(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
@@ -276,9 +280,9 @@ export function init(): void {
 		if (!camera) return;
 		const cf = camera.CFrame; // clean CFrame just set by Roblox's camera
 		shakeUndoCFrame = cf; // save so the undo binding can restore it next frame
-		const newLookDir = cf.LookVector
-			.add(cf.RightVector.mul((math.random() - 0.5) * shakeAmplitude))
-			.add(cf.UpVector.mul((math.random() - 0.5) * shakeAmplitude));
+		const newLookDir = cf.LookVector.add(cf.RightVector.mul((math.random() - 0.5) * shakeAmplitude)).add(
+			cf.UpVector.mul((math.random() - 0.5) * shakeAmplitude),
+		);
 		camera.CFrame = new CFrame(cf.Position, cf.Position.add(newLookDir));
 	});
 
@@ -415,14 +419,11 @@ export function init(): void {
 		const capturedLabel = multiplierLabel;
 		const capturedMultiplier = multiplier;
 		const capturedSize = multiplierTextSize;
-		const capturedColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(
-			new Color3(1, 0, 0),
-			factor,
-		);
+		const capturedColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(new Color3(1, 0, 0), factor);
 
 		// Texte + bump déclenchés à l'impact du label flottant
 		const onLabelArrived = () => {
-			capturedLabel.Text = `${capturedMultiplier}x`;
+			capturedLabel.Text = `${tostring(math.round(capturedMultiplier * 10) / 10)}x`;
 			TweenService.Create(capturedLabel, UpgradeMultiplayerTI, {
 				TextSize: capturedSize,
 				TextColor3: capturedColor,
@@ -464,6 +465,34 @@ export function init(): void {
 		}
 	});
 
+	// ── Level labels — text + positions ──────────────────────────────────────────
+	// Fired once per game start, right before BaseCashEvent.
+	// • All 5 labels get their text updated with the button's attribute values.
+	// • Level1 (x=0) and Level5 (x=1) keep their Studio positions.
+	// • Level2–4 are placed at the cumulative-duration percentage along the bar.
+	Events.ButtonLevelsEvent.OnClientEvent.Connect((v1: number, v2: number, v3: number, v4: number, v5: number) => {
+		if (!isGameActive) return;
+		const values = [v1, v2, v3, v4, v5];
+
+		// Update text for all labels (Level1Text stays at left edge, no repositioning needed)
+		for (let i = 0; i < 5; i++) {
+			const label = levelLabels[i];
+			if (label) label.Text = `+${tostring(math.round(values[i] * 10) / 10)}`;
+		}
+
+		// Reposition labels 2–4 (indices 1–3) at cumulative-duration percentages
+		let cumulative = 0;
+		for (let i = 1; i <= 3; i++) {
+			cumulative += STAGE_TIMING_CONFIGS[i - 1].duration;
+			const xScale = cumulative / TOTAL_STAGE_DURATION;
+			const label = levelLabels[i];
+			if (label) {
+				const pos = label.Position;
+				label.Position = new UDim2(xScale, 0, pos.Y.Scale, pos.Y.Offset);
+			}
+		}
+	});
+
 	Events.ProgressUpdateEvent.OnClientEvent.Connect((progress: number) => {
 		if (!isGameActive || !progressionIndicator) return;
 		TweenService.Create(progressionIndicator, FillProgressBarTI, {
@@ -493,6 +522,12 @@ export function setup(mainUI: ScreenGui): void {
 	const progressBarParent = sliderParent.WaitForChild("ProgressBar") as CanvasGroup;
 	progressionIndicator = progressBarParent.WaitForChild("ProgressionIndicator") as Frame;
 
+	// Level marker labels (Level1Text..Level5Text) sit inside the Slider frame
+	levelLabels = [1, 2, 3, 4, 5].map((n) => {
+		const child = sliderParent.FindFirstChild(`Level${n}Text`);
+		return child?.IsA("TextLabel") ? (child as TextLabel) : undefined;
+	});
+
 	// Save original sizes/colors on first run so we can restore each game
 	if (!buttonOriginalSize) buttonOriginalSize = releaseButton.Size;
 	if (!multiplierTextOriginalSize) multiplierTextOriginalSize = multiplierLabel.TextSize;
@@ -503,7 +538,7 @@ export function setup(mainUI: ScreenGui): void {
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	released = false;
-	previousMultiplier = 1;
+	previousMultiplier = 0;
 	multiplierLabel.TextSize = multiplierTextOriginalSize;
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor;
 	multiplierTextSize = multiplierTextOriginalSize;
@@ -516,7 +551,7 @@ export function setup(mainUI: ScreenGui): void {
 	print(releaseButton.Activated);
 
 	// Reset UI
-	multiplierLabel.Text = "1x";
+	multiplierLabel.Text = "0x";
 	progressionIndicator.Position = new UDim2(0, 0, 0.5, 0);
 
 	// Clean up any leftover connections from a previous game

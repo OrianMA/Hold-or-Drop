@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "Bash(where gh:*)"
+      "Bash(where gh:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "PowerShell(gh pr list --repo OrianMA/Hold-or-Drop --head feat/character-size-normalization 2>&1)",
+      "PowerShell($ghCmd = Get-Command gh -ErrorAction SilentlyContinue; if \\($ghCmd\\) { $ghCmd.Source } else { \"not found\" }; Get-ChildItem \"C:\\\\Program Files\\\\GitHub CLI\" -ErrorAction SilentlyContinue)"
     ]
   }
 }

@@ -3,6 +3,9 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
 local spawnFloatingMultiplierLabel = TS.import(script, script.Parent.Parent, "ui", "FloatingMultiplierLabel").spawnFloatingMultiplierLabel
+local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig")
+local STAGE_TIMING_CONFIGS = _ButtonGameConfig.STAGE_TIMING_CONFIGS
+local TOTAL_STAGE_DURATION = _ButtonGameConfig.TOTAL_STAGE_DURATION
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
@@ -24,6 +27,9 @@ local floatingTemplate
 local buttonOriginalSize
 local multiplierTextOriginalSize
 local multiplierTextOriginalColor
+-- Level marker labels — Level1 (leftmost) and Level5 (rightmost) stay in Studio position;
+-- Level2–4 are repositioned at runtime based on cumulative stage durations.
+local levelLabels = {}
 -- Lighting effects — created once in init()
 local colorCorrection
 local bloomEffect
@@ -73,10 +79,10 @@ local function playSound(id, volume, pitch)
 end
 local SIZE_GROWTH_PER_UPDATE = 4
 local MAX_MULTIPLIER_SIZE_INCREASE = 80
-local MAX_SHAKE_AMPLITUDE = 0.08
+local MAX_SHAKE_AMPLITUDE = 0.06
 local MAX_BLOOM_INTENSITY = 1.5
-local MIN_VIGNETTE_TRANSPARENCY = 0.2
-local MIN_FOV = 58
+local MIN_VIGNETTE_TRANSPARENCY = 0.1
+local MIN_FOV = 52
 local UpgradeMultiplayerTI = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local ReleaseButtonDesapearTI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local FillProgressBarTI = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
@@ -460,7 +466,7 @@ local function init()
 		local capturedColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
 		-- Texte + bump déclenchés à l'impact du label flottant
 		local onLabelArrived = function()
-			capturedLabel.Text = `{capturedMultiplier}x`
+			capturedLabel.Text = `{tostring(math.round(capturedMultiplier * 10) / 10)}x`
 			TweenService:Create(capturedLabel, UpgradeMultiplayerTI, {
 				TextSize = capturedSize,
 				TextColor3 = capturedColor,
@@ -499,6 +505,35 @@ local function init()
 			}):Play()
 		end
 	end)
+	-- ── Level labels — text + positions ──────────────────────────────────────────
+	-- Fired once per game start, right before BaseCashEvent.
+	-- • All 5 labels get their text updated with the button's attribute values.
+	-- • Level1 (x=0) and Level5 (x=1) keep their Studio positions.
+	-- • Level2–4 are placed at the cumulative-duration percentage along the bar.
+	Events.ButtonLevelsEvent.OnClientEvent:Connect(function(v1, v2, v3, v4, v5)
+		if not isGameActive then
+			return nil
+		end
+		local values = { v1, v2, v3, v4, v5 }
+		-- Update text for all labels (Level1Text stays at left edge, no repositioning needed)
+		for i = 0, 4 do
+			local label = levelLabels[i + 1]
+			if label then
+				label.Text = `+{tostring(math.round(values[i + 1] * 10) / 10)}`
+			end
+		end
+		-- Reposition labels 2–4 (indices 1–3) at cumulative-duration percentages
+		local cumulative = 0
+		for i = 1, 3 do
+			cumulative += STAGE_TIMING_CONFIGS[i].duration
+			local xScale = cumulative / TOTAL_STAGE_DURATION
+			local label = levelLabels[i + 1]
+			if label then
+				local pos = label.Position
+				label.Position = UDim2.new(xScale, 0, pos.Y.Scale, pos.Y.Offset)
+			end
+		end
+	end)
 	Events.ProgressUpdateEvent.OnClientEvent:Connect(function(progress)
 		if not isGameActive or not progressionIndicator then
 			return nil
@@ -531,6 +566,23 @@ local function setup(mainUI)
 	multiplierLabel = sliderParent:WaitForChild("MultiplierLabel")
 	local progressBarParent = sliderParent:WaitForChild("ProgressBar")
 	progressionIndicator = progressBarParent:WaitForChild("ProgressionIndicator")
+	-- Level marker labels (Level1Text..Level5Text) sit inside the Slider frame
+	local _exp = { 1, 2, 3, 4, 5 }
+	-- ▼ ReadonlyArray.map ▼
+	local _newValue = table.create(#_exp)
+	local _callback = function(n)
+		local child = sliderParent:FindFirstChild(`Level{n}Text`)
+		local _result = child
+		if _result ~= nil then
+			_result = _result:IsA("TextLabel")
+		end
+		return if _result then child else nil
+	end
+	for _k, _v in _exp do
+		_newValue[_k] = _callback(_v, _k - 1, _exp)
+	end
+	-- ▲ ReadonlyArray.map ▲
+	levelLabels = _newValue
 	-- Save original sizes/colors on first run so we can restore each game
 	if not buttonOriginalSize then
 		buttonOriginalSize = releaseButton.Size
@@ -556,7 +608,7 @@ local function setup(mainUI)
 	baseFov = _condition
 	isGameActive = true
 	released = false
-	previousMultiplier = 1
+	previousMultiplier = 0
 	multiplierLabel.TextSize = multiplierTextOriginalSize
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor
 	multiplierTextSize = multiplierTextOriginalSize
@@ -567,7 +619,7 @@ local function setup(mainUI)
 	releaseButton.Visible = true
 	print(releaseButton.Activated)
 	-- Reset UI
-	multiplierLabel.Text = "1x"
+	multiplierLabel.Text = "0x"
 	progressionIndicator.Position = UDim2.new(0, 0, 0.5, 0)
 	-- Clean up any leftover connections from a previous game
 	local _result_1 = spaceConn

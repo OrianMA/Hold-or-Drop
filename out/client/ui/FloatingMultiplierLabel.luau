@@ -23,7 +23,7 @@ local function build(template, parent, delta)
 	frame.Visible = true
 	local amountLabel = frame:FindFirstChild("Amount")
 	if amountLabel then
-		amountLabel.Text = `+{delta}`
+		amountLabel.Text = `+{tostring(math.round(delta * 10) / 10)}`
 	end
 	-- UIScale sur l'icône uniquement — la frame et le texte gardent leur taille Studio
 	local icon = frame:FindFirstChild("Icon")

@@ -32,6 +32,8 @@ do
 	_container.ProgressUpdateEvent = ProgressUpdateEvent
 	local GameResultEvent = DefineEvent("GameResultEvent", script)
 	_container.GameResultEvent = GameResultEvent
+	local ButtonLevelsEvent = DefineEvent("ButtonLevelsEvent", script)
+	_container.ButtonLevelsEvent = ButtonLevelsEvent
 end
 return {
 	Events = Events,

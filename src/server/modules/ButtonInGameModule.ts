@@ -3,22 +3,13 @@ import { ButtonSession, ButtonSessionService } from "server/services/ButtonSessi
 import { UiService } from "server/services/UiService";
 import { ReplicatedStorage, TweenService, Workspace } from "@rbxts/services";
 import { invincible } from "server/modules/CheatConfig";
+import { STAGE_TIMING_CONFIGS, TOTAL_STAGE_DURATION } from "shared/ButtonGameConfig";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
 
-interface MultiplierStage {
-	multiplicatorAdded: number;
-	duration: number;
-	tickInterval: number; // secondes entre chaque tick du multiplier
-}
-
-const MULTIPLIER_STAGES: MultiplierStage[] = [
-	{ multiplicatorAdded: 1, duration: 5, tickInterval: 1.0 }, // lent
-	{ multiplicatorAdded: 2, duration: 4, tickInterval: 0.75 },
-	{ multiplicatorAdded: 5, duration: 4, tickInterval: 0.6 },
-	{ multiplicatorAdded: 8, duration: 4, tickInterval: 0.5 },
-	{ multiplicatorAdded: 15, duration: 4, tickInterval: 0.4 }, // rapide — last stage, runs forever
-];
+// Default multiplicator increments — used when a button attribute is missing.
+// The actual values come from the button's Level1..Level5 attributes.
+const DEFAULT_MULTIPLIERS: [number, number, number, number, number] = [1, 2, 5, 8, 15];
 
 const MAX_RISK = 0.8;
 const TICK_RATE = 0.5;
@@ -32,11 +23,8 @@ const EXPLOSION_SOUND_ID = "rbxassetid://139771888058836";
 const EXPLOSION_SOUND_VOLUME = 0.8;
 const EXPLOSION_SOUND_ROLLOFF = 120;
 
-// Sum of all finite stage durations — defines the full length of the risk curve
-let TOTAL_DURATION = 0;
-for (const stage of MULTIPLIER_STAGES) {
-	TOTAL_DURATION += stage.duration;
-}
+// Alias — keeps the rest of the file unchanged while sourcing the value from the shared config
+const TOTAL_DURATION = TOTAL_STAGE_DURATION;
 
 // ── Sound preloading ──────────────────────────────────────────────────────────
 // A template Sound in ReplicatedStorage replicates to all clients on join,
@@ -103,8 +91,31 @@ export function endButtonGame(player: Player): void {
 
 export function startButtonGame(player: Player, session: ButtonSession): void {
 	const { baseCash } = session;
-	let currentMultiplier = 1;
+	let currentMultiplier = 0;
 	let isActive = true;
+
+	// ── Read per-button multiplier increments from attributes (Level1..Level5) ─────
+	// Attributes sit on the Model (Workspace → Buttons → Model), not on the Part itself.
+	// Same cast pattern as ButtonModule.ts for BaseCash — already validated in-codebase.
+	const buttonModel = session.proximityPrompt.FindFirstAncestorWhichIsA("Model");
+	const getLevel = (i: number): number =>
+		(buttonModel?.GetAttribute(`Level${i + 1}`) as number | undefined) ?? DEFAULT_MULTIPLIERS[i];
+	const levelValues: [number, number, number, number, number] = [
+		getLevel(0),
+		getLevel(1),
+		getLevel(2),
+		getLevel(3),
+		getLevel(4),
+	];
+
+	Events.ButtonLevelsEvent.FireClient(
+		player,
+		levelValues[0],
+		levelValues[1],
+		levelValues[2],
+		levelValues[3],
+		levelValues[4],
+	);
 
 	Events.BaseCashEvent.FireClient(player, baseCash);
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
@@ -125,22 +136,22 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// TICK_RATE. Chaque tick attend exactement tickInterval secondes — pas de
 	// rattrapage en lot possible.
 	task.spawn(() => {
-		const lastIndex = MULTIPLIER_STAGES.size() - 1;
+		const lastIndex = STAGE_TIMING_CONFIGS.size() - 1;
 		let stageIndex = 0;
 		let timeInStage = 0;
 
 		while (isActive) {
-			const stage = MULTIPLIER_STAGES[stageIndex];
+			const stageTiming = STAGE_TIMING_CONFIGS[stageIndex];
 
-			task.wait(stage.tickInterval);
+			task.wait(stageTiming.tickInterval);
 			if (!isActive) break;
 
-			timeInStage += stage.tickInterval;
-			currentMultiplier += stage.multiplicatorAdded;
+			timeInStage += stageTiming.tickInterval;
+			currentMultiplier += levelValues[stageIndex];
 			Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 
 			// Passage au stage suivant quand la durée est écoulée
-			if (stageIndex < lastIndex && timeInStage >= stage.duration) {
+			if (stageIndex < lastIndex && timeInStage >= stageTiming.duration) {
 				stageIndex++;
 				timeInStage = 0;
 			}

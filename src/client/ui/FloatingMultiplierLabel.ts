@@ -21,7 +21,7 @@ function build(template: Frame, parent: ScreenGui, delta: number): [Frame, UISca
 	frame.Visible = true;
 
 	const amountLabel = frame.FindFirstChild("Amount") as TextLabel | undefined;
-	if (amountLabel) amountLabel.Text = `+${delta}`;
+	if (amountLabel) amountLabel.Text = `+${tostring(math.round(delta * 10) / 10)}`;
 
 	// UIScale sur l'icône uniquement — la frame et le texte gardent leur taille Studio
 	const icon = frame.FindFirstChild("Icon") as ImageLabel | undefined;
