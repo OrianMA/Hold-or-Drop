@@ -3,6 +3,7 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local PopupType = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "PopupType").PopupType
 local ButtonInGamePopup = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "PopupBehaviors", "ButtonInGamePopup").ButtonInGamePopup
 local ButtonMenuPopup = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "PopupBehaviors", "ButtonMenuPopup").ButtonMenuPopup
+local ButtonFinishGamePopup = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "PopupBehaviors", "ButtonFinishGamePopup").ButtonFinishGamePopup
 local PopupConfig = { {
 	type = PopupType.ButtonMenu,
 	frameName = "ButtonMenu",
@@ -11,6 +12,10 @@ local PopupConfig = { {
 	type = PopupType.ButtonInGame,
 	frameName = "ButtonInGame",
 	class = ButtonInGamePopup,
+}, {
+	type = PopupType.ButtonFinishGame,
+	frameName = "ButtonFinishGame",
+	class = ButtonFinishGamePopup,
 } }
 return {
 	PopupConfig = PopupConfig,

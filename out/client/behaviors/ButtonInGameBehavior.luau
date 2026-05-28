@@ -3,9 +3,12 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
 local spawnFloatingMultiplierLabel = TS.import(script, script.Parent.Parent, "ui", "FloatingMultiplierLabel").spawnFloatingMultiplierLabel
+local MultiplierVisuals = TS.import(script, script.Parent.Parent, "ui", "MultiplierVisuals").MultiplierVisuals
+local MainUIController = TS.import(script, script.Parent.Parent, "ui", "MainUIController").MainUIController
 local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig")
 local STAGE_TIMING_CONFIGS = _ButtonGameConfig.STAGE_TIMING_CONFIGS
 local TOTAL_STAGE_DURATION = _ButtonGameConfig.TOTAL_STAGE_DURATION
+local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
@@ -415,6 +418,9 @@ local function init()
 		end
 	end)
 	Events.GameResultEvent.OnClientEvent:Connect(function(exploded, cashEarned, multiplier)
+		-- Re-enable the persistent HUD now that the active gameplay is over —
+		-- the EndGameButton state (popup + animation) runs on top of it.
+		MainUIController:enable()
 		if not exploded then
 			local wasParry = parryKnockbackCamConn ~= nil
 			local _result = parryKnockbackCamConn
@@ -444,7 +450,7 @@ local function init()
 		if not isGameActive or not baseCashText then
 			return nil
 		end
-		baseCashText.Text = `${baseCash}`
+		baseCashText.Text = FormatCash(baseCash)
 	end)
 	Events.MultiplierUpdateEvent.OnClientEvent:Connect(function(multiplier)
 		if not isGameActive or not multiplierLabel then
@@ -464,6 +470,8 @@ local function init()
 		local capturedMultiplier = multiplier
 		local capturedSize = multiplierTextSize
 		local capturedColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
+		-- Snapshot for the EndGameButton popup so it can open with matching visuals
+		MultiplierVisuals:capture(capturedSize, capturedColor)
 		-- Texte + bump déclenchés à l'impact du label flottant
 		local onLabelArrived = function()
 			capturedLabel.Text = `{tostring(math.round(capturedMultiplier * 10) / 10)}x`
@@ -612,6 +620,7 @@ local function setup(mainUI)
 	multiplierLabel.TextSize = multiplierTextOriginalSize
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor
 	multiplierTextSize = multiplierTextOriginalSize
+	MultiplierVisuals:clear()
 	resetPostProcess(true)
 	-- Restore button to full size and re-enable it
 	releaseButton.Size = buttonOriginalSize

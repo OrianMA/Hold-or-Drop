@@ -6,7 +6,13 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "PowerShell(gh pr list --repo OrianMA/Hold-or-Drop --head feat/character-size-normalization 2>&1)",
-      "PowerShell($ghCmd = Get-Command gh -ErrorAction SilentlyContinue; if \\($ghCmd\\) { $ghCmd.Source } else { \"not found\" }; Get-ChildItem \"C:\\\\Program Files\\\\GitHub CLI\" -ErrorAction SilentlyContinue)"
+      "PowerShell($ghCmd = Get-Command gh -ErrorAction SilentlyContinue; if \\($ghCmd\\) { $ghCmd.Source } else { \"not found\" }; Get-ChildItem \"C:\\\\Program Files\\\\GitHub CLI\" -ErrorAction SilentlyContinue)",
+      "mcp__Roblox_Studio__list_roblox_studios",
+      "mcp__Roblox_Studio__set_active_studio",
+      "mcp__Roblox_Studio__search_game_tree",
+      "Bash(npx rbxtsc *)",
+      "Bash(gh pr *)",
+      "PowerShell(gh pr list --head feat/character-size-normalization --json number,url,title,state)"
     ]
   }
 }

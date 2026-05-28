@@ -1,0 +1,379 @@
+-- Compiled with roblox-ts v3.0.0
+local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
+local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local ReplicatedStorage = _services.ReplicatedStorage
+local TweenService = _services.TweenService
+local MultiplierVisuals = TS.import(script, script.Parent, "MultiplierVisuals").MultiplierVisuals
+local MainUIController = TS.import(script, script.Parent, "MainUIController").MainUIController
+local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
+-- ── Tuning ────────────────────────────────────────────────────────────────────
+local FINISH_FADE_IN_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local FINISH_FADE_OUT_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local FINISH_HOLD = 2
+local FLOAT_INTERVAL = 0.3
+local CHUNK_TARGET_RATIO = 5
+local MAX_CHUNK = 15
+local MULTIPLIER_TWEEN_TI = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local BASE_CASH_TWEEN_TI = TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local FRAME_FADE_OUT_TI = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+-- BaseCash growth — same red-tinge style as the in-game multiplier label
+local BASE_CASH_MAX_SIZE_INCREASE = 40
+local BASE_CASH_TARGET_COLOR = Color3.new(1, 0.25, 0.25)
+local FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate"
+local FLOATING_FLY_TI = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local FLOATING_BUMP_IN_TI = TweenInfo.new(0.07, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local FLOATING_BUMP_OUT_TI = TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- ── Chunk split ───────────────────────────────────────────────────────────────
+-- Splits `multiplier` into floating-text values that:
+--  • each target multiplier / CHUNK_TARGET_RATIO (capped at MAX_CHUNK)
+--  • use a max of one decimal place (so minimum chunk = 0.1)
+--  • sum exactly to `multiplier`
+-- Works in tenths to avoid float drift, then distributes the remainder one tenth
+-- at a time across the first chunks.
+local function splitMultiplier(multiplier)
+	local totalUnits = math.round(multiplier * 10)
+	if totalUnits <= 0 then
+		return {}
+	end
+	local targetChunkUnits = math.max(1, math.min(MAX_CHUNK * 10, math.round(totalUnits / CHUNK_TARGET_RATIO)))
+	local count = math.max(1, math.round(totalUnits / targetChunkUnits))
+	local baseUnits = math.floor(totalUnits / count)
+	local remainder = totalUnits - baseUnits * count
+	local chunks = {}
+	do
+		local i = 0
+		local _shouldIncrement = false
+		while true do
+			if _shouldIncrement then
+				i += 1
+			else
+				_shouldIncrement = true
+			end
+			if not (i < count) then
+				break
+			end
+			local units = baseUnits + (if i < remainder then 1 else 0)
+			local _arg0 = units / 10
+			table.insert(chunks, _arg0)
+		end
+	end
+	return chunks
+end
+-- ── Formatting ────────────────────────────────────────────────────────────────
+local function formatMultiplier(value)
+	return `{tostring(math.round(value * 10) / 10)}x`
+end
+local function formatCash(value)
+	return FormatCash(value)
+end
+-- ── Floating chunk ────────────────────────────────────────────────────────────
+local cachedTemplate
+local function getFloatingTemplate()
+	if cachedTemplate then
+		return cachedTemplate
+	end
+	local found = ReplicatedStorage:FindFirstChild(FLOATING_TEMPLATE_NAME)
+	local _result = found
+	if _result ~= nil then
+		_result = _result:IsA("Frame")
+	end
+	if _result then
+		cachedTemplate = found
+	end
+	return cachedTemplate
+end
+local function spawnFloatingChunk(parent, chunk, originLabel, targetLabel, handlers)
+	local template = getFloatingTemplate()
+	if not template then
+		-- Template missing — still fire callbacks so the pipeline stays coherent
+		handlers.onSpawn(chunk)
+		task.delay(FLOATING_FLY_TI.Time, function()
+			return handlers.onArrived(chunk)
+		end)
+		return nil
+	end
+	local screenSize = parent.AbsoluteSize
+	if screenSize.X == 0 then
+		handlers.onSpawn(chunk)
+		handlers.onArrived(chunk)
+		return nil
+	end
+	local frame = template:Clone()
+	frame.Name = "EndGameFloatingChunk"
+	frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	frame.ZIndex = 30
+	frame.Visible = true
+	frame.Parent = parent
+	local amountLabel = frame:FindFirstChild("Amount")
+	if amountLabel then
+		amountLabel.Text = `+{tostring(math.round(chunk * 10) / 10)}`
+	end
+	local icon = frame:FindFirstChild("Icon")
+	local uiScale = Instance.new("UIScale")
+	uiScale.Scale = 0.9
+	uiScale.Parent = icon or frame
+	-- Spawn next to the MultiplierText
+	local _absolutePosition = originLabel.AbsolutePosition
+	local _arg0 = originLabel.AbsoluteSize / 2
+	local originCenter = _absolutePosition + _arg0
+	local offsetX = originLabel.AbsoluteSize.X * 0.6 + math.random(-20, 20)
+	local offsetY = math.random(-10, 10)
+	frame.Position = UDim2.new((originCenter.X + offsetX) / screenSize.X, 0, (originCenter.Y + offsetY) / screenSize.Y, 0)
+	-- Immediate drain — happens on spawn, per spec
+	handlers.onSpawn(chunk)
+	TweenService:Create(uiScale, FLOATING_BUMP_IN_TI, {
+		Scale = 1.1,
+	}):Play()
+	task.delay(FLOATING_BUMP_IN_TI.Time, function()
+		TweenService:Create(uiScale, FLOATING_BUMP_OUT_TI, {
+			Scale = 1.0,
+		}):Play()
+		task.delay(FLOATING_BUMP_OUT_TI.Time + 0.04, function()
+			local _absolutePosition_1 = targetLabel.AbsolutePosition
+			local _arg0_1 = targetLabel.AbsoluteSize / 2
+			local targetCenter = _absolutePosition_1 + _arg0_1
+			local targetPos = UDim2.new(targetCenter.X / screenSize.X, 0, targetCenter.Y / screenSize.Y, 0)
+			local fly = TweenService:Create(frame, FLOATING_FLY_TI, {
+				Position = targetPos,
+			})
+			fly.Completed:Connect(function()
+				frame:Destroy()
+				handlers.onArrived(chunk)
+			end)
+			fly:Play()
+		end)
+	end)
+end
+-- ── Multiplier & BaseCash visuals ─────────────────────────────────────────────
+local function applyMultiplierStyle(label, value, startValue, endpoints)
+	local factor = if startValue > 0 then math.clamp(value / startValue, 0, 1) else 0
+	local size = endpoints.endSize + (endpoints.startSize - endpoints.endSize) * factor
+	local color = endpoints.endColor:Lerp(endpoints.startColor, factor)
+	label.Text = formatMultiplier(value)
+	TweenService:Create(label, MULTIPLIER_TWEEN_TI, {
+		TextSize = size,
+		TextColor3 = color,
+	}):Play()
+end
+local function applyBaseCashStyle(label, currentCash, baseCash, endpoints)
+	local progress = if endpoints.totalGrowthCash > 0 then math.clamp((currentCash - baseCash) / endpoints.totalGrowthCash, 0, 1) else 0
+	local size = endpoints.baseSize + progress * BASE_CASH_MAX_SIZE_INCREASE
+	local color = endpoints.baseColor:Lerp(BASE_CASH_TARGET_COLOR, progress)
+	label.Text = formatCash(currentCash)
+	TweenService:Create(label, BASE_CASH_TWEEN_TI, {
+		TextSize = size,
+		TextColor3 = color,
+	}):Play()
+end
+-- ── Public orchestrator ───────────────────────────────────────────────────────
+local function resolveRefs(frame)
+	local finishCanvas = frame:WaitForChild("FinishTextCanvasGroup", 5)
+	local multiplierText = frame:WaitForChild("MultiplierText", 5)
+	local baseCashText = frame:WaitForChild("BaseCashText", 5)
+	local screenGui = frame:FindFirstAncestorOfClass("ScreenGui")
+	local _result = finishCanvas
+	if _result ~= nil then
+		_result = _result:IsA("CanvasGroup")
+	end
+	local _condition = not _result
+	if not _condition then
+		local _result_1 = multiplierText
+		if _result_1 ~= nil then
+			_result_1 = _result_1:IsA("TextLabel")
+		end
+		_condition = not _result_1
+		if not _condition then
+			local _result_2 = baseCashText
+			if _result_2 ~= nil then
+				_result_2 = _result_2:IsA("TextLabel")
+			end
+			_condition = not _result_2
+			if not _condition then
+				_condition = not screenGui
+			end
+		end
+	end
+	if _condition then
+		warn("EndGameAnimation: missing one of FinishTextCanvasGroup/MultiplierText/BaseCashText")
+		return nil
+	end
+	return {
+		frame = frame,
+		finishCanvas = finishCanvas,
+		multiplierText = multiplierText,
+		baseCashText = baseCashText,
+		screenGui = screenGui,
+	}
+end
+-- Runs the full ButtonFinishGame animation, then calls onComplete().
+-- Safe to call from a regular task (uses task.wait internally).
+local flyBaseCashAndComplete
+local function runEndGameAnimation(frame, baseCash, multiplier, onComplete)
+	local refs = resolveRefs(frame)
+	if not refs then
+		onComplete()
+		return nil
+	end
+	local _binding = refs
+	local finishCanvas = _binding.finishCanvas
+	local multiplierText = _binding.multiplierText
+	local baseCashText = _binding.baseCashText
+	local screenGui = _binding.screenGui
+	-- ── Multiplier text — match the in-game label's last appearance ───────────
+	local snapshot = MultiplierVisuals:getLast()
+	local _result = snapshot
+	if _result ~= nil then
+		_result = _result.size
+	end
+	local _condition = _result
+	if _condition == nil then
+		_condition = multiplierText.TextSize
+	end
+	local inGameSize = _condition
+	local _result_1 = snapshot
+	if _result_1 ~= nil then
+		_result_1 = _result_1.color
+	end
+	local _condition_1 = _result_1
+	if _condition_1 == nil then
+		_condition_1 = multiplierText.TextColor3
+	end
+	local inGameColor = _condition_1
+	-- "Resting" state we tween back to as the multiplier drains to 0
+	local restingSize = multiplierText.TextSize
+	local restingColor = multiplierText.TextColor3
+	multiplierText.TextSize = inGameSize
+	multiplierText.TextColor3 = inGameColor
+	multiplierText.Text = formatMultiplier(multiplier)
+	-- ── BaseCash text — start at the button's baseCash ────────────────────────
+	local baseCashBaseSize = baseCashText.TextSize
+	local baseCashBaseColor = baseCashText.TextColor3
+	baseCashText.Text = formatCash(baseCash)
+	baseCashText.TextSize = baseCashBaseSize
+	baseCashText.TextColor3 = baseCashBaseColor
+	-- Reset transparency in case the previous run left it hidden by the fly tween
+	baseCashText.TextTransparency = 0
+	baseCashText.TextStrokeTransparency = 0
+	baseCashText.Visible = true
+	-- ── Finish text fade in → hold 2s → fade out ──────────────────────────────
+	finishCanvas.GroupTransparency = 1
+	finishCanvas.Visible = true
+	TweenService:Create(finishCanvas, FINISH_FADE_IN_TI, {
+		GroupTransparency = 0,
+	}):Play()
+	task.wait(FINISH_FADE_IN_TI.Time + FINISH_HOLD)
+	TweenService:Create(finishCanvas, FINISH_FADE_OUT_TI, {
+		GroupTransparency = 1,
+	}):Play()
+	-- ── Drain multiplier into base cash via floating chunks ───────────────────
+	local chunks = splitMultiplier(multiplier)
+	if #chunks == 0 then
+		-- Nothing to animate — close after the fade-out
+		task.wait(FINISH_FADE_OUT_TI.Time)
+		flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
+		return nil
+	end
+	local multiplierEndpoints = {
+		startSize = inGameSize,
+		startColor = inGameColor,
+		endSize = restingSize,
+		endColor = restingColor,
+	}
+	local baseCashEndpoints = {
+		baseSize = baseCashBaseSize,
+		baseColor = baseCashBaseColor,
+		totalGrowthCash = baseCash * multiplier,
+	}
+	local remainingMultiplier = multiplier
+	local currentCash = baseCash
+	local arrivedCount = 0
+	for i = 0, #chunks - 1 do
+		local chunk = chunks[i + 1]
+		spawnFloatingChunk(screenGui, chunk, multiplierText, baseCashText, {
+			onSpawn = function(c)
+				-- Spec: as soon as a floating text appears, MultiplierText drops by c
+				remainingMultiplier = math.max(0, remainingMultiplier - c)
+				applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints)
+			end,
+			onArrived = function(c)
+				-- Spec: on tween end, BaseCashText grows by c × baseCash
+				currentCash += baseCash * c
+				applyBaseCashStyle(baseCashText, currentCash, baseCash, baseCashEndpoints)
+				arrivedCount += 1
+				if arrivedCount >= #chunks then
+					task.delay(0.4, function()
+						return flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
+					end)
+				end
+			end,
+		})
+		task.wait(FLOAT_INTERVAL)
+	end
+end
+-- Tween settings for the final "deposit" of the cash into the persistent HUD
+local FLY_TO_MONEY_TI = TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local FLY_TO_MONEY_FADE_TI = TweenInfo.new(0.55, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+local FLY_TO_MONEY_SHRINK = 0.4
+-- Clones BaseCashText, parents it to the ScreenGui so it can move freely across
+-- the screen, hides the original (still inside the popup frame so it's reusable
+-- for the next game), then tweens the clone to MoneyParent (inside MainUI) while
+-- fading. Falls back to a simple fade if MoneyParent isn't found.
+function flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
+	local moneyParent = MainUIController:getMoneyParent()
+	local screenSize = screenGui.AbsoluteSize
+	local cashAbsSize = baseCashText.AbsoluteSize
+	local _absolutePosition = baseCashText.AbsolutePosition
+	local _arg0 = cashAbsSize / 2
+	local cashAbsCenter = _absolutePosition + _arg0
+	local finishFrame = function()
+		baseCashText.TextTransparency = 0
+		baseCashText.TextStrokeTransparency = 0
+		baseCashText.Visible = true
+		onComplete()
+	end
+	if not moneyParent or screenSize.X == 0 or cashAbsSize.X == 0 then
+		-- No target / no layout — just fade and finish
+		local tween = TweenService:Create(baseCashText, FLY_TO_MONEY_FADE_TI, {
+			TextTransparency = 1,
+			TextStrokeTransparency = 1,
+		})
+		tween.Completed:Connect(function()
+			return finishFrame()
+		end)
+		tween:Play()
+		return nil
+	end
+	local flyLabel = baseCashText:Clone()
+	flyLabel.Name = "BaseCashFlyClone"
+	flyLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	flyLabel.Position = UDim2.new(0, cashAbsCenter.X, 0, cashAbsCenter.Y)
+	flyLabel.Size = UDim2.new(0, cashAbsSize.X, 0, cashAbsSize.Y)
+	flyLabel.ZIndex = 50
+	flyLabel.Parent = screenGui
+	-- Hide the original so the popup looks empty while the clone flies — the
+	-- next run resets these properties at the top of runEndGameAnimation.
+	baseCashText.TextTransparency = 1
+	baseCashText.TextStrokeTransparency = 1
+	local _absolutePosition_1 = moneyParent.AbsolutePosition
+	local _arg0_1 = moneyParent.AbsoluteSize / 2
+	local moneyCenter = _absolutePosition_1 + _arg0_1
+	local targetPos = UDim2.new(0, moneyCenter.X, 0, moneyCenter.Y)
+	local targetSize = UDim2.new(0, cashAbsSize.X * FLY_TO_MONEY_SHRINK, 0, cashAbsSize.Y * FLY_TO_MONEY_SHRINK)
+	TweenService:Create(flyLabel, FLY_TO_MONEY_TI, {
+		Position = targetPos,
+		Size = targetSize,
+	}):Play()
+	local fadeTween = TweenService:Create(flyLabel, FLY_TO_MONEY_FADE_TI, {
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+	})
+	fadeTween.Completed:Connect(function()
+		flyLabel:Destroy()
+		finishFrame()
+	end)
+	fadeTween:Play()
+end
+return {
+	splitMultiplier = splitMultiplier,
+	runEndGameAnimation = runEndGameAnimation,
+}

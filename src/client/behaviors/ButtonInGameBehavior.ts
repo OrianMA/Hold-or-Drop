@@ -1,7 +1,10 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
 import { spawnFloatingMultiplierLabel } from "client/ui/FloatingMultiplierLabel";
+import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
+import { MainUIController } from "client/ui/MainUIController";
 import { STAGE_TIMING_CONFIGS, TOTAL_STAGE_DURATION } from "shared/ButtonGameConfig";
+import { FormatCash } from "shared/NumberFormat";
 import {
 	ContentProvider,
 	GuiService,
@@ -376,6 +379,10 @@ export function init(): void {
 	});
 
 	Events.GameResultEvent.OnClientEvent.Connect((exploded: boolean, cashEarned: number, multiplier: number) => {
+		// Re-enable the persistent HUD now that the active gameplay is over —
+		// the EndGameButton state (popup + animation) runs on top of it.
+		MainUIController.enable();
+
 		if (!exploded) {
 			const wasParry = parryKnockbackCamConn !== undefined;
 			parryKnockbackCamConn?.Disconnect();
@@ -398,7 +405,7 @@ export function init(): void {
 
 	Events.BaseCashEvent.OnClientEvent.Connect((baseCash: number) => {
 		if (!isGameActive || !baseCashText) return;
-		baseCashText.Text = `$${baseCash}`;
+		baseCashText.Text = FormatCash(baseCash);
 	});
 
 	Events.MultiplierUpdateEvent.OnClientEvent.Connect((multiplier: number) => {
@@ -420,6 +427,9 @@ export function init(): void {
 		const capturedMultiplier = multiplier;
 		const capturedSize = multiplierTextSize;
 		const capturedColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(new Color3(1, 0, 0), factor);
+
+		// Snapshot for the EndGameButton popup so it can open with matching visuals
+		MultiplierVisuals.capture(capturedSize, capturedColor);
 
 		// Texte + bump déclenchés à l'impact du label flottant
 		const onLabelArrived = () => {
@@ -542,6 +552,7 @@ export function setup(mainUI: ScreenGui): void {
 	multiplierLabel.TextSize = multiplierTextOriginalSize;
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor;
 	multiplierTextSize = multiplierTextOriginalSize;
+	MultiplierVisuals.clear();
 	resetPostProcess(true);
 
 	// Restore button to full size and re-enable it

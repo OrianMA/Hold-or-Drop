@@ -3,6 +3,8 @@ import { ButtonSession, ButtonSessionService } from "server/services/ButtonSessi
 import { UiService } from "server/services/UiService";
 import { ReplicatedStorage, TweenService, Workspace } from "@rbxts/services";
 import { invincible } from "server/modules/CheatConfig";
+import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
+import { ConfettiBurst } from "server/modules/ConfettiBurst";
 import { STAGE_TIMING_CONFIGS, TOTAL_STAGE_DURATION } from "shared/ButtonGameConfig";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
@@ -83,7 +85,8 @@ function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-// Single exit point for all outcomes: release, explosion, and quit from ButtonMenu
+// Used by the ButtonMenu Quit flow — release/explosion/parry endings transition
+// through EndGameButtonModule.enter() instead, which performs the same cleanup.
 export function endButtonGame(player: Player): void {
 	ButtonSessionService.cleanup(player);
 	UiService.HideCurrent(player);
@@ -128,7 +131,8 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 		const earned = baseCash * currentMultiplier;
 		Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-		endButtonGame(player);
+		ConfettiBurst.play(buttonModel);
+		EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned);
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
@@ -195,7 +199,8 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 				if (cancelledByPlayer) {
 					const earned = baseCash * currentMultiplier;
 					Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-					endButtonGame(player);
+					ConfettiBurst.play(buttonModel);
+					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned);
 				} else {
 					const character = player.Character;
 					const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
@@ -233,6 +238,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 						// Trigger sparkle effect on the parrying player's client
 						Events.PerfectParryEffectEvent.FireClient(player);
+						ConfettiBurst.play(buttonModel);
 
 						if (hrp && buttonPart) {
 							const rawDir = new Vector3(
@@ -263,7 +269,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 						const earned = baseCash * currentMultiplier;
 						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-						UiService.HideCurrent(player);
+						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned);
 					} else {
 						if (hrp) hrp.Anchored = false;
 
@@ -280,7 +286,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						Events.PlayerKilledEvent.FireClient(player);
 						const earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER);
 						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
-						UiService.HideCurrent(player);
+						EndGameButtonModule.enter(player, "killed", baseCash, currentMultiplier, earned);
 					}
 				}
 				return;

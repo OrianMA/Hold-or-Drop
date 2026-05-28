@@ -8,6 +8,8 @@ local ReplicatedStorage = _services.ReplicatedStorage
 local TweenService = _services.TweenService
 local Workspace = _services.Workspace
 local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").invincible
+local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
+local ConfettiBurst = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "ConfettiBurst").ConfettiBurst
 local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig")
 local STAGE_TIMING_CONFIGS = _ButtonGameConfig.STAGE_TIMING_CONFIGS
 local TOTAL_STAGE_DURATION = _ButtonGameConfig.TOTAL_STAGE_DURATION
@@ -78,7 +80,8 @@ local function triggerExplosionAt(pos, blastPressure)
 	explosion.Parent = Workspace
 end
 -- ── Public API ────────────────────────────────────────────────────────────────
--- Single exit point for all outcomes: release, explosion, and quit from ButtonMenu
+-- Used by the ButtonMenu Quit flow — release/explosion/parry endings transition
+-- through EndGameButtonModule.enter() instead, which performs the same cleanup.
 local function endButtonGame(player)
 	ButtonSessionService:cleanup(player)
 	UiService:HideCurrent(player)
@@ -117,7 +120,8 @@ local function startButtonGame(player, session)
 		releaseConn:Disconnect()
 		local earned = baseCash * currentMultiplier
 		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-		endButtonGame(player)
+		ConfettiBurst:play(buttonModel)
+		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
 	-- Tourne à sa propre fréquence (tickInterval), totalement indépendante du
@@ -176,7 +180,8 @@ local function startButtonGame(player, session)
 				if cancelledByPlayer then
 					local earned = baseCash * currentMultiplier
 					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-					endButtonGame(player)
+					ConfettiBurst:play(buttonModel)
+					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned)
 				else
 					local character = player.Character
 					local _result = character
@@ -246,6 +251,7 @@ local function startButtonGame(player, session)
 						end
 						-- Trigger sparkle effect on the parrying player's client
 						Events.PerfectParryEffectEvent:FireClient(player)
+						ConfettiBurst:play(buttonModel)
 						if hrp and buttonPart then
 							local rawDir = Vector3.new(hrp.Position.X - buttonPart.Position.X, 0, hrp.Position.Z - buttonPart.Position.Z)
 							local dir = if rawDir.Magnitude > 0 then rawDir.Unit else Vector3.new(0, 0, 1)
@@ -269,7 +275,7 @@ local function startButtonGame(player, session)
 						end
 						local earned = baseCash * currentMultiplier
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-						UiService:HideCurrent(player)
+						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned)
 					else
 						if hrp then
 							hrp.Anchored = false
@@ -290,7 +296,7 @@ local function startButtonGame(player, session)
 						Events.PlayerKilledEvent:FireClient(player)
 						local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
 						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
-						UiService:HideCurrent(player)
+						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned)
 					end
 				end
 				return nil

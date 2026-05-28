@@ -4,5 +4,9 @@ local initButtonMenu = TS.import(script, script.Parent, "behaviors", "ButtonMenu
 local _ButtonInGameBehavior = TS.import(script, script.Parent, "behaviors", "ButtonInGameBehavior")
 local initButtonInGame = _ButtonInGameBehavior.init
 local setupButtonInGame = _ButtonInGameBehavior.setup
+local initEndGameButton = TS.import(script, script.Parent, "behaviors", "EndGameButtonBehavior").init
+local initMoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").init
 initButtonInGame()
+initEndGameButton()
+initMoneyDisplay()
 initButtonMenu(setupButtonInGame)

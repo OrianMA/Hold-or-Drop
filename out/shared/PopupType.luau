@@ -2,6 +2,7 @@
 local PopupType = {
 	ButtonMenu = "ButtonMenu",
 	ButtonInGame = "ButtonInGame",
+	ButtonFinishGame = "ButtonFinishGame",
 }
 return {
 	PopupType = PopupType,

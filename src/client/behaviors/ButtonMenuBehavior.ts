@@ -1,5 +1,6 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
+import { MainUIController } from "client/ui/MainUIController";
 import { Players } from "@rbxts/services";
 
 // onGameStart is called with mainUI once the player clicks StartButton
@@ -11,6 +12,10 @@ export function init(onGameStart: (mainUI: ScreenGui) => void): void {
 
 	Events.ButtonTriggerEvent.OnClientEvent.Connect((cameraPosPart: BasePart) => {
 		print("game supposed to start");
+
+		// Hide the persistent HUD while the player is on the button — re-enabled
+		// on Quit (below) or on GameResultEvent (ButtonInGameBehavior).
+		MainUIController.disable();
 
 		// Re-fetch UI elements each time — references become stale after respawn if ResetOnSpawn=true
 		const mainUI = playerGui.WaitForChild("MainUI") as ScreenGui;
@@ -34,6 +39,7 @@ export function init(onGameStart: (mainUI: ScreenGui) => void): void {
 			DisconnectEvents();
 			Events.QuitButtonClickedEvent.FireServer();
 			CameraController.BringBackPlayerCamera();
+			MainUIController.enable();
 		});
 	});
 

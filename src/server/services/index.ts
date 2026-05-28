@@ -3,7 +3,9 @@ import { ButtonTriggerService } from "./ButtonTriggerService";
 import { ButtonSessionService } from "./ButtonSessionService";
 import { UiService } from "./UiService";
 import { CharacterService } from "./CharacterService";
+import { PlayerDataService } from "./PlayerDataService";
 import { PopupConfig } from "server/UI/PopupConfig";
+import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 
 export const services: Array<{ init(): void }> = [
 	{
@@ -11,8 +13,10 @@ export const services: Array<{ init(): void }> = [
 			UiService.init(PopupConfig);
 		},
 	},
+	PlayerDataService,
 	ButtonTriggerService,
 	CharacterService,
+	EndGameButtonModule,
 	{
 		// Re-enable the button if a player disconnects mid-game
 		init() {

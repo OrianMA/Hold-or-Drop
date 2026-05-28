@@ -19,4 +19,9 @@ export namespace Events {
 	export const ProgressUpdateEvent = DefineEvent("ProgressUpdateEvent", script);
 	export const GameResultEvent = DefineEvent("GameResultEvent", script);
 	export const ButtonLevelsEvent = DefineEvent("ButtonLevelsEvent", script);
+
+	// EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)
+	export const EndGameStartEvent = DefineEvent("EndGameStartEvent", script);
+	// EndGameButton — client → server (animation finished, server hides the popup)
+	export const EndGameFinishedEvent = DefineEvent("EndGameFinishedEvent", script);
 }
