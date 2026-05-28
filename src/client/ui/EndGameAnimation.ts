@@ -7,7 +7,7 @@ import { FormatCash } from "shared/NumberFormat";
 
 const FINISH_FADE_IN_TI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const FINISH_FADE_OUT_TI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
-const FINISH_HOLD = 2;
+const FINISH_HOLD = 0.2;
 
 const FLOAT_INTERVAL = 0.3;
 const CHUNK_TARGET_RATIO = 5; // each floating value targets multiplier / 5
@@ -17,6 +17,10 @@ const MULTIPLIER_TWEEN_TI = new TweenInfo(0.18, Enum.EasingStyle.Quad, Enum.Easi
 const BASE_CASH_TWEEN_TI = new TweenInfo(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 const FRAME_FADE_OUT_TI = new TweenInfo(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 
+// Penalty animation when the player died (lossMultiplier < 1). Same TweenInfo
+// as the MainUI MoneyText counter so the two animations feel cohesive.
+const LOSS_PENALTY_TI = new TweenInfo(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
 // BaseCash growth — same red-tinge style as the in-game multiplier label
 const BASE_CASH_MAX_SIZE_INCREASE = 40;
 const BASE_CASH_TARGET_COLOR = new Color3(1, 0.25, 0.25);
@@ -25,6 +29,13 @@ const FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate";
 const FLOATING_FLY_TI = new TweenInfo(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 const FLOATING_BUMP_IN_TI = new TweenInfo(0.07, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 const FLOATING_BUMP_OUT_TI = new TweenInfo(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
+// New "explode-out then fly" sequence: the chunk spawns on the MultiplierText,
+// disperses in a random direction, briefly holds, then flies to BaseCashText.
+const FLOATING_DISPERSE_TI = new TweenInfo(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out);
+const FLOATING_DISPERSE_MIN = 70; // px
+const FLOATING_DISPERSE_MAX = 130; // px
+const FLOATING_HOLD = 0.12; // pause between dispersion and fly-to-cash
 
 // ── Chunk split ───────────────────────────────────────────────────────────────
 
@@ -88,7 +99,9 @@ function spawnFloatingChunk(
 	if (!template) {
 		// Template missing — still fire callbacks so the pipeline stays coherent
 		handlers.onSpawn(chunk);
-		task.delay(FLOATING_FLY_TI.Time, () => handlers.onArrived(chunk));
+		task.delay(FLOATING_DISPERSE_TI.Time + FLOATING_HOLD + FLOATING_FLY_TI.Time, () =>
+			handlers.onArrived(chunk),
+		);
 		return;
 	}
 
@@ -114,27 +127,39 @@ function spawnFloatingChunk(
 	uiScale.Scale = 0.9;
 	uiScale.Parent = icon ?? frame;
 
-	// Spawn next to the MultiplierText
+	// ── 1. Spawn exactly ON MultiplierText center ─────────────────────────────
 	const originCenter = originLabel.AbsolutePosition.add(originLabel.AbsoluteSize.div(2));
-	const offsetX = originLabel.AbsoluteSize.X * 0.6 + math.random(-20, 20);
-	const offsetY = math.random(-10, 10);
-	frame.Position = new UDim2(
-		(originCenter.X + offsetX) / screenSize.X,
-		0,
-		(originCenter.Y + offsetY) / screenSize.Y,
-		0,
-	);
+	frame.Position = new UDim2(0, originCenter.X, 0, originCenter.Y);
 
 	// Immediate drain — happens on spawn, per spec
 	handlers.onSpawn(chunk);
 
+	// Quick bump for that satisfying "pop" feel
 	TweenService.Create(uiScale, FLOATING_BUMP_IN_TI, { Scale: 1.1 }).Play();
 	task.delay(FLOATING_BUMP_IN_TI.Time, () => {
 		TweenService.Create(uiScale, FLOATING_BUMP_OUT_TI, { Scale: 1.0 }).Play();
+	});
 
-		task.delay(FLOATING_BUMP_OUT_TI.Time + 0.04, () => {
+	// ── 2. Disperse in a random direction (the "explode-out") ────────────────
+	const angle = math.random() * math.pi * 2;
+	const distance = math.random(FLOATING_DISPERSE_MIN, FLOATING_DISPERSE_MAX);
+	const dispersePos = new UDim2(
+		0,
+		originCenter.X + math.cos(angle) * distance,
+		0,
+		originCenter.Y + math.sin(angle) * distance,
+	);
+	const disperse = TweenService.Create(frame, FLOATING_DISPERSE_TI, { Position: dispersePos });
+	disperse.Play();
+
+	disperse.Completed.Connect(() => {
+		// ── 3. Brief hold so the eye registers where it landed ───────────────
+		task.delay(FLOATING_HOLD, () => {
+			// Target re-read at fly-time — handles UI layout shifts mid-animation.
 			const targetCenter = targetLabel.AbsolutePosition.add(targetLabel.AbsoluteSize.div(2));
-			const targetPos = new UDim2(targetCenter.X / screenSize.X, 0, targetCenter.Y / screenSize.Y, 0);
+			const targetPos = new UDim2(0, targetCenter.X, 0, targetCenter.Y);
+
+			// ── 4. Fly to BaseCashText ───────────────────────────────────────
 			const fly = TweenService.Create(frame, FLOATING_FLY_TI, { Position: targetPos });
 			fly.Completed.Connect(() => {
 				frame.Destroy();
@@ -160,6 +185,13 @@ function applyMultiplierStyle(
 	startValue: number,
 	endpoints: MultiplierStyleEndpoints,
 ): void {
+	// Hide the whole label (text + any UIStroke children) the instant we hit 0
+	// — TextSize alone leaves strokes painted, and TextTransparency doesn't
+	// affect stroke transparency. Visible=false is the only clean kill switch.
+	if (value <= 0) {
+		label.Visible = false;
+		return;
+	}
 	const factor = startValue > 0 ? math.clamp(value / startValue, 0, 1) : 0;
 	const size = endpoints.endSize + (endpoints.startSize - endpoints.endSize) * factor;
 	const color = endpoints.endColor.Lerp(endpoints.startColor, factor);
@@ -173,7 +205,12 @@ interface BaseCashStyleEndpoints {
 	totalGrowthCash: number; // cash needed to reach full red tint
 }
 
-function applyBaseCashStyle(label: TextLabel, currentCash: number, baseCash: number, endpoints: BaseCashStyleEndpoints): void {
+function applyBaseCashStyle(
+	label: TextLabel,
+	currentCash: number,
+	baseCash: number,
+	endpoints: BaseCashStyleEndpoints,
+): void {
 	const progress =
 		endpoints.totalGrowthCash > 0 ? math.clamp((currentCash - baseCash) / endpoints.totalGrowthCash, 0, 1) : 0;
 	const size = endpoints.baseSize + progress * BASE_CASH_MAX_SIZE_INCREASE;
@@ -215,9 +252,46 @@ function resolveRefs(frame: Frame): EndGameRefs | undefined {
 	};
 }
 
+// Tweens BaseCashText value + size from (startValue, startSize) down to
+// (endValue, endSize) in parallel using LOSS_PENALTY_TI. Blocks the calling
+// task until both tweens complete, then snaps to the exact final values to
+// avoid float-precision drift. Uses a NumberValue proxy so the label re-formats
+// every frame — the player sees the number count down rather than jump-cut.
+function animateLossPenalty(
+	label: TextLabel,
+	startValue: number,
+	endValue: number,
+	startSize: number,
+	endSize: number,
+): void {
+	const proxy = new Instance("NumberValue");
+	proxy.Value = startValue;
+	const conn = proxy.Changed.Connect((v) => {
+		label.Text = formatCash(v);
+	});
+
+	TweenService.Create(proxy, LOSS_PENALTY_TI, { Value: endValue }).Play();
+	const sizeTween = TweenService.Create(label, LOSS_PENALTY_TI, { TextSize: endSize });
+	sizeTween.Play();
+	sizeTween.Completed.Wait();
+
+	conn.Disconnect();
+	proxy.Destroy();
+	label.Text = formatCash(endValue);
+	label.TextSize = endSize;
+}
+
 // Runs the full ButtonFinishGame animation, then calls onComplete().
 // Safe to call from a regular task (uses task.wait internally).
-export function runEndGameAnimation(frame: Frame, baseCash: number, multiplier: number, onComplete: () => void): void {
+// lossMultiplier: 1 for wins (no penalty), < 1 for kills — applied to baseCash
+// + text size via animateLossPenalty before the multiplier drain.
+export function runEndGameAnimation(
+	frame: Frame,
+	baseCash: number,
+	multiplier: number,
+	lossMultiplier: number,
+	onComplete: () => void,
+): void {
 	const refs = resolveRefs(frame);
 	if (!refs) {
 		onComplete();
@@ -229,13 +303,15 @@ export function runEndGameAnimation(frame: Frame, baseCash: number, multiplier: 
 	const snapshot = MultiplierVisuals.getLast();
 	const inGameSize = snapshot?.size ?? multiplierText.TextSize;
 	const inGameColor = snapshot?.color ?? multiplierText.TextColor3;
-	// "Resting" state we tween back to as the multiplier drains to 0
-	const restingSize = multiplierText.TextSize;
+	// Color we tween toward as the multiplier drains to 0 (size goes to 0 too
+	// — see multiplierEndpoints — so the label fully shrinks and fades out).
 	const restingColor = multiplierText.TextColor3;
 
 	multiplierText.TextSize = inGameSize;
 	multiplierText.TextColor3 = inGameColor;
 	multiplierText.Text = formatMultiplier(multiplier);
+	// Re-show in case the previous run hid the label when value hit 0
+	multiplierText.Visible = true;
 
 	// ── BaseCash text — start at the button's baseCash ────────────────────────
 	const baseCashBaseSize = baseCashText.TextSize;
@@ -243,24 +319,34 @@ export function runEndGameAnimation(frame: Frame, baseCash: number, multiplier: 
 	baseCashText.Text = formatCash(baseCash);
 	baseCashText.TextSize = baseCashBaseSize;
 	baseCashText.TextColor3 = baseCashBaseColor;
-	// Reset transparency in case the previous run left it hidden by the fly tween
-	baseCashText.TextTransparency = 0;
-	baseCashText.TextStrokeTransparency = 0;
+	// Re-show in case the previous run hid the original while the clone flew
 	baseCashText.Visible = true;
 
-	// ── Finish text fade in → hold 2s → fade out ──────────────────────────────
+	// ── Finish text fade in → hold → fade out ────────────────────────────────
 	finishCanvas.GroupTransparency = 1;
 	finishCanvas.Visible = true;
 	TweenService.Create(finishCanvas, FINISH_FADE_IN_TI, { GroupTransparency: 0 }).Play();
 	task.wait(FINISH_FADE_IN_TI.Time + FINISH_HOLD);
 	TweenService.Create(finishCanvas, FINISH_FADE_OUT_TI, { GroupTransparency: 1 }).Play();
 
+	// ── Loss penalty (killed mode only): shrink baseCash value + text size ───
+	// Runs in parallel with the finish-canvas fade-out; we block here so the
+	// drain phase below starts from the post-penalty value.
+	let effectiveBaseCash = baseCash;
+	let effectiveBaseSize = baseCashBaseSize;
+	if (lossMultiplier < 1) {
+		effectiveBaseCash = baseCash * lossMultiplier;
+		effectiveBaseSize = baseCashBaseSize * lossMultiplier;
+		animateLossPenalty(baseCashText, baseCash, effectiveBaseCash, baseCashBaseSize, effectiveBaseSize);
+	}
+
 	// ── Drain multiplier into base cash via floating chunks ───────────────────
 	const chunks = splitMultiplier(multiplier);
 
 	if (chunks.size() === 0) {
-		// Nothing to animate — close after the fade-out
-		task.wait(FINISH_FADE_OUT_TI.Time);
+		// Nothing to animate — close after the fade-out (penalty, if any, has
+		// already waited longer than the fade-out so no extra wait needed).
+		if (lossMultiplier >= 1) task.wait(FINISH_FADE_OUT_TI.Time);
 		flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete);
 		return;
 	}
@@ -268,17 +354,34 @@ export function runEndGameAnimation(frame: Frame, baseCash: number, multiplier: 
 	const multiplierEndpoints: MultiplierStyleEndpoints = {
 		startSize: inGameSize,
 		startColor: inGameColor,
-		endSize: restingSize,
+		endSize: 0, // value=0 → size=0 → fully vanished, paired with transparency=1
 		endColor: restingColor,
 	};
+
+	// ── Drain math: keep the visual final equal to what the server actually
+	//    credits (= effectiveBaseCash * multiplier).
+	//
+	//   • Win (lossMultiplier = 1): legacy behavior — start at effectiveBaseCash,
+	//     each chunk c adds effectiveBaseCash * c → final = effectiveBaseCash
+	//     * (1 + multiplier).
+	//   • Kill (lossMultiplier < 1): start at effectiveBaseCash (post-penalty),
+	//     grow toward effectiveBaseCash * multiplier — so total growth =
+	//     effectiveBaseCash * (multiplier - 1), spread across chunks that sum to
+	//     `multiplier`. Per-chunk addition = perUnitCash * c.
+	//     Matches the killed-mode credit formula: baseCash * multiplier *
+	//     LOOSE_WIN_MULTIPLIER = effectiveBaseCash * multiplier.
+	const isLoss = lossMultiplier < 1;
+	const perUnitCash = isLoss && multiplier > 0 ? (effectiveBaseCash * (multiplier - 1)) / multiplier : effectiveBaseCash;
+	const totalGrowthCash = isLoss ? effectiveBaseCash * (multiplier - 1) : effectiveBaseCash * multiplier;
+
 	const baseCashEndpoints: BaseCashStyleEndpoints = {
-		baseSize: baseCashBaseSize,
+		baseSize: effectiveBaseSize,
 		baseColor: baseCashBaseColor,
-		totalGrowthCash: baseCash * multiplier,
+		totalGrowthCash,
 	};
 
 	let remainingMultiplier = multiplier;
-	let currentCash = baseCash;
+	let currentCash = effectiveBaseCash;
 	let arrivedCount = 0;
 
 	for (let i = 0; i < chunks.size(); i++) {
@@ -290,9 +393,9 @@ export function runEndGameAnimation(frame: Frame, baseCash: number, multiplier: 
 				applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints);
 			},
 			onArrived: (c) => {
-				// Spec: on tween end, BaseCashText grows by c × baseCash
-				currentCash += baseCash * c;
-				applyBaseCashStyle(baseCashText, currentCash, baseCash, baseCashEndpoints);
+				// Spec: on tween end, BaseCashText grows by c × perUnitCash
+				currentCash += perUnitCash * c;
+				applyBaseCashStyle(baseCashText, currentCash, effectiveBaseCash, baseCashEndpoints);
 				arrivedCount += 1;
 				if (arrivedCount >= chunks.size()) {
 					task.delay(0.4, () => flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete));
@@ -310,8 +413,9 @@ const FLY_TO_MONEY_SHRINK = 0.4;
 
 // Clones BaseCashText, parents it to the ScreenGui so it can move freely across
 // the screen, hides the original (still inside the popup frame so it's reusable
-// for the next game), then tweens the clone to MoneyParent (inside MainUI) while
-// fading. Falls back to a simple fade if MoneyParent isn't found.
+// for the next game) via Visible=false so any UIStroke children disappear with
+// it, then tweens the clone to MoneyParent (inside MainUI) while fading.
+// Falls back to an instant hide if MoneyParent isn't found.
 function flyBaseCashAndComplete(
 	frame: Frame,
 	baseCashText: TextLabel,
@@ -324,20 +428,16 @@ function flyBaseCashAndComplete(
 	const cashAbsCenter = baseCashText.AbsolutePosition.add(cashAbsSize.div(2));
 
 	const finishFrame = () => {
-		baseCashText.TextTransparency = 0;
-		baseCashText.TextStrokeTransparency = 0;
+		// Re-show for next run — Visible toggle covers the text *and* any
+		// stroke children, unlike TextTransparency which leaves strokes painted.
 		baseCashText.Visible = true;
 		onComplete();
 	};
 
 	if (!moneyParent || screenSize.X === 0 || cashAbsSize.X === 0) {
-		// No target / no layout — just fade and finish
-		const tween = TweenService.Create(baseCashText, FLY_TO_MONEY_FADE_TI, {
-			TextTransparency: 1,
-			TextStrokeTransparency: 1,
-		});
-		tween.Completed.Connect(() => finishFrame());
-		tween.Play();
+		// No target / no layout — hide instantly and finish
+		baseCashText.Visible = false;
+		finishFrame();
 		return;
 	}
 
@@ -350,9 +450,8 @@ function flyBaseCashAndComplete(
 	flyLabel.Parent = screenGui;
 
 	// Hide the original so the popup looks empty while the clone flies — the
-	// next run resets these properties at the top of runEndGameAnimation.
-	baseCashText.TextTransparency = 1;
-	baseCashText.TextStrokeTransparency = 1;
+	// next run flips Visible back at the top of runEndGameAnimation.
+	baseCashText.Visible = false;
 
 	const moneyCenter = moneyParent.AbsolutePosition.add(moneyParent.AbsoluteSize.div(2));
 	const targetPos = new UDim2(0, moneyCenter.X, 0, moneyCenter.Y);

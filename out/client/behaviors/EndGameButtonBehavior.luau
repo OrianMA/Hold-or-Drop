@@ -8,12 +8,12 @@ local runEndGameAnimation = TS.import(script, script.Parent.Parent, "ui", "EndGa
 -- the frame and hand off to the animation orchestrator. When the animation
 -- completes we tell the server to hide the popup (single source of truth).
 local function init()
-	Events.EndGameStartEvent.OnClientEvent:Connect(function(baseCash, multiplier)
+	Events.EndGameStartEvent.OnClientEvent:Connect(function(baseCash, multiplier, lossMultiplier)
 		local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 		local mainUI = playerGui:WaitForChild("MainUI")
 		local frame = mainUI:WaitForChild("ButtonFinishGame")
 		task.spawn(function()
-			runEndGameAnimation(frame, baseCash, multiplier, function()
+			runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, function()
 				Events.EndGameFinishedEvent:FireServer()
 			end)
 		end)

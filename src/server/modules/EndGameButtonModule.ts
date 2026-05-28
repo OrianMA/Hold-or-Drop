@@ -30,8 +30,17 @@ function waitForRespawn(player: Player): void {
 export const EndGameButtonModule = {
 	// Called from ButtonInGameModule once an outcome is determined.
 	// baseCash + multiplier drive the popup animation client-side; earned is the
-	// amount we credit when the animation finishes.
-	enter(player: Player, mode: EndGameMode, baseCash: number, multiplier: number, earned: number): void {
+	// amount we credit when the animation finishes. lossMultiplier (1 for wins,
+	// LOOSE_WIN_MULTIPLIER for kills) is the factor applied to baseCash by the
+	// client-side penalty animation before the multiplier drain.
+	enter(
+		player: Player,
+		mode: EndGameMode,
+		baseCash: number,
+		multiplier: number,
+		earned: number,
+		lossMultiplier: number,
+	): void {
 		ButtonSessionService.cleanup(player);
 		UiService.HideCurrent(player);
 
@@ -51,7 +60,7 @@ export const EndGameButtonModule = {
 			}
 
 			UiService.Show(player, PopupType.ButtonFinishGame);
-			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier);
+			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier, lossMultiplier);
 		});
 	},
 

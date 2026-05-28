@@ -121,7 +121,7 @@ local function startButtonGame(player, session)
 		local earned = baseCash * currentMultiplier
 		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 		ConfettiBurst:play(buttonModel)
-		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned)
+		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
 	-- Tourne à sa propre fréquence (tickInterval), totalement indépendante du
@@ -181,7 +181,7 @@ local function startButtonGame(player, session)
 					local earned = baseCash * currentMultiplier
 					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 					ConfettiBurst:play(buttonModel)
-					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned)
+					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 				else
 					local character = player.Character
 					local _result = character
@@ -275,7 +275,7 @@ local function startButtonGame(player, session)
 						end
 						local earned = baseCash * currentMultiplier
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned)
+						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 					else
 						if hrp then
 							hrp.Anchored = false
@@ -294,9 +294,9 @@ local function startButtonGame(player, session)
 							humanoid.Health = 0
 						end
 						Events.PlayerKilledEvent:FireClient(player)
-						local earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER)
+						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)
 						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned)
+						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER)
 					end
 				end
 				return nil

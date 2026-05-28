@@ -9,13 +9,16 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 -- ── Tuning ────────────────────────────────────────────────────────────────────
 local FINISH_FADE_IN_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local FINISH_FADE_OUT_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-local FINISH_HOLD = 2
+local FINISH_HOLD = 0.2
 local FLOAT_INTERVAL = 0.3
 local CHUNK_TARGET_RATIO = 5
 local MAX_CHUNK = 15
 local MULTIPLIER_TWEEN_TI = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local BASE_CASH_TWEEN_TI = TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local FRAME_FADE_OUT_TI = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+-- Penalty animation when the player died (lossMultiplier < 1). Same TweenInfo
+-- as the MainUI MoneyText counter so the two animations feel cohesive.
+local LOSS_PENALTY_TI = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 -- BaseCash growth — same red-tinge style as the in-game multiplier label
 local BASE_CASH_MAX_SIZE_INCREASE = 40
 local BASE_CASH_TARGET_COLOR = Color3.new(1, 0.25, 0.25)
@@ -23,6 +26,12 @@ local FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate"
 local FLOATING_FLY_TI = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local FLOATING_BUMP_IN_TI = TweenInfo.new(0.07, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local FLOATING_BUMP_OUT_TI = TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- New "explode-out then fly" sequence: the chunk spawns on the MultiplierText,
+-- disperses in a random direction, briefly holds, then flies to BaseCashText.
+local FLOATING_DISPERSE_TI = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local FLOATING_DISPERSE_MIN = 70
+local FLOATING_DISPERSE_MAX = 130
+local FLOATING_HOLD = 0.12
 -- ── Chunk split ───────────────────────────────────────────────────────────────
 -- Splits `multiplier` into floating-text values that:
 --  • each target multiplier / CHUNK_TARGET_RATIO (capped at MAX_CHUNK)
@@ -87,7 +96,7 @@ local function spawnFloatingChunk(parent, chunk, originLabel, targetLabel, handl
 	if not template then
 		-- Template missing — still fire callbacks so the pipeline stays coherent
 		handlers.onSpawn(chunk)
-		task.delay(FLOATING_FLY_TI.Time, function()
+		task.delay(FLOATING_DISPERSE_TI.Time + FLOATING_HOLD + FLOATING_FLY_TI.Time, function()
 			return handlers.onArrived(chunk)
 		end)
 		return nil
@@ -112,15 +121,14 @@ local function spawnFloatingChunk(parent, chunk, originLabel, targetLabel, handl
 	local uiScale = Instance.new("UIScale")
 	uiScale.Scale = 0.9
 	uiScale.Parent = icon or frame
-	-- Spawn next to the MultiplierText
+	-- ── 1. Spawn exactly ON MultiplierText center ─────────────────────────────
 	local _absolutePosition = originLabel.AbsolutePosition
 	local _arg0 = originLabel.AbsoluteSize / 2
 	local originCenter = _absolutePosition + _arg0
-	local offsetX = originLabel.AbsoluteSize.X * 0.6 + math.random(-20, 20)
-	local offsetY = math.random(-10, 10)
-	frame.Position = UDim2.new((originCenter.X + offsetX) / screenSize.X, 0, (originCenter.Y + offsetY) / screenSize.Y, 0)
+	frame.Position = UDim2.new(0, originCenter.X, 0, originCenter.Y)
 	-- Immediate drain — happens on spawn, per spec
 	handlers.onSpawn(chunk)
+	-- Quick bump for that satisfying "pop" feel
 	TweenService:Create(uiScale, FLOATING_BUMP_IN_TI, {
 		Scale = 1.1,
 	}):Play()
@@ -128,11 +136,24 @@ local function spawnFloatingChunk(parent, chunk, originLabel, targetLabel, handl
 		TweenService:Create(uiScale, FLOATING_BUMP_OUT_TI, {
 			Scale = 1.0,
 		}):Play()
-		task.delay(FLOATING_BUMP_OUT_TI.Time + 0.04, function()
+	end)
+	-- ── 2. Disperse in a random direction (the "explode-out") ────────────────
+	local angle = math.random() * math.pi * 2
+	local distance = math.random(FLOATING_DISPERSE_MIN, FLOATING_DISPERSE_MAX)
+	local dispersePos = UDim2.new(0, originCenter.X + math.cos(angle) * distance, 0, originCenter.Y + math.sin(angle) * distance)
+	local disperse = TweenService:Create(frame, FLOATING_DISPERSE_TI, {
+		Position = dispersePos,
+	})
+	disperse:Play()
+	disperse.Completed:Connect(function()
+		-- ── 3. Brief hold so the eye registers where it landed ───────────────
+		task.delay(FLOATING_HOLD, function()
+			-- Target re-read at fly-time — handles UI layout shifts mid-animation.
 			local _absolutePosition_1 = targetLabel.AbsolutePosition
 			local _arg0_1 = targetLabel.AbsoluteSize / 2
 			local targetCenter = _absolutePosition_1 + _arg0_1
-			local targetPos = UDim2.new(targetCenter.X / screenSize.X, 0, targetCenter.Y / screenSize.Y, 0)
+			local targetPos = UDim2.new(0, targetCenter.X, 0, targetCenter.Y)
+			-- ── 4. Fly to BaseCashText ───────────────────────────────────────
 			local fly = TweenService:Create(frame, FLOATING_FLY_TI, {
 				Position = targetPos,
 			})
@@ -146,6 +167,13 @@ local function spawnFloatingChunk(parent, chunk, originLabel, targetLabel, handl
 end
 -- ── Multiplier & BaseCash visuals ─────────────────────────────────────────────
 local function applyMultiplierStyle(label, value, startValue, endpoints)
+	-- Hide the whole label (text + any UIStroke children) the instant we hit 0
+	-- — TextSize alone leaves strokes painted, and TextTransparency doesn't
+	-- affect stroke transparency. Visible=false is the only clean kill switch.
+	if value <= 0 then
+		label.Visible = false
+		return nil
+	end
 	local factor = if startValue > 0 then math.clamp(value / startValue, 0, 1) else 0
 	local size = endpoints.endSize + (endpoints.startSize - endpoints.endSize) * factor
 	local color = endpoints.endColor:Lerp(endpoints.startColor, factor)
@@ -205,10 +233,36 @@ local function resolveRefs(frame)
 		screenGui = screenGui,
 	}
 end
+-- Tweens BaseCashText value + size from (startValue, startSize) down to
+-- (endValue, endSize) in parallel using LOSS_PENALTY_TI. Blocks the calling
+-- task until both tweens complete, then snaps to the exact final values to
+-- avoid float-precision drift. Uses a NumberValue proxy so the label re-formats
+-- every frame — the player sees the number count down rather than jump-cut.
+local function animateLossPenalty(label, startValue, endValue, startSize, endSize)
+	local proxy = Instance.new("NumberValue")
+	proxy.Value = startValue
+	local conn = proxy.Changed:Connect(function(v)
+		label.Text = formatCash(v)
+	end)
+	TweenService:Create(proxy, LOSS_PENALTY_TI, {
+		Value = endValue,
+	}):Play()
+	local sizeTween = TweenService:Create(label, LOSS_PENALTY_TI, {
+		TextSize = endSize,
+	})
+	sizeTween:Play()
+	sizeTween.Completed:Wait()
+	conn:Disconnect()
+	proxy:Destroy()
+	label.Text = formatCash(endValue)
+	label.TextSize = endSize
+end
 -- Runs the full ButtonFinishGame animation, then calls onComplete().
 -- Safe to call from a regular task (uses task.wait internally).
+-- lossMultiplier: 1 for wins (no penalty), < 1 for kills — applied to baseCash
+-- + text size via animateLossPenalty before the multiplier drain.
 local flyBaseCashAndComplete
-local function runEndGameAnimation(frame, baseCash, multiplier, onComplete)
+local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, onComplete)
 	local refs = resolveRefs(frame)
 	if not refs then
 		onComplete()
@@ -239,23 +293,23 @@ local function runEndGameAnimation(frame, baseCash, multiplier, onComplete)
 		_condition_1 = multiplierText.TextColor3
 	end
 	local inGameColor = _condition_1
-	-- "Resting" state we tween back to as the multiplier drains to 0
-	local restingSize = multiplierText.TextSize
+	-- Color we tween toward as the multiplier drains to 0 (size goes to 0 too
+	-- — see multiplierEndpoints — so the label fully shrinks and fades out).
 	local restingColor = multiplierText.TextColor3
 	multiplierText.TextSize = inGameSize
 	multiplierText.TextColor3 = inGameColor
 	multiplierText.Text = formatMultiplier(multiplier)
+	-- Re-show in case the previous run hid the label when value hit 0
+	multiplierText.Visible = true
 	-- ── BaseCash text — start at the button's baseCash ────────────────────────
 	local baseCashBaseSize = baseCashText.TextSize
 	local baseCashBaseColor = baseCashText.TextColor3
 	baseCashText.Text = formatCash(baseCash)
 	baseCashText.TextSize = baseCashBaseSize
 	baseCashText.TextColor3 = baseCashBaseColor
-	-- Reset transparency in case the previous run left it hidden by the fly tween
-	baseCashText.TextTransparency = 0
-	baseCashText.TextStrokeTransparency = 0
+	-- Re-show in case the previous run hid the original while the clone flew
 	baseCashText.Visible = true
-	-- ── Finish text fade in → hold 2s → fade out ──────────────────────────────
+	-- ── Finish text fade in → hold → fade out ────────────────────────────────
 	finishCanvas.GroupTransparency = 1
 	finishCanvas.Visible = true
 	TweenService:Create(finishCanvas, FINISH_FADE_IN_TI, {
@@ -265,27 +319,55 @@ local function runEndGameAnimation(frame, baseCash, multiplier, onComplete)
 	TweenService:Create(finishCanvas, FINISH_FADE_OUT_TI, {
 		GroupTransparency = 1,
 	}):Play()
+	-- ── Loss penalty (killed mode only): shrink baseCash value + text size ───
+	-- Runs in parallel with the finish-canvas fade-out; we block here so the
+	-- drain phase below starts from the post-penalty value.
+	local effectiveBaseCash = baseCash
+	local effectiveBaseSize = baseCashBaseSize
+	if lossMultiplier < 1 then
+		effectiveBaseCash = baseCash * lossMultiplier
+		effectiveBaseSize = baseCashBaseSize * lossMultiplier
+		animateLossPenalty(baseCashText, baseCash, effectiveBaseCash, baseCashBaseSize, effectiveBaseSize)
+	end
 	-- ── Drain multiplier into base cash via floating chunks ───────────────────
 	local chunks = splitMultiplier(multiplier)
 	if #chunks == 0 then
-		-- Nothing to animate — close after the fade-out
-		task.wait(FINISH_FADE_OUT_TI.Time)
+		-- Nothing to animate — close after the fade-out (penalty, if any, has
+		-- already waited longer than the fade-out so no extra wait needed).
+		if lossMultiplier >= 1 then
+			task.wait(FINISH_FADE_OUT_TI.Time)
+		end
 		flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
 		return nil
 	end
 	local multiplierEndpoints = {
 		startSize = inGameSize,
 		startColor = inGameColor,
-		endSize = restingSize,
+		endSize = 0,
 		endColor = restingColor,
 	}
+	-- ── Drain math: keep the visual final equal to what the server actually
+	--    credits (= effectiveBaseCash * multiplier).
+	--
+	--   • Win (lossMultiplier = 1): legacy behavior — start at effectiveBaseCash,
+	--     each chunk c adds effectiveBaseCash * c → final = effectiveBaseCash
+	--     * (1 + multiplier).
+	--   • Kill (lossMultiplier < 1): start at effectiveBaseCash (post-penalty),
+	--     grow toward effectiveBaseCash * multiplier — so total growth =
+	--     effectiveBaseCash * (multiplier - 1), spread across chunks that sum to
+	--     `multiplier`. Per-chunk addition = perUnitCash * c.
+	--     Matches the killed-mode credit formula: baseCash * multiplier *
+	--     LOOSE_WIN_MULTIPLIER = effectiveBaseCash * multiplier.
+	local isLoss = lossMultiplier < 1
+	local perUnitCash = if isLoss and multiplier > 0 then (effectiveBaseCash * (multiplier - 1)) / multiplier else effectiveBaseCash
+	local totalGrowthCash = if isLoss then effectiveBaseCash * (multiplier - 1) else effectiveBaseCash * multiplier
 	local baseCashEndpoints = {
-		baseSize = baseCashBaseSize,
+		baseSize = effectiveBaseSize,
 		baseColor = baseCashBaseColor,
-		totalGrowthCash = baseCash * multiplier,
+		totalGrowthCash = totalGrowthCash,
 	}
 	local remainingMultiplier = multiplier
-	local currentCash = baseCash
+	local currentCash = effectiveBaseCash
 	local arrivedCount = 0
 	for i = 0, #chunks - 1 do
 		local chunk = chunks[i + 1]
@@ -296,9 +378,9 @@ local function runEndGameAnimation(frame, baseCash, multiplier, onComplete)
 				applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints)
 			end,
 			onArrived = function(c)
-				-- Spec: on tween end, BaseCashText grows by c × baseCash
-				currentCash += baseCash * c
-				applyBaseCashStyle(baseCashText, currentCash, baseCash, baseCashEndpoints)
+				-- Spec: on tween end, BaseCashText grows by c × perUnitCash
+				currentCash += perUnitCash * c
+				applyBaseCashStyle(baseCashText, currentCash, effectiveBaseCash, baseCashEndpoints)
 				arrivedCount += 1
 				if arrivedCount >= #chunks then
 					task.delay(0.4, function()
@@ -316,8 +398,9 @@ local FLY_TO_MONEY_FADE_TI = TweenInfo.new(0.55, Enum.EasingStyle.Linear, Enum.E
 local FLY_TO_MONEY_SHRINK = 0.4
 -- Clones BaseCashText, parents it to the ScreenGui so it can move freely across
 -- the screen, hides the original (still inside the popup frame so it's reusable
--- for the next game), then tweens the clone to MoneyParent (inside MainUI) while
--- fading. Falls back to a simple fade if MoneyParent isn't found.
+-- for the next game) via Visible=false so any UIStroke children disappear with
+-- it, then tweens the clone to MoneyParent (inside MainUI) while fading.
+-- Falls back to an instant hide if MoneyParent isn't found.
 function flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
 	local moneyParent = MainUIController:getMoneyParent()
 	local screenSize = screenGui.AbsoluteSize
@@ -326,21 +409,15 @@ function flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
 	local _arg0 = cashAbsSize / 2
 	local cashAbsCenter = _absolutePosition + _arg0
 	local finishFrame = function()
-		baseCashText.TextTransparency = 0
-		baseCashText.TextStrokeTransparency = 0
+		-- Re-show for next run — Visible toggle covers the text *and* any
+		-- stroke children, unlike TextTransparency which leaves strokes painted.
 		baseCashText.Visible = true
 		onComplete()
 	end
 	if not moneyParent or screenSize.X == 0 or cashAbsSize.X == 0 then
-		-- No target / no layout — just fade and finish
-		local tween = TweenService:Create(baseCashText, FLY_TO_MONEY_FADE_TI, {
-			TextTransparency = 1,
-			TextStrokeTransparency = 1,
-		})
-		tween.Completed:Connect(function()
-			return finishFrame()
-		end)
-		tween:Play()
+		-- No target / no layout — hide instantly and finish
+		baseCashText.Visible = false
+		finishFrame()
 		return nil
 	end
 	local flyLabel = baseCashText:Clone()
@@ -351,9 +428,8 @@ function flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
 	flyLabel.ZIndex = 50
 	flyLabel.Parent = screenGui
 	-- Hide the original so the popup looks empty while the clone flies — the
-	-- next run resets these properties at the top of runEndGameAnimation.
-	baseCashText.TextTransparency = 1
-	baseCashText.TextStrokeTransparency = 1
+	-- next run flips Visible back at the top of runEndGameAnimation.
+	baseCashText.Visible = false
 	local _absolutePosition_1 = moneyParent.AbsolutePosition
 	local _arg0_1 = moneyParent.AbsoluteSize / 2
 	local moneyCenter = _absolutePosition_1 + _arg0_1

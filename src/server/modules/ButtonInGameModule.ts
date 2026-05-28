@@ -132,7 +132,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		const earned = baseCash * currentMultiplier;
 		Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
 		ConfettiBurst.play(buttonModel);
-		EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned);
+		EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					const earned = baseCash * currentMultiplier;
 					Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
 					ConfettiBurst.play(buttonModel);
-					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned);
+					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 				} else {
 					const character = player.Character;
 					const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
@@ -269,7 +269,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 						const earned = baseCash * currentMultiplier;
 						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned);
+						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 					} else {
 						if (hrp) hrp.Anchored = false;
 
@@ -284,9 +284,16 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						if (humanoid) humanoid.Health = 0;
 
 						Events.PlayerKilledEvent.FireClient(player);
-						const earned = math.floor(baseCash * currentMultiplier * LOOSE_WIN_MULTIPLIER);
+						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier);
 						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
-						EndGameButtonModule.enter(player, "killed", baseCash, currentMultiplier, earned);
+						EndGameButtonModule.enter(
+							player,
+							"killed",
+							baseCash,
+							currentMultiplier,
+							earned,
+							LOOSE_WIN_MULTIPLIER,
+						);
 					}
 				}
 				return;

@@ -12,7 +12,9 @@
       "mcp__Roblox_Studio__search_game_tree",
       "Bash(npx rbxtsc *)",
       "Bash(gh pr *)",
-      "PowerShell(gh pr list --head feat/character-size-normalization --json number,url,title,state)"
+      "PowerShell(gh pr list --head feat/character-size-normalization --json number,url,title,state)",
+      "PowerShell(Get-Command gh, hub -ErrorAction SilentlyContinue | Select-Object Source; Get-ChildItem \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\", \"$env:ProgramFiles\\\\GitHub CLI\" -ErrorAction SilentlyContinue | Select-Object FullName)",
+      "PowerShell(try { \\(Invoke-RestMethod -Uri \"https://api.github.com/repos/OrianMA/Hold-or-Drop/pulls?head=OrianMA:feat/character-size-normalization&state=open\" -Method Get\\) | ConvertTo-Json -Depth 3 } catch { \"API error: $\\($_.Exception.Message\\)\" })"
     ]
   }
 }
