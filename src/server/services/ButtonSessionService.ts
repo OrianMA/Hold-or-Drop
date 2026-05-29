@@ -1,6 +1,7 @@
 export interface ButtonSession {
 	baseCash: number;
 	proximityPrompt: ProximityPrompt;
+	billboardGui?: BillboardGui;
 }
 
 const sessions = new Map<Player, ButtonSession>();
@@ -18,11 +19,17 @@ export const ButtonSessionService = {
 		sessions.delete(player);
 	},
 
-	// Re-enable the proximity prompt, unanchor the player, and clear the session
+	// Re-enable the proximity prompt, unanchor the player, restore the
+	// label-billboard for this player, and clear the session.
 	cleanup(player: Player): void {
 		const session = sessions.get(player);
 		if (session) {
 			session.proximityPrompt.Enabled = true;
+			// PlayerToHideFrom was set to this player on trigger — clear it so
+			// the billboard becomes visible to them again.
+			if (session.billboardGui && session.billboardGui.PlayerToHideFrom === player) {
+				session.billboardGui.PlayerToHideFrom = undefined;
+			}
 		}
 
 		const character = player.Character;

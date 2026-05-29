@@ -5,11 +5,10 @@ local ReplicatedStorage = _services.ReplicatedStorage
 local TweenService = _services.TweenService
 local MultiplierVisuals = TS.import(script, script.Parent, "MultiplierVisuals").MultiplierVisuals
 local MainUIController = TS.import(script, script.Parent, "MainUIController").MainUIController
+local InformationText = TS.import(script, script.Parent, "InformationText").InformationText
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 -- ── Tuning ────────────────────────────────────────────────────────────────────
-local FINISH_FADE_IN_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local FINISH_FADE_OUT_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-local FINISH_HOLD = 0.2
+local FINISH_TEXT = "Finish"
 local FLOAT_INTERVAL = 0.3
 local CHUNK_TARGET_RATIO = 5
 local MAX_CHUNK = 15
@@ -195,39 +194,30 @@ local function applyBaseCashStyle(label, currentCash, baseCash, endpoints)
 end
 -- ── Public orchestrator ───────────────────────────────────────────────────────
 local function resolveRefs(frame)
-	local finishCanvas = frame:WaitForChild("FinishTextCanvasGroup", 5)
 	local multiplierText = frame:WaitForChild("MultiplierText", 5)
 	local baseCashText = frame:WaitForChild("BaseCashText", 5)
 	local screenGui = frame:FindFirstAncestorOfClass("ScreenGui")
-	local _result = finishCanvas
+	local _result = multiplierText
 	if _result ~= nil then
-		_result = _result:IsA("CanvasGroup")
+		_result = _result:IsA("TextLabel")
 	end
 	local _condition = not _result
 	if not _condition then
-		local _result_1 = multiplierText
+		local _result_1 = baseCashText
 		if _result_1 ~= nil then
 			_result_1 = _result_1:IsA("TextLabel")
 		end
 		_condition = not _result_1
 		if not _condition then
-			local _result_2 = baseCashText
-			if _result_2 ~= nil then
-				_result_2 = _result_2:IsA("TextLabel")
-			end
-			_condition = not _result_2
-			if not _condition then
-				_condition = not screenGui
-			end
+			_condition = not screenGui
 		end
 	end
 	if _condition then
-		warn("EndGameAnimation: missing one of FinishTextCanvasGroup/MultiplierText/BaseCashText")
+		warn("EndGameAnimation: missing one of MultiplierText/BaseCashText")
 		return nil
 	end
 	return {
 		frame = frame,
-		finishCanvas = finishCanvas,
 		multiplierText = multiplierText,
 		baseCashText = baseCashText,
 		screenGui = screenGui,
@@ -269,7 +259,6 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 		return nil
 	end
 	local _binding = refs
-	local finishCanvas = _binding.finishCanvas
 	local multiplierText = _binding.multiplierText
 	local baseCashText = _binding.baseCashText
 	local screenGui = _binding.screenGui
@@ -309,16 +298,13 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	baseCashText.TextColor3 = baseCashBaseColor
 	-- Re-show in case the previous run hid the original while the clone flew
 	baseCashText.Visible = true
-	-- ── Finish text fade in → hold → fade out ────────────────────────────────
-	finishCanvas.GroupTransparency = 1
-	finishCanvas.Visible = true
-	TweenService:Create(finishCanvas, FINISH_FADE_IN_TI, {
-		GroupTransparency = 0,
-	}):Play()
-	task.wait(FINISH_FADE_IN_TI.Time + FINISH_HOLD)
-	TweenService:Create(finishCanvas, FINISH_FADE_OUT_TI, {
-		GroupTransparency = 1,
-	}):Play()
+	-- ── "Finish" flash via the shared InformationText controller (in MainUI)
+	-- ─────────────────────────────────────────────────────────────────────────
+	-- Show fires-and-forgets the full fade-in/hold/fade-out cycle; we just need
+	-- to block until fade-in + hold are done before kicking off the penalty /
+	-- drain. The fade-out then runs in parallel with the rest of the animation.
+	InformationText:show(FINISH_TEXT)
+	task.wait(InformationText.FADE_IN_TIME + InformationText.HOLD_TIME)
 	-- ── Loss penalty (killed mode only): shrink baseCash value + text size ───
 	-- Runs in parallel with the finish-canvas fade-out; we block here so the
 	-- drain phase below starts from the post-penalty value.
@@ -332,10 +318,10 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	-- ── Drain multiplier into base cash via floating chunks ───────────────────
 	local chunks = splitMultiplier(multiplier)
 	if #chunks == 0 then
-		-- Nothing to animate — close after the fade-out (penalty, if any, has
-		-- already waited longer than the fade-out so no extra wait needed).
+		-- Nothing to animate — close after the "Finish" fade-out (penalty, if
+		-- any, has already waited longer than the fade-out so no extra wait).
 		if lossMultiplier >= 1 then
-			task.wait(FINISH_FADE_OUT_TI.Time)
+			task.wait(InformationText.FADE_OUT_TIME)
 		end
 		flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
 		return nil

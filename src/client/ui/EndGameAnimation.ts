@@ -1,13 +1,12 @@
 import { ReplicatedStorage, TweenService } from "@rbxts/services";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { MainUIController } from "client/ui/MainUIController";
+import { InformationText } from "client/ui/InformationText";
 import { FormatCash } from "shared/NumberFormat";
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
 
-const FINISH_FADE_IN_TI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
-const FINISH_FADE_OUT_TI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
-const FINISH_HOLD = 0.2;
+const FINISH_TEXT = "Finish";
 
 const FLOAT_INTERVAL = 0.3;
 const CHUNK_TARGET_RATIO = 5; // each floating value targets multiplier / 5
@@ -223,29 +222,21 @@ function applyBaseCashStyle(
 
 interface EndGameRefs {
 	frame: Frame;
-	finishCanvas: CanvasGroup;
 	multiplierText: TextLabel;
 	baseCashText: TextLabel;
 	screenGui: ScreenGui;
 }
 
 function resolveRefs(frame: Frame): EndGameRefs | undefined {
-	const finishCanvas = frame.WaitForChild("FinishTextCanvasGroup", 5);
 	const multiplierText = frame.WaitForChild("MultiplierText", 5);
 	const baseCashText = frame.WaitForChild("BaseCashText", 5);
 	const screenGui = frame.FindFirstAncestorOfClass("ScreenGui");
-	if (
-		!finishCanvas?.IsA("CanvasGroup") ||
-		!multiplierText?.IsA("TextLabel") ||
-		!baseCashText?.IsA("TextLabel") ||
-		!screenGui
-	) {
-		warn("EndGameAnimation: missing one of FinishTextCanvasGroup/MultiplierText/BaseCashText");
+	if (!multiplierText?.IsA("TextLabel") || !baseCashText?.IsA("TextLabel") || !screenGui) {
+		warn("EndGameAnimation: missing one of MultiplierText/BaseCashText");
 		return undefined;
 	}
 	return {
 		frame,
-		finishCanvas: finishCanvas as CanvasGroup,
 		multiplierText: multiplierText as TextLabel,
 		baseCashText: baseCashText as TextLabel,
 		screenGui: screenGui as ScreenGui,
@@ -297,7 +288,7 @@ export function runEndGameAnimation(
 		onComplete();
 		return;
 	}
-	const { finishCanvas, multiplierText, baseCashText, screenGui } = refs;
+	const { multiplierText, baseCashText, screenGui } = refs;
 
 	// ── Multiplier text — match the in-game label's last appearance ───────────
 	const snapshot = MultiplierVisuals.getLast();
@@ -322,12 +313,13 @@ export function runEndGameAnimation(
 	// Re-show in case the previous run hid the original while the clone flew
 	baseCashText.Visible = true;
 
-	// ── Finish text fade in → hold → fade out ────────────────────────────────
-	finishCanvas.GroupTransparency = 1;
-	finishCanvas.Visible = true;
-	TweenService.Create(finishCanvas, FINISH_FADE_IN_TI, { GroupTransparency: 0 }).Play();
-	task.wait(FINISH_FADE_IN_TI.Time + FINISH_HOLD);
-	TweenService.Create(finishCanvas, FINISH_FADE_OUT_TI, { GroupTransparency: 1 }).Play();
+	// ── "Finish" flash via the shared InformationText controller (in MainUI)
+	// ─────────────────────────────────────────────────────────────────────────
+	// Show fires-and-forgets the full fade-in/hold/fade-out cycle; we just need
+	// to block until fade-in + hold are done before kicking off the penalty /
+	// drain. The fade-out then runs in parallel with the rest of the animation.
+	InformationText.show(FINISH_TEXT);
+	task.wait(InformationText.FADE_IN_TIME + InformationText.HOLD_TIME);
 
 	// ── Loss penalty (killed mode only): shrink baseCash value + text size ───
 	// Runs in parallel with the finish-canvas fade-out; we block here so the
@@ -344,9 +336,9 @@ export function runEndGameAnimation(
 	const chunks = splitMultiplier(multiplier);
 
 	if (chunks.size() === 0) {
-		// Nothing to animate — close after the fade-out (penalty, if any, has
-		// already waited longer than the fade-out so no extra wait needed).
-		if (lossMultiplier >= 1) task.wait(FINISH_FADE_OUT_TI.Time);
+		// Nothing to animate — close after the "Finish" fade-out (penalty, if
+		// any, has already waited longer than the fade-out so no extra wait).
+		if (lossMultiplier >= 1) task.wait(InformationText.FADE_OUT_TIME);
 		flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete);
 		return;
 	}

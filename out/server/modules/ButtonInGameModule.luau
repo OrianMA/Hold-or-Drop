@@ -22,7 +22,12 @@ local TICK_RATE = 0.5
 local LOOSE_WIN_MULTIPLIER = 0.3
 local KNOCKBACK_DISTANCE = 15
 local KNOCKBACK_DURATION = 0.5
-local EXPLOSION_BLAST_RADIUS = 32
+-- Small enough that bystanders standing near the button aren't in range, but
+-- large enough to cover the assigned player teleported just above the button.
+-- Roblox's default explosion handles the fling — we just keep the radius tight
+-- so the BlastPressure stays scoped to a single character.
+local EXPLOSION_BLAST_RADIUS = 12
+local EXPLOSION_KILL_PRESSURE = 180000
 local EXPLOSION_SOUND_ID = "rbxassetid://139771888058836"
 local EXPLOSION_SOUND_VOLUME = 0.8
 local EXPLOSION_SOUND_ROLLOFF = 120
@@ -60,6 +65,12 @@ end
 -- Triggers a 3D explosion at `pos`: visual and sound fire together from the
 -- same replication batch, so clients see and hear them simultaneously.
 -- blastPressure = 0 for parry (visual-only), non-zero for lethal explosions.
+--
+-- BlastRadius is intentionally tight (EXPLOSION_BLAST_RADIUS): the radius
+-- gates *both* visual size and the BlastPressure reach. Keeping it small means
+-- the fling is naturally scoped to the player anchored on top of the button —
+-- bystanders standing a few studs away aren't inside the bubble and are left
+-- alone, no manual filtering required.
 local function triggerExplosionAt(pos, blastPressure)
 	-- Sound cloned from the pre-buffered template — no CDN fetch on the client.
 	-- Parented to Terrain via an Attachment for proper 3D rolloff.
@@ -288,7 +299,7 @@ local function startButtonGame(player, session)
 							end
 						end
 						if buttonPart then
-							triggerExplosionAt(buttonPart.Position, 180000)
+							triggerExplosionAt(buttonPart.Position, EXPLOSION_KILL_PRESSURE)
 						end
 						if humanoid then
 							humanoid.Health = 0

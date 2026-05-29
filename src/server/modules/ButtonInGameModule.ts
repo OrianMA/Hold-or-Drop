@@ -20,7 +20,12 @@ const LOOSE_WIN_MULTIPLIER = 0.3;
 const KNOCKBACK_DISTANCE = 15;
 const KNOCKBACK_DURATION = 0.5;
 
-const EXPLOSION_BLAST_RADIUS = 32;
+// Small enough that bystanders standing near the button aren't in range, but
+// large enough to cover the assigned player teleported just above the button.
+// Roblox's default explosion handles the fling — we just keep the radius tight
+// so the BlastPressure stays scoped to a single character.
+const EXPLOSION_BLAST_RADIUS = 12;
+const EXPLOSION_KILL_PRESSURE = 180000;
 const EXPLOSION_SOUND_ID = "rbxassetid://139771888058836";
 const EXPLOSION_SOUND_VOLUME = 0.8;
 const EXPLOSION_SOUND_ROLLOFF = 120;
@@ -63,6 +68,12 @@ function getRisk(timeHeld: number): number {
 // Triggers a 3D explosion at `pos`: visual and sound fire together from the
 // same replication batch, so clients see and hear them simultaneously.
 // blastPressure = 0 for parry (visual-only), non-zero for lethal explosions.
+//
+// BlastRadius is intentionally tight (EXPLOSION_BLAST_RADIUS): the radius
+// gates *both* visual size and the BlastPressure reach. Keeping it small means
+// the fling is naturally scoped to the player anchored on top of the button —
+// bystanders standing a few studs away aren't inside the bubble and are left
+// alone, no manual filtering required.
 function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
 	// Sound cloned from the pre-buffered template — no CDN fetch on the client.
 	// Parented to Terrain via an Attachment for proper 3D rolloff.
@@ -279,7 +290,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 							}
 						}
 
-						if (buttonPart) triggerExplosionAt(buttonPart.Position, 180000);
+						if (buttonPart) triggerExplosionAt(buttonPart.Position, EXPLOSION_KILL_PRESSURE);
 
 						if (humanoid) humanoid.Health = 0;
 

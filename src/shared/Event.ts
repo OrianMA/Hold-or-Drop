@@ -24,4 +24,9 @@ export namespace Events {
 	export const EndGameStartEvent = DefineEvent("EndGameStartEvent", script);
 	// EndGameButton — client → server (animation finished, server hides the popup)
 	export const EndGameFinishedEvent = DefineEvent("EndGameFinishedEvent", script);
+
+	// Generic info popup — server tells client to flash text in MainUI's
+	// InformationTextCanvasGroup. Used e.g. for "Not enough money".
+	// Args: (text: string, color?: Color3).
+	export const InformationTextEvent = DefineEvent("InformationTextEvent", script);
 }
