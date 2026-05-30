@@ -93,7 +93,7 @@ const ZoomResetTI = new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirect
 const ExplodeFovPunchTI = new TweenInfo(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const EXPLODE_FOV_OVERSHOOT = 18;
 
-const PerfectParrytime = 1.6;
+const PerfectParrytime = 2;
 
 function createVignetteEdge(
 	parent: Instance,
@@ -576,9 +576,4 @@ export function setup(mainUI: ScreenGui): void {
 	};
 
 	activatedConn = releaseButton.Activated.Connect(fireRelease);
-
-	spaceConn = UserInputService.InputBegan.Connect((input, gameProcessed) => {
-		if (gameProcessed || !isGameActive || released) return;
-		if (input.KeyCode === Enum.KeyCode.Space) fireRelease();
-	});
 }

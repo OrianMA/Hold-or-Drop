@@ -14,7 +14,15 @@
       "Bash(gh pr *)",
       "PowerShell(gh pr list --head feat/character-size-normalization --json number,url,title,state)",
       "PowerShell(Get-Command gh, hub -ErrorAction SilentlyContinue | Select-Object Source; Get-ChildItem \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\", \"$env:ProgramFiles\\\\GitHub CLI\" -ErrorAction SilentlyContinue | Select-Object FullName)",
-      "PowerShell(try { \\(Invoke-RestMethod -Uri \"https://api.github.com/repos/OrianMA/Hold-or-Drop/pulls?head=OrianMA:feat/character-size-normalization&state=open\" -Method Get\\) | ConvertTo-Json -Depth 3 } catch { \"API error: $\\($_.Exception.Message\\)\" })"
+      "PowerShell(try { \\(Invoke-RestMethod -Uri \"https://api.github.com/repos/OrianMA/Hold-or-Drop/pulls?head=OrianMA:feat/character-size-normalization&state=open\" -Method Get\\) | ConvertTo-Json -Depth 3 } catch { \"API error: $\\($_.Exception.Message\\)\" })",
+      "mcp__Roblox_Studio__inspect_instance",
+      "mcp__Roblox_Studio__execute_luau",
+      "Bash(echo \"exit=$?\")",
+      "Bash(awk 'NR>=263 && NR<=267' src/server/modules/ButtonInGameModule.ts)",
+      "Bash(awk 'NR>=308 && NR<=316' src/server/modules/ButtonInGameModule.ts)",
+      "Bash(awk 'NR>=92 && NR<=130' out/server/modules/ButtonInGameModule.luau)",
+      "PowerShell(gh pr list --head feat/character-size-normalization --json number,url,state)",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue; if \\(Test-Path \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\"\\) { \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\" }; if \\(Test-Path \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\"\\) { \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" })"
     ]
   }
 }

@@ -193,6 +193,13 @@ local function applyBaseCashStyle(label, currentCash, baseCash, endpoints)
 	}):Play()
 end
 -- ── Public orchestrator ───────────────────────────────────────────────────────
+-- Captured on the FIRST runEndGameAnimation call so every subsequent run can
+-- reset the label back to its Studio-authored state. Without this snapshot,
+-- each run would read `baseCashText.TextSize` *after* the previous run grew it,
+-- so a second game would start oversized and grow again — compounding the size
+-- across runs.
+local initialBaseCashSize
+local initialBaseCashColor
 local function resolveRefs(frame)
 	local multiplierText = frame:WaitForChild("MultiplierText", 5)
 	local baseCashText = frame:WaitForChild("BaseCashText", 5)
@@ -291,12 +298,23 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	-- Re-show in case the previous run hid the label when value hit 0
 	multiplierText.Visible = true
 	-- ── BaseCash text — start at the button's baseCash ────────────────────────
-	local baseCashBaseSize = baseCashText.TextSize
-	local baseCashBaseColor = baseCashText.TextColor3
+	-- First-call snapshot — capture the true Studio-authored initial state so
+	-- every subsequent run starts from the same size/color instead of compounding
+	-- the previous run's growth.
+	if initialBaseCashSize == nil then
+		initialBaseCashSize = baseCashText.TextSize
+	end
+	if initialBaseCashColor == nil then
+		initialBaseCashColor = baseCashText.TextColor3
+	end
+	local baseCashBaseSize = initialBaseCashSize
+	local baseCashBaseColor = initialBaseCashColor
+	-- Reset the label to its initial state WHILE it's still hidden from the
+	-- previous run's fly clone — only after the reset do we flip Visible back
+	-- on, so the player never sees the grown size flash.
 	baseCashText.Text = formatCash(baseCash)
 	baseCashText.TextSize = baseCashBaseSize
 	baseCashText.TextColor3 = baseCashBaseColor
-	-- Re-show in case the previous run hid the original while the clone flew
 	baseCashText.Visible = true
 	-- ── "Finish" flash via the shared InformationText controller (in MainUI)
 	-- ─────────────────────────────────────────────────────────────────────────
@@ -355,13 +373,25 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	local remainingMultiplier = multiplier
 	local currentCash = effectiveBaseCash
 	local arrivedCount = 0
+	local lastIndex = #chunks - 1
 	for i = 0, #chunks - 1 do
 		local chunk = chunks[i + 1]
+		local isLastChunk = i == lastIndex
 		spawnFloatingChunk(screenGui, chunk, multiplierText, baseCashText, {
 			onSpawn = function(c)
-				-- Spec: as soon as a floating text appears, MultiplierText drops by c
-				remainingMultiplier = math.max(0, remainingMultiplier - c)
-				applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints)
+				-- Spec: as soon as a floating text appears, MultiplierText drops by c.
+				-- On the last chunk the residual may not hit exact 0 because of
+				-- float drift across chunk subtractions — so we hard-hide the
+				-- label here instead of relying on applyMultiplierStyle's
+				-- `value <= 0` check. Guarantees MultiplierText disappears the
+				-- instant the final "+X" pops out of it.
+				if isLastChunk then
+					remainingMultiplier = 0
+					multiplierText.Visible = false
+				else
+					remainingMultiplier = math.max(0, remainingMultiplier - c)
+					applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints)
+				end
 			end,
 			onArrived = function(c)
 				-- Spec: on tween end, BaseCashText grows by c × perUnitCash
@@ -395,13 +425,21 @@ function flyBaseCashAndComplete(frame, baseCashText, screenGui, onComplete)
 	local _arg0 = cashAbsSize / 2
 	local cashAbsCenter = _absolutePosition + _arg0
 	local finishFrame = function()
-		-- Re-show for next run — Visible toggle covers the text *and* any
-		-- stroke children, unlike TextTransparency which leaves strokes painted.
-		baseCashText.Visible = true
+		-- Reset to the captured initial size/color while still hidden so the
+		-- next run opens at the Studio-authored look. We deliberately do NOT
+		-- re-enable Visible here — the label must stay hidden until the popup
+		-- is reopened (runEndGameAnimation flips Visible back at its top).
+		if initialBaseCashSize ~= nil then
+			baseCashText.TextSize = initialBaseCashSize
+		end
+		if initialBaseCashColor ~= nil then
+			baseCashText.TextColor3 = initialBaseCashColor
+		end
 		onComplete()
 	end
 	if not moneyParent or screenSize.X == 0 or cashAbsSize.X == 0 then
-		-- No target / no layout — hide instantly and finish
+		-- No target / no layout — hide and finish (label stays hidden until
+		-- the next runEndGameAnimation reopens the frame).
 		baseCashText.Visible = false
 		finishFrame()
 		return nil

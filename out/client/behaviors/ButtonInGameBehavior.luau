@@ -94,7 +94,7 @@ local ResetPostProcessTI = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.Easing
 local ZoomResetTI = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ExplodeFovPunchTI = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local EXPLODE_FOV_OVERSHOOT = 18
-local PerfectParrytime = 1.6
+local PerfectParrytime = 2
 local function createVignetteEdge(parent, rotation, anchorPoint, position, size)
 	local frame = Instance.new("Frame")
 	frame.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -647,14 +647,6 @@ local function setup(mainUI)
 		Events.ReleaseButtonEvent:FireServer()
 	end
 	activatedConn = releaseButton.Activated:Connect(fireRelease)
-	spaceConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed or not isGameActive or released then
-			return nil
-		end
-		if input.KeyCode == Enum.KeyCode.Space then
-			fireRelease()
-		end
-	end)
 end
 return {
 	init = init,

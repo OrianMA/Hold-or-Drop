@@ -220,6 +220,14 @@ function applyBaseCashStyle(
 
 // ── Public orchestrator ───────────────────────────────────────────────────────
 
+// Captured on the FIRST runEndGameAnimation call so every subsequent run can
+// reset the label back to its Studio-authored state. Without this snapshot,
+// each run would read `baseCashText.TextSize` *after* the previous run grew it,
+// so a second game would start oversized and grow again — compounding the size
+// across runs.
+let initialBaseCashSize: number | undefined;
+let initialBaseCashColor: Color3 | undefined;
+
 interface EndGameRefs {
 	frame: Frame;
 	multiplierText: TextLabel;
@@ -305,12 +313,19 @@ export function runEndGameAnimation(
 	multiplierText.Visible = true;
 
 	// ── BaseCash text — start at the button's baseCash ────────────────────────
-	const baseCashBaseSize = baseCashText.TextSize;
-	const baseCashBaseColor = baseCashText.TextColor3;
+	// First-call snapshot — capture the true Studio-authored initial state so
+	// every subsequent run starts from the same size/color instead of compounding
+	// the previous run's growth.
+	if (initialBaseCashSize === undefined) initialBaseCashSize = baseCashText.TextSize;
+	if (initialBaseCashColor === undefined) initialBaseCashColor = baseCashText.TextColor3;
+	const baseCashBaseSize = initialBaseCashSize;
+	const baseCashBaseColor = initialBaseCashColor;
+	// Reset the label to its initial state WHILE it's still hidden from the
+	// previous run's fly clone — only after the reset do we flip Visible back
+	// on, so the player never sees the grown size flash.
 	baseCashText.Text = formatCash(baseCash);
 	baseCashText.TextSize = baseCashBaseSize;
 	baseCashText.TextColor3 = baseCashBaseColor;
-	// Re-show in case the previous run hid the original while the clone flew
 	baseCashText.Visible = true;
 
 	// ── "Finish" flash via the shared InformationText controller (in MainUI)
@@ -376,13 +391,25 @@ export function runEndGameAnimation(
 	let currentCash = effectiveBaseCash;
 	let arrivedCount = 0;
 
+	const lastIndex = chunks.size() - 1;
 	for (let i = 0; i < chunks.size(); i++) {
 		const chunk = chunks[i];
+		const isLastChunk = i === lastIndex;
 		spawnFloatingChunk(screenGui, chunk, multiplierText, baseCashText, {
 			onSpawn: (c) => {
-				// Spec: as soon as a floating text appears, MultiplierText drops by c
-				remainingMultiplier = math.max(0, remainingMultiplier - c);
-				applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints);
+				// Spec: as soon as a floating text appears, MultiplierText drops by c.
+				// On the last chunk the residual may not hit exact 0 because of
+				// float drift across chunk subtractions — so we hard-hide the
+				// label here instead of relying on applyMultiplierStyle's
+				// `value <= 0` check. Guarantees MultiplierText disappears the
+				// instant the final "+X" pops out of it.
+				if (isLastChunk) {
+					remainingMultiplier = 0;
+					multiplierText.Visible = false;
+				} else {
+					remainingMultiplier = math.max(0, remainingMultiplier - c);
+					applyMultiplierStyle(multiplierText, remainingMultiplier, multiplier, multiplierEndpoints);
+				}
 			},
 			onArrived: (c) => {
 				// Spec: on tween end, BaseCashText grows by c × perUnitCash
@@ -420,14 +447,18 @@ function flyBaseCashAndComplete(
 	const cashAbsCenter = baseCashText.AbsolutePosition.add(cashAbsSize.div(2));
 
 	const finishFrame = () => {
-		// Re-show for next run — Visible toggle covers the text *and* any
-		// stroke children, unlike TextTransparency which leaves strokes painted.
-		baseCashText.Visible = true;
+		// Reset to the captured initial size/color while still hidden so the
+		// next run opens at the Studio-authored look. We deliberately do NOT
+		// re-enable Visible here — the label must stay hidden until the popup
+		// is reopened (runEndGameAnimation flips Visible back at its top).
+		if (initialBaseCashSize !== undefined) baseCashText.TextSize = initialBaseCashSize;
+		if (initialBaseCashColor !== undefined) baseCashText.TextColor3 = initialBaseCashColor;
 		onComplete();
 	};
 
 	if (!moneyParent || screenSize.X === 0 || cashAbsSize.X === 0) {
-		// No target / no layout — hide instantly and finish
+		// No target / no layout — hide and finish (label stays hidden until
+		// the next runEndGameAnimation reopens the frame).
 		baseCashText.Visible = false;
 		finishFrame();
 		return;
