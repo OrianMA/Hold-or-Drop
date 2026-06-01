@@ -22,7 +22,11 @@
       "Bash(awk 'NR>=308 && NR<=316' src/server/modules/ButtonInGameModule.ts)",
       "Bash(awk 'NR>=92 && NR<=130' out/server/modules/ButtonInGameModule.luau)",
       "PowerShell(gh pr list --head feat/character-size-normalization --json number,url,state)",
-      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue; if \\(Test-Path \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\"\\) { \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\" }; if \\(Test-Path \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\"\\) { \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" })"
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue; if \\(Test-Path \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\"\\) { \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\gh.exe\" }; if \\(Test-Path \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\"\\) { \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" })",
+      "Bash(npx --no-install rbxtsc --verbose)",
+      "Bash(npx --no-install rbxtsc)",
+      "Bash(git restore *)",
+      "Bash(git commit *)"
     ]
   }
 }
