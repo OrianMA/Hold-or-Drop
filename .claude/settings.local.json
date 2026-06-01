@@ -26,7 +26,12 @@
       "Bash(npx --no-install rbxtsc --verbose)",
       "Bash(npx --no-install rbxtsc)",
       "Bash(git restore *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(npm run *)",
+      "mcp__Roblox_Studio__get_console_output",
+      "Bash(git checkout *)",
+      "Bash(where gh.exe)",
+      "Bash(powershell -Command \"Get-Command gh -ErrorAction SilentlyContinue | Select-Object Source\")"
     ]
   }
 }
