@@ -6,20 +6,31 @@ import { FormatCash } from "shared/NumberFormat";
 // sitting under MoneyParent inside MainUI. The attribute is set by the server
 // (PlayerDataService) and auto-replicates to this client.
 //
-// Updates animate via a NumberValue proxy tweened with TweenService — the
-// label text is re-formatted on every Changed step, so the player sees the
-// number visibly ticking up from the previous balance to the new one. This
-// pattern is robust to mid-flight interruption (e.g. earning more money while
-// the previous tween is still running): we cancel, restart from the current
-// visual value, and head toward the new target.
+// Updates animate via a NumberValue proxy tweened with TweenService — the label
+// text is re-formatted on every Changed step, so the player sees the number
+// visibly ticking from the previous balance to the new one. Robust to mid-flight
+// interruption (e.g. earning more while a tween runs): we cancel, restart from
+// the current visual value, and head toward the new target.
+//
+// `addVisual` lets other UI (e.g. the end-game payout animation) drive the HUD
+// up incrementally for cosmetic effect. The Money attribute stays the source of
+// truth — when the server credit lands, refresh() reconciles to the same value
+// with no visible jump.
 
 const ATTRIBUTE = "Money";
 const LABEL_NAME = "MoneyText";
 
-// Duration of the "count-up" animation. Quad-Out feels punchier than Linear —
-// fast start, decelerating finish, matching how popular idle games render
-// reward deltas.
+// Duration of the "count-up" animation. Quad-Out feels punchier than Linear.
 const TWEEN_INFO = new TweenInfo(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
+// Persistent proxy + the value we last rendered. We tween the proxy and mirror
+// its value into the label on every Changed step. `currentTarget` is the value
+// the proxy is currently heading toward (attribute- or addVisual-driven).
+let proxy: NumberValue | undefined;
+let displayValue = 0;
+let currentTarget = 0;
+let initialized = false;
+let activeTween: Tween | undefined;
 
 function findLabel(): TextLabel | undefined {
 	const moneyParent = MainUIController.getMoneyParent();
@@ -28,88 +39,84 @@ function findLabel(): TextLabel | undefined {
 	return found?.IsA("TextLabel") ? found : undefined;
 }
 
-export function init(): void {
-	const player = Players.LocalPlayer;
+function render(value: number): void {
+	const label = findLabel();
+	if (label) label.Text = FormatCash(math.floor(value));
+}
 
-	// Persistent proxy + the value we last rendered. We tween the proxy and
-	// mirror its value into the label on every Changed step.
-	const proxy = new Instance("NumberValue");
-	let displayValue = 0;
-	let initialized = false;
-	let activeTween: Tween | undefined;
-	let proxyConn: RBXScriptConnection | undefined;
+// Cancel any in-flight tween and head from where we *visually* are toward
+// `target`. Snaps instead of tweening when we're already there.
+function tweenTo(target: number): void {
+	currentTarget = target;
+	if (!proxy) return;
 
-	proxy.Changed.Connect((v) => {
-		displayValue = v;
-		const label = findLabel();
-		if (label) label.Text = FormatCash(math.floor(v));
-	});
+	if (activeTween !== undefined) {
+		activeTween.Cancel();
+		activeTween = undefined;
+	}
 
-	const refresh = () => {
-		const target = (player.GetAttribute(ATTRIBUTE) as number | undefined) ?? 0;
+	if (math.floor(displayValue) === math.floor(target)) {
+		proxy.Value = target;
+		return;
+	}
 
-		// First update on join (or first time the label appears): snap, no tween,
-		// so the HUD doesn't count up from 0 every time the player loads in.
-		if (!initialized) {
-			initialized = true;
-			proxy.Value = target;
-			displayValue = target;
-			const label = findLabel();
-			if (label) label.Text = FormatCash(target);
-			return;
-		}
-
-		// Already at target → nothing to animate. Still cancel any in-flight
-		// tween so it doesn't overshoot the (now stale) previous target.
-		if (math.floor(displayValue) === target) {
-			if (activeTween !== undefined) {
-				activeTween.Cancel();
-				activeTween = undefined;
-			}
-			proxy.Value = target;
-			return;
-		}
-
-		// Cancel any in-flight tween and restart from where we *visually* are,
-		// not where the previous tween was supposed to land. Without this, a
-		// quick succession of credits would jump-cut to the latest target.
-		if (activeTween !== undefined) {
-			activeTween.Cancel();
+	proxy.Value = displayValue;
+	const tween = TweenService.Create(proxy, TWEEN_INFO, { Value: target });
+	activeTween = tween;
+	const completed = tween.Completed.Connect(() => {
+		completed.Disconnect();
+		if (activeTween === tween) {
 			activeTween = undefined;
+			if (proxy) proxy.Value = target;
+			render(target);
 		}
-		if (proxyConn !== undefined) {
-			proxyConn.Disconnect();
-			proxyConn = undefined;
-		}
+	});
+	tween.Play();
+}
 
-		proxy.Value = displayValue;
+function refresh(): void {
+	const target = (Players.LocalPlayer.GetAttribute(ATTRIBUTE) as number | undefined) ?? 0;
 
-		activeTween = TweenService.Create(proxy, TWEEN_INFO, { Value: target });
-		const tween = activeTween;
-		// On completion, snap to the exact target — float interpolation can
-		// leave a 1-unit gap that would render as e.g. "$1999" instead of "$2K".
-		const completedConn = tween.Completed.Connect(() => {
-			completedConn.Disconnect();
-			if (activeTween === tween) {
-				activeTween = undefined;
-				proxy.Value = target;
-				const label = findLabel();
-				if (label) label.Text = FormatCash(target);
+	// First update on join: snap, no tween, so the HUD doesn't count up from 0
+	// every time the player loads in.
+	if (!initialized) {
+		initialized = true;
+		if (proxy) proxy.Value = target;
+		displayValue = target;
+		currentTarget = target;
+		render(target);
+		return;
+	}
+
+	tweenTo(target);
+}
+
+export const MoneyDisplay = {
+	init(): void {
+		const player = Players.LocalPlayer;
+
+		proxy = new Instance("NumberValue");
+		proxy.Changed.Connect((v) => {
+			displayValue = v;
+			render(v);
+		});
+
+		refresh();
+		player.GetAttributeChangedSignal(ATTRIBUTE).Connect(refresh);
+
+		// Label may not exist yet on first frame — re-render on new descendants.
+		const gui = player.WaitForChild("PlayerGui") as PlayerGui;
+		gui.DescendantAdded.Connect((desc) => {
+			if (desc.Name === LABEL_NAME && desc.IsA("TextLabel")) {
+				desc.Text = FormatCash(math.floor(displayValue));
 			}
 		});
-		tween.Play();
-	};
+	},
 
-	refresh();
-	player.GetAttributeChangedSignal(ATTRIBUTE).Connect(refresh);
-
-	// Label may not exist yet on first frame — re-render on new descendants
-	const gui = player.WaitForChild("PlayerGui") as PlayerGui;
-	gui.DescendantAdded.Connect((desc) => {
-		if (desc.Name === LABEL_NAME && desc.IsA("TextLabel")) {
-			// Label just appeared — render current value snapped (no tween),
-			// otherwise it would animate from 0 to current on first display.
-			desc.Text = FormatCash(math.floor(displayValue));
-		}
-	});
-}
+	// Cosmetic: bump the displayed balance up by `amount` (count-up tween). The
+	// real Money attribute remains authoritative; refresh() reconciles when the
+	// server credit lands.
+	addVisual(amount: number): void {
+		tweenTo(currentTarget + amount);
+	},
+};

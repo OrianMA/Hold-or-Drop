@@ -19,18 +19,14 @@ local ButtonSessionService = {
 		local session = sessions[_player]
 		if session then
 			local room = session.room
-			-- Only re-enable if the player still owns the room. If they left, the
-			-- room was already released (prompt disabled) — don't revive an empty
-			-- room's prompt.
-			if room:owns(player) then
-				room.proximityPrompt.Enabled = true
-			end
 			-- PlayerToHideFrom was set to this player on trigger — clear it so the
 			-- billboard becomes visible to them again.
 			if room.billboardGui and room.billboardGui.PlayerToHideFrom == player then
 				room.billboardGui.PlayerToHideFrom = nil
 			end
 		end
+		-- Session over — the owner's client re-enables their prompt (RoomPromptController).
+		player:SetAttribute("InSession", false)
 		local character = player.Character
 		if character then
 			local hrp = character:FindFirstChild("HumanoidRootPart")

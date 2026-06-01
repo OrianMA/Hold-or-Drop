@@ -20,6 +20,8 @@ local roomByPlayer = {}
 -- While a player is assigned, we mirror live BaseCash changes onto their room's
 -- billboard (covers the DataStore load landing after the initial assign).
 local baseCashConns = {}
+-- Teleport the occupant onto their room's spawn part on every (re)spawn.
+local spawnConns = {}
 -- "P2" → 2. Numeric-aware so P10 sorts after P9, not after P1.
 local function roomOrder(name)
 	local digits = string.match(name, "%d+")
@@ -34,6 +36,17 @@ local function roomOrder(name)
 		_result = 0
 	end
 	return _result
+end
+-- Place a character on top of a spawn part.
+local function teleportToSpawn(character, spawn)
+	local hrp = character:WaitForChild("HumanoidRootPart", 5)
+	if not hrp then
+		return nil
+	end
+	local playerHeight = character:GetExtentsSize().Y
+	local _cFrame = spawn.CFrame
+	local _vector3 = Vector3.new(0, spawn.Size.Y / 2 + playerHeight / 2, 0)
+	hrp.CFrame = _cFrame + _vector3
 end
 local function assign(player)
 	-- ▼ ReadonlyArray.find ▼
@@ -56,7 +69,22 @@ local function assign(player)
 	room:assign(player)
 	local _player = player
 	roomByPlayer[_player] = room
+	-- Tells this player's client which prompt to enable (RoomPromptController).
+	player:SetAttribute("AssignedRoom", room.name)
 	room:setGainCash(PlayerProgressionService:get(player, "BaseCash"))
+	-- Teleport the player onto their room's spawn part on every (re)spawn, and move
+	-- an already-spawned character now (service init with players already in-game).
+	local spawnPart = room.spawnPart
+	if spawnPart then
+		local spawnConn = player.CharacterAdded:Connect(function(character)
+			return teleportToSpawn(character, spawnPart)
+		end)
+		local _player_1 = player
+		spawnConns[_player_1] = spawnConn
+		if player.Character then
+			teleportToSpawn(player.Character, spawnPart)
+		end
+	end
 	local conn = player:GetAttributeChangedSignal("BaseCash"):Connect(function()
 		room:setGainCash(PlayerProgressionService:get(player, "BaseCash"))
 	end)
@@ -72,13 +100,21 @@ local function release(player)
 		baseCashConns[_player_1] = nil
 	end
 	local _player_1 = player
-	local room = roomByPlayer[_player_1]
+	local spawnConn = spawnConns[_player_1]
+	if spawnConn then
+		spawnConn:Disconnect()
+		local _player_2 = player
+		spawnConns[_player_2] = nil
+	end
+	local _player_2 = player
+	local room = roomByPlayer[_player_2]
 	if not room then
 		return nil
 	end
 	room:release()
-	local _player_2 = player
-	roomByPlayer[_player_2] = nil
+	local _player_3 = player
+	roomByPlayer[_player_3] = nil
+	player:SetAttribute("AssignedRoom", "")
 end
 local RoomService = {
 	init = function(self)

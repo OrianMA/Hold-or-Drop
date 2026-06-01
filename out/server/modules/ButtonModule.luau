@@ -35,6 +35,12 @@ do
 		if not self.room:owns(player) then
 			return nil
 		end
+		-- The prompt is hidden client-side during a session via the InSession
+		-- attribute, but that lags one replication round-trip — guard against a
+		-- double trigger here so we never start two sessions.
+		if ButtonSessionService:getSession(player) then
+			return nil
+		end
 		local character = player.Character
 		if not character then
 			return nil
@@ -42,6 +48,9 @@ do
 		ButtonSessionService:setSession(player, {
 			room = self.room,
 		})
+		-- Drives this player's client to hide their prompt while playing
+		-- (RoomPromptController); cleared in ButtonSessionService.cleanup().
+		player:SetAttribute("InSession", true)
 		-- Hide the floating label-billboard for the active player only — restored
 		-- when ButtonSessionService.cleanup() runs at the end of the session.
 		if self.room.billboardGui then
@@ -49,7 +58,6 @@ do
 		end
 		Events.ButtonTriggerEvent:FireClient(player, self.room.cameraPosPart)
 		self:teleportPlayer(character)
-		self.room.proximityPrompt.Enabled = false
 		UiService:Show(player, PopupType.ButtonMenu)
 	end
 	function ButtonModule:teleportPlayer(character)

@@ -19,22 +19,21 @@ export const ButtonSessionService = {
 		sessions.delete(player);
 	},
 
-	// Re-enable the button, unanchor the player, restore the label-billboard for
-	// this player, and clear the session.
+	// End the session: clear the InSession flag (the client re-enables the owner's
+	// prompt), unanchor the player, restore the label-billboard, drop the session.
 	cleanup(player: Player): void {
 		const session = sessions.get(player);
 		if (session) {
 			const room = session.room;
-			// Only re-enable if the player still owns the room. If they left, the
-			// room was already released (prompt disabled) — don't revive an empty
-			// room's prompt.
-			if (room.owns(player)) room.proximityPrompt.Enabled = true;
 			// PlayerToHideFrom was set to this player on trigger — clear it so the
 			// billboard becomes visible to them again.
 			if (room.billboardGui && room.billboardGui.PlayerToHideFrom === player) {
 				room.billboardGui.PlayerToHideFrom = undefined;
 			}
 		}
+
+		// Session over — the owner's client re-enables their prompt (RoomPromptController).
+		player.SetAttribute("InSession", false);
 
 		const character = player.Character;
 		if (character) {

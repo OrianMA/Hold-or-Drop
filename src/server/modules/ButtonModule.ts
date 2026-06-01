@@ -20,11 +20,18 @@ export class ButtonModule {
 
 	private onTriggered(player: Player): void {
 		if (!this.room.owns(player)) return; // not your button
+		// The prompt is hidden client-side during a session via the InSession
+		// attribute, but that lags one replication round-trip — guard against a
+		// double trigger here so we never start two sessions.
+		if (ButtonSessionService.getSession(player)) return;
 
 		const character = player.Character;
 		if (!character) return;
 
 		ButtonSessionService.setSession(player, { room: this.room });
+		// Drives this player's client to hide their prompt while playing
+		// (RoomPromptController); cleared in ButtonSessionService.cleanup().
+		player.SetAttribute("InSession", true);
 
 		// Hide the floating label-billboard for the active player only — restored
 		// when ButtonSessionService.cleanup() runs at the end of the session.
@@ -33,7 +40,6 @@ export class ButtonModule {
 		Events.ButtonTriggerEvent.FireClient(player, this.room.cameraPosPart);
 
 		this.teleportPlayer(character);
-		this.room.proximityPrompt.Enabled = false;
 
 		UiService.Show(player, PopupType.ButtonMenu);
 	}

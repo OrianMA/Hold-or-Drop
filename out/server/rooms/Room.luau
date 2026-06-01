@@ -16,6 +16,17 @@ local UI_PART = "UiPart"
 local BILLBOARD = "BillboardGui"
 local GAIN_LABEL = "GainText"
 local EMPTY_TEXT = "Empty"
+local EMPTY_BASE_TEXT = "Empty base"
+-- Accepted names for the per-room spawn marker (a plain Part, not a SpawnLocation).
+-- Add yours here if you rename it.
+local SPAWN_PART_NAMES = { "RespawnLocation", "SpawnLocation", "SpawnPart" }
+-- Owner-display model — sibling of the ButtonModel inside the room folder.
+-- Shows the occupant's name on a SurfaceGui and a "your base" BillboardGui that
+-- is enabled client-side only for the owning player (see OwnerIndicatorController).
+local OWNER_DISPLAY = "OwnerDisplay"
+local NAME_PART = "NamePart"
+local NAME_TEXT_LABEL = "NameText"
+local OWNER_INDICATOR_PART = "OwnerIndicatorPart"
 local Room
 do
 	Room = setmetatable({}, {
@@ -54,6 +65,12 @@ do
 		self.proximityPrompt = proximityPrompt
 		self.playerPosPart = playerPosPart
 		self.cameraPosPart = cameraPosPart
+		-- ProximityPrompt.Enabled is a global property — there's no per-player
+		-- toggle. We keep it disabled on the server and let each client enable only
+		-- the prompt for the room they own (client-side writes don't replicate). See
+		-- RoomPromptController. The server never flips Enabled again, so the client's
+		-- local override is never stomped.
+		self.proximityPrompt.Enabled = false
 		-- Billboard is optional — gameplay still works without it.
 		local _billboard = buttonModel:FindFirstChild(UI_PART)
 		if _billboard ~= nil then
@@ -75,6 +92,48 @@ do
 				self.gainLabel = label
 			end
 		end
+		-- Optional spawn marker, placed anywhere in the room folder. Matched by name
+		-- (any of SPAWN_PART_NAMES) so a regular Part works.
+		for _, partName in SPAWN_PART_NAMES do
+			local part = folder:FindFirstChild(partName, true)
+			local _result_1 = part
+			if _result_1 ~= nil then
+				_result_1 = _result_1:IsA("BasePart")
+			end
+			if _result_1 then
+				self.spawnPart = part
+				break
+			end
+		end
+		if not self.spawnPart then
+			warn(`Room {self.name}: no spawn part ({table.concat(SPAWN_PART_NAMES, "/")}) — players won't spawn here`)
+		end
+		-- Optional owner-display model. We resolve the name label here, and disable
+		-- the "your base" BillboardGui on the server so it stays hidden until each
+		-- client locally enables it on their own room (OwnerIndicatorController).
+		local ownerDisplay = folder:FindFirstChild(OWNER_DISPLAY)
+		if ownerDisplay then
+			local nameLabel = ownerDisplay:FindFirstChild(NAME_TEXT_LABEL, true)
+			local _result_1 = nameLabel
+			if _result_1 ~= nil then
+				_result_1 = _result_1:IsA("TextLabel")
+			end
+			if _result_1 then
+				self.ownerNameLabel = nameLabel
+				self.ownerNameLabel.Text = EMPTY_BASE_TEXT
+			else
+				warn(`Room {self.name}: {OWNER_DISPLAY} missing TextLabel "{NAME_TEXT_LABEL}"`)
+			end
+			local indicatorPart = ownerDisplay:FindFirstChild(OWNER_INDICATOR_PART)
+			local _billboard_1 = indicatorPart
+			if _billboard_1 ~= nil then
+				_billboard_1 = _billboard_1:FindFirstChildOfClass("BillboardGui")
+			end
+			local billboard = _billboard_1
+			if billboard then
+				billboard.Enabled = false
+			end
+		end
 	end
 	function Room:invalidate(reason)
 		self.valid = false
@@ -94,14 +153,18 @@ do
 	end
 	function Room:assign(player)
 		self.occupant = player
-		self.proximityPrompt.Enabled = true
+		if self.ownerNameLabel then
+			self.ownerNameLabel.Text = `Base of {player.DisplayName}`
+		end
 	end
 	function Room:release()
 		self.occupant = nil
-		self.proximityPrompt.Enabled = false
 		self.proximityPrompt.ObjectText = EMPTY_TEXT
 		if self.gainLabel then
 			self.gainLabel.Text = EMPTY_TEXT
+		end
+		if self.ownerNameLabel then
+			self.ownerNameLabel.Text = EMPTY_BASE_TEXT
 		end
 	end
 	function Room:setGainCash(cash)

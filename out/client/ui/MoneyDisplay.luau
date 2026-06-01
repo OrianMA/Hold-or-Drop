@@ -9,18 +9,28 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 -- sitting under MoneyParent inside MainUI. The attribute is set by the server
 -- (PlayerDataService) and auto-replicates to this client.
 --
--- Updates animate via a NumberValue proxy tweened with TweenService — the
--- label text is re-formatted on every Changed step, so the player sees the
--- number visibly ticking up from the previous balance to the new one. This
--- pattern is robust to mid-flight interruption (e.g. earning more money while
--- the previous tween is still running): we cancel, restart from the current
--- visual value, and head toward the new target.
+-- Updates animate via a NumberValue proxy tweened with TweenService — the label
+-- text is re-formatted on every Changed step, so the player sees the number
+-- visibly ticking from the previous balance to the new one. Robust to mid-flight
+-- interruption (e.g. earning more while a tween runs): we cancel, restart from
+-- the current visual value, and head toward the new target.
+--
+-- `addVisual` lets other UI (e.g. the end-game payout animation) drive the HUD
+-- up incrementally for cosmetic effect. The Money attribute stays the source of
+-- truth — when the server credit lands, refresh() reconciles to the same value
+-- with no visible jump.
 local ATTRIBUTE = "Money"
 local LABEL_NAME = "MoneyText"
--- Duration of the "count-up" animation. Quad-Out feels punchier than Linear —
--- fast start, decelerating finish, matching how popular idle games render
--- reward deltas.
+-- Duration of the "count-up" animation. Quad-Out feels punchier than Linear.
 local TWEEN_INFO = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- Persistent proxy + the value we last rendered. We tween the proxy and mirror
+-- its value into the label on every Changed step. `currentTarget` is the value
+-- the proxy is currently heading toward (attribute- or addVisual-driven).
+local proxy
+local displayValue = 0
+local currentTarget = 0
+local initialized = false
+local activeTween
 local function findLabel()
 	local moneyParent = MainUIController:getMoneyParent()
 	if not moneyParent then
@@ -33,94 +43,87 @@ local function findLabel()
 	end
 	return if _result then found else nil
 end
-local function init()
-	local player = Players.LocalPlayer
-	-- Persistent proxy + the value we last rendered. We tween the proxy and
-	-- mirror its value into the label on every Changed step.
-	local proxy = Instance.new("NumberValue")
-	local displayValue = 0
-	local initialized = false
-	local activeTween
-	local proxyConn
-	proxy.Changed:Connect(function(v)
-		displayValue = v
-		local label = findLabel()
-		if label then
-			label.Text = FormatCash(math.floor(v))
+local function render(value)
+	local label = findLabel()
+	if label then
+		label.Text = FormatCash(math.floor(value))
+	end
+end
+-- Cancel any in-flight tween and head from where we *visually* are toward
+-- `target`. Snaps instead of tweening when we're already there.
+local function tweenTo(target)
+	currentTarget = target
+	if not proxy then
+		return nil
+	end
+	if activeTween ~= nil then
+		activeTween:Cancel()
+		activeTween = nil
+	end
+	if math.floor(displayValue) == math.floor(target) then
+		proxy.Value = target
+		return nil
+	end
+	proxy.Value = displayValue
+	local tween = TweenService:Create(proxy, TWEEN_INFO, {
+		Value = target,
+	})
+	activeTween = tween
+	local completed
+	completed = tween.Completed:Connect(function()
+		completed:Disconnect()
+		if activeTween == tween then
+			activeTween = nil
+			if proxy then
+				proxy.Value = target
+			end
+			render(target)
 		end
 	end)
-	local refresh = function()
-		local _condition = (player:GetAttribute(ATTRIBUTE))
-		if _condition == nil then
-			_condition = 0
-		end
-		local target = _condition
-		-- First update on join (or first time the label appears): snap, no tween,
-		-- so the HUD doesn't count up from 0 every time the player loads in.
-		if not initialized then
-			initialized = true
+	tween:Play()
+end
+local function refresh()
+	local _condition = (Players.LocalPlayer:GetAttribute(ATTRIBUTE))
+	if _condition == nil then
+		_condition = 0
+	end
+	local target = _condition
+	-- First update on join: snap, no tween, so the HUD doesn't count up from 0
+	-- every time the player loads in.
+	if not initialized then
+		initialized = true
+		if proxy then
 			proxy.Value = target
-			displayValue = target
-			local label = findLabel()
-			if label then
-				label.Text = FormatCash(target)
-			end
-			return nil
 		end
-		-- Already at target → nothing to animate. Still cancel any in-flight
-		-- tween so it doesn't overshoot the (now stale) previous target.
-		if math.floor(displayValue) == target then
-			if activeTween ~= nil then
-				activeTween:Cancel()
-				activeTween = nil
-			end
-			proxy.Value = target
-			return nil
-		end
-		-- Cancel any in-flight tween and restart from where we *visually* are,
-		-- not where the previous tween was supposed to land. Without this, a
-		-- quick succession of credits would jump-cut to the latest target.
-		if activeTween ~= nil then
-			activeTween:Cancel()
-			activeTween = nil
-		end
-		if proxyConn ~= nil then
-			proxyConn:Disconnect()
-			proxyConn = nil
-		end
-		proxy.Value = displayValue
-		activeTween = TweenService:Create(proxy, TWEEN_INFO, {
-			Value = target,
-		})
-		local tween = activeTween
-		-- On completion, snap to the exact target — float interpolation can
-		-- leave a 1-unit gap that would render as e.g. "$1999" instead of "$2K".
-		local completedConn
-		completedConn = tween.Completed:Connect(function()
-			completedConn:Disconnect()
-			if activeTween == tween then
-				activeTween = nil
-				proxy.Value = target
-				local label = findLabel()
-				if label then
-					label.Text = FormatCash(target)
-				end
+		displayValue = target
+		currentTarget = target
+		render(target)
+		return nil
+	end
+	tweenTo(target)
+end
+local MoneyDisplay = {
+	init = function(self)
+		local player = Players.LocalPlayer
+		proxy = Instance.new("NumberValue")
+		proxy.Changed:Connect(function(v)
+			displayValue = v
+			render(v)
+		end)
+		refresh()
+		player:GetAttributeChangedSignal(ATTRIBUTE):Connect(refresh)
+		-- Label may not exist yet on first frame — re-render on new descendants.
+		local gui = player:WaitForChild("PlayerGui")
+		gui.DescendantAdded:Connect(function(desc)
+			if desc.Name == LABEL_NAME and desc:IsA("TextLabel") then
+				desc.Text = FormatCash(math.floor(displayValue))
 			end
 		end)
-		tween:Play()
-	end
-	refresh()
-	player:GetAttributeChangedSignal(ATTRIBUTE):Connect(refresh)
-	-- Label may not exist yet on first frame — re-render on new descendants
-	local gui = player:WaitForChild("PlayerGui")
-	gui.DescendantAdded:Connect(function(desc)
-		if desc.Name == LABEL_NAME and desc:IsA("TextLabel") then
-			-- Label just appeared — render current value snapped (no tween),
-			-- otherwise it would animate from 0 to current on first display.
-			desc.Text = FormatCash(math.floor(displayValue))
-		end
-	end)
-end
+	end,
+	addVisual = function(self, amount)
+		tweenTo(currentTarget + amount)
+	end,
+}
 return {
-	init = init,
+	MoneyDisplay = MoneyDisplay,
 }

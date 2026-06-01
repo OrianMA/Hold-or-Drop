@@ -19,11 +19,21 @@ const roomByPlayer = new Map<Player, Room>();
 // While a player is assigned, we mirror live BaseCash changes onto their room's
 // billboard (covers the DataStore load landing after the initial assign).
 const baseCashConns = new Map<Player, RBXScriptConnection>();
+// Teleport the occupant onto their room's spawn part on every (re)spawn.
+const spawnConns = new Map<Player, RBXScriptConnection>();
 
 // "P2" → 2. Numeric-aware so P10 sorts after P9, not after P1.
 function roomOrder(name: string): number {
 	const [digits] = name.match("%d+");
 	return digits !== undefined ? (tonumber(digits) ?? 0) : 0;
+}
+
+// Place a character on top of a spawn part.
+function teleportToSpawn(character: Model, spawn: BasePart): void {
+	const hrp = character.WaitForChild("HumanoidRootPart", 5) as BasePart | undefined;
+	if (!hrp) return;
+	const playerHeight = character.GetExtentsSize().Y;
+	hrp.CFrame = spawn.CFrame.add(new Vector3(0, spawn.Size.Y / 2 + playerHeight / 2, 0));
 }
 
 function assign(player: Player): void {
@@ -35,7 +45,18 @@ function assign(player: Player): void {
 
 	room.assign(player);
 	roomByPlayer.set(player, room);
+	// Tells this player's client which prompt to enable (RoomPromptController).
+	player.SetAttribute("AssignedRoom", room.name);
 	room.setGainCash(PlayerProgressionService.get(player, "BaseCash"));
+
+	// Teleport the player onto their room's spawn part on every (re)spawn, and move
+	// an already-spawned character now (service init with players already in-game).
+	const spawnPart = room.spawnPart;
+	if (spawnPart) {
+		const spawnConn = player.CharacterAdded.Connect((character) => teleportToSpawn(character, spawnPart));
+		spawnConns.set(player, spawnConn);
+		if (player.Character) teleportToSpawn(player.Character, spawnPart);
+	}
 
 	const conn = player.GetAttributeChangedSignal("BaseCash").Connect(() => {
 		room.setGainCash(PlayerProgressionService.get(player, "BaseCash"));
@@ -50,10 +71,17 @@ function release(player: Player): void {
 		baseCashConns.delete(player);
 	}
 
+	const spawnConn = spawnConns.get(player);
+	if (spawnConn) {
+		spawnConn.Disconnect();
+		spawnConns.delete(player);
+	}
+
 	const room = roomByPlayer.get(player);
 	if (!room) return;
 	room.release();
 	roomByPlayer.delete(player);
+	player.SetAttribute("AssignedRoom", "");
 }
 
 export const RoomService = {
