@@ -3,7 +3,7 @@
 -- Mettre à true pour activer les cheats en développement.
 -- Penser à tout remettre à false avant de publier.
 local invincible = false
--- Wipe the player's persisted data (Money + UnlockedButtons) on join — they
+-- Wipe the player's persisted data (Money + progression values) on join — they
 -- load in with the default profile every time, and the next regular save
 -- overwrites the DataStore with the new state. Useful for re-testing the
 -- onboarding flow.

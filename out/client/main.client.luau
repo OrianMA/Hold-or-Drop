@@ -7,10 +7,8 @@ local setupButtonInGame = _ButtonInGameBehavior.setup
 local initEndGameButton = TS.import(script, script.Parent, "behaviors", "EndGameButtonBehavior").init
 local initMoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").init
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
-local initButtonLabels = TS.import(script, script.Parent, "ui", "ButtonLabelsController").init
 initButtonInGame()
 initEndGameButton()
 initMoneyDisplay()
 initInformationText()
-initButtonLabels()
 initButtonMenu(setupButtonInGame)

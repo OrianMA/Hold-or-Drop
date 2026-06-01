@@ -6,13 +6,15 @@ local ButtonSessionService = TS.import(script, game:GetService("ServerScriptServ
 local UiService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "UiService").UiService
 local CharacterService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "CharacterService").CharacterService
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
+local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+local RoomService = TS.import(script, game:GetService("ServerScriptService"), "TS", "rooms", "RoomService").RoomService
 local PopupConfig = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "PopupConfig").PopupConfig
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
 local services = { {
 	init = function(self)
 		UiService:init(PopupConfig)
 	end,
-}, PlayerDataService, ButtonTriggerService, CharacterService, EndGameButtonModule, {
+}, PlayerDataService, PlayerProgressionService, RoomService, ButtonTriggerService, CharacterService, EndGameButtonModule, {
 	init = function(self)
 		Players.PlayerRemoving:Connect(function(player)
 			ButtonSessionService:cleanup(player)

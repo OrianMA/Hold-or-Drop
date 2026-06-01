@@ -365,21 +365,18 @@ export function runEndGameAnimation(
 		endColor: restingColor,
 	};
 
-	// ── Drain math: keep the visual final equal to what the server actually
-	//    credits (= effectiveBaseCash * multiplier).
+	// ── Drain math: the visual final equals what the server actually credits
+	//    (= effectiveBaseCash * multiplier), for both wins and kills.
 	//
-	//   • Win (lossMultiplier = 1): legacy behavior — start at effectiveBaseCash,
-	//     each chunk c adds effectiveBaseCash * c → final = effectiveBaseCash
-	//     * (1 + multiplier).
-	//   • Kill (lossMultiplier < 1): start at effectiveBaseCash (post-penalty),
-	//     grow toward effectiveBaseCash * multiplier — so total growth =
-	//     effectiveBaseCash * (multiplier - 1), spread across chunks that sum to
-	//     `multiplier`. Per-chunk addition = perUnitCash * c.
-	//     Matches the killed-mode credit formula: baseCash * multiplier *
-	//     LOOSE_WIN_MULTIPLIER = effectiveBaseCash * multiplier.
-	const isLoss = lossMultiplier < 1;
-	const perUnitCash = isLoss && multiplier > 0 ? (effectiveBaseCash * (multiplier - 1)) / multiplier : effectiveBaseCash;
-	const totalGrowthCash = isLoss ? effectiveBaseCash * (multiplier - 1) : effectiveBaseCash * multiplier;
+	// `multiplier` is now a TOTAL multiplier that starts at 1 (1x = the base payout
+	// already shown in BaseCashText), so the cash only needs to grow by the *bonus*
+	// part: effectiveBaseCash * (multiplier - 1), spread across chunks that sum to
+	// `multiplier`; each chunk c adds perUnitCash * c.
+	//   - Win  (lossMultiplier = 1): effectiveBaseCash = baseCash.
+	//   - Kill (lossMultiplier < 1): effectiveBaseCash = baseCash * lossMultiplier
+	//     (post-penalty), matching baseCash * multiplier * LOOSE_WIN_MULTIPLIER.
+	const totalGrowthCash = effectiveBaseCash * (multiplier - 1);
+	const perUnitCash = multiplier > 0 ? totalGrowthCash / multiplier : 0;
 
 	const baseCashEndpoints: BaseCashStyleEndpoints = {
 		baseSize: effectiveBaseSize,

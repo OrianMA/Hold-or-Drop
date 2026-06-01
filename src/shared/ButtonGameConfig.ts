@@ -1,23 +1,14 @@
-// ── Stage timing — shared between server (game logic) and client (progress-bar markers) ─────────
-// Only duration & tickInterval live here.
-// multiplicatorAdded is defined per-button via Roblox attributes (Level1..Level5).
+// ── Button gameplay tuning ──────────────────────────────────────────────────────
+// Shared so server (game logic) and client (effects) agree on timing.
 
-export interface StageTimingConfig {
-	duration: number; // seconds this stage lasts before the next one starts
-	tickInterval: number; // seconds between each multiplier tick in this stage
-}
+// Seconds over which the explosion risk ramps to its max and the progress bar
+// fills. Defines the full length of the risk curve.
+export const RISK_RAMP_DURATION = 17;
 
-export const STAGE_TIMING_CONFIGS: StageTimingConfig[] = [
-	{ duration: 5, tickInterval: 1.0 }, // lent
-	{ duration: 4, tickInterval: 0.75 },
-	{ duration: 4, tickInterval: 0.6 },
-	{ duration: 4, tickInterval: 0.5 },
-	{ duration: 0, tickInterval: 0.4 }, // rapide — last stage, runs forever
-];
+// Seconds between each multiplier tick. Each tick adds the player's Multiplier
+// (PlayerProgressionService) to the running total.
+export const MULTIPLIER_TICK_RATE = 1;
 
-// Total duration — defines the full length of the risk curve and the progress bar
-export const TOTAL_STAGE_DURATION = (() => {
-	let total = 0;
-	for (const s of STAGE_TIMING_CONFIGS) total += s.duration;
-	return total;
-})();
+// Value the in-game multiplier starts at (1 = base payout before any growth).
+// Each tick then adds the player's Multiplier on top of this.
+export const STARTING_MULTIPLIER = 1;

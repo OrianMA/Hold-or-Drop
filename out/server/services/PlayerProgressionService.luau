@@ -4,20 +4,24 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local DataStoreService = _services.DataStoreService
 local Players = _services.Players
 local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").resetData
--- Per-player data persisted via DataStoreService. Mirrored to Roblox attributes
--- so the owning client can read state directly (auto-replication).
+-- Per-player progression values persisted via DataStoreService and mirrored to
+-- Roblox attributes so the owning client can read state directly (auto-replication).
 --
--- Stores numeric values listed in NUMERIC_KEYS → mirrored as same-name
--- attributes (Money → player.GetAttribute("Money")).
+-- Fields (all numeric — mirrored as same-name attributes):
+--   • BaseCash           — base payout of the player's button
+--   • Multiplier         — per-second multiplier that grows during gameplay
+--   • AdditionalSecurity — clamped to [0, 1]; reduces the explosion risk
 --
--- NB: DataStore access requires API Services enabled in Studio:
+-- DataStore access requires API Services enabled in Studio:
 -- Game Settings → Security → "Enable Studio Access to API Services".
-local NUMERIC_KEYS = { "Money" }
+local NUMERIC_KEYS = { "BaseCash", "Multiplier", "AdditionalSecurity" }
 local DEFAULT_DATA = {
-	Money = 0,
+	BaseCash = 100,
+	Multiplier = 0.1,
+	AdditionalSecurity = 0,
 }
--- Bump the store name (e.g. "_v2") if you ever need to reset everyone's data.
-local STORE_NAME = "PlayerData_v1"
+-- Bump the store name (e.g. "_v2") if you ever need to reset everyone's progression.
+local STORE_NAME = "PlayerProgression_v1"
 local dataStore = DataStoreService:GetDataStore(STORE_NAME)
 -- Only players whose data loaded successfully are eligible for save — avoids
 -- wiping a player's progress because of a transient DataStore failure.
@@ -25,12 +29,16 @@ local loadedPlayers = {}
 local function keyFor(player)
 	return `Player_{player.UserId}`
 end
+local function clampForKey(key, value)
+	-- AdditionalSecurity is a probability — outside [0, 1] would silently break gameplay math.
+	if key == "AdditionalSecurity" then
+		return math.clamp(value, 0, 1)
+	end
+	return value
+end
 local function loadData(player)
-	-- CHEAT — skip the load entirely, hand back a default profile. The next
-	-- regular save (PlayerRemoving / BindToClose) will overwrite the stored
-	-- entry with whatever fresh state the player ends up with.
 	if RESET_DATA_CHEAT then
-		warn(`PlayerDataService: resetData cheat — wiping in-memory state for {player.Name}`)
+		warn(`PlayerProgressionService: resetData cheat — wiping in-memory state for {player.Name}`)
 		local _object = table.clone(DEFAULT_DATA)
 		setmetatable(_object, nil)
 		return _object
@@ -39,7 +47,7 @@ local function loadData(player)
 		return dataStore:GetAsync(keyFor(player))
 	end)
 	if not success then
-		warn(`PlayerDataService: failed to load {player.Name}: {result}`)
+		warn(`PlayerProgressionService: failed to load {player.Name}: {result}`)
 		return nil
 	end
 	if result == nil then
@@ -59,7 +67,7 @@ local function loadData(player)
 	for _, key in NUMERIC_KEYS do
 		local value = loaded[key]
 		if type(value) == "number" then
-			merged[key] = value
+			merged[key] = clampForKey(key, value)
 		end
 	end
 	return merged
@@ -94,16 +102,17 @@ local function savePlayer(player)
 		if _condition == nil then
 			_condition = DEFAULT_DATA[key]
 		end
-		data[key] = _condition
+		local value = _condition
+		data[key] = clampForKey(key, value)
 	end
 	local success, err = pcall(function()
 		return dataStore:SetAsync(keyFor(player), data)
 	end)
 	if not success then
-		warn(`PlayerDataService: failed to save {player.Name}: {err}`)
+		warn(`PlayerProgressionService: failed to save {player.Name}: {err}`)
 	end
 end
-local PlayerDataService = {
+local PlayerProgressionService = {
 	init = function(self)
 		Players.PlayerAdded:Connect(setupPlayer)
 		for _, player in Players:GetPlayers() do
@@ -141,12 +150,12 @@ local PlayerDataService = {
 		return _condition
 	end,
 	set = function(self, player, key, value)
-		player:SetAttribute(key, value)
+		player:SetAttribute(key, clampForKey(key, value))
 	end,
 	add = function(self, player, key, amount)
 		self:set(player, key, self:get(player, key) + amount)
 	end,
 }
 return {
-	PlayerDataService = PlayerDataService,
+	PlayerProgressionService = PlayerProgressionService,
 }

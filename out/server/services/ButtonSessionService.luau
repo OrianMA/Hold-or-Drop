@@ -18,11 +18,17 @@ local ButtonSessionService = {
 		local _player = player
 		local session = sessions[_player]
 		if session then
-			session.proximityPrompt.Enabled = true
-			-- PlayerToHideFrom was set to this player on trigger — clear it so
-			-- the billboard becomes visible to them again.
-			if session.billboardGui and session.billboardGui.PlayerToHideFrom == player then
-				session.billboardGui.PlayerToHideFrom = nil
+			local room = session.room
+			-- Only re-enable if the player still owns the room. If they left, the
+			-- room was already released (prompt disabled) — don't revive an empty
+			-- room's prompt.
+			if room:owns(player) then
+				room.proximityPrompt.Enabled = true
+			end
+			-- PlayerToHideFrom was set to this player on trigger — clear it so the
+			-- billboard becomes visible to them again.
+			if room.billboardGui and room.billboardGui.PlayerToHideFrom == player then
+				room.billboardGui.PlayerToHideFrom = nil
 			end
 		end
 		local character = player.Character

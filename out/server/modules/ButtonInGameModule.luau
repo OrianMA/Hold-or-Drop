@@ -3,6 +3,7 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local ButtonSessionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ButtonSessionService").ButtonSessionService
 local UiService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "UiService").UiService
+local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ReplicatedStorage = _services.ReplicatedStorage
 local TweenService = _services.TweenService
@@ -11,12 +12,10 @@ local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
 local ConfettiBurst = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "ConfettiBurst").ConfettiBurst
 local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig")
-local STAGE_TIMING_CONFIGS = _ButtonGameConfig.STAGE_TIMING_CONFIGS
-local TOTAL_STAGE_DURATION = _ButtonGameConfig.TOTAL_STAGE_DURATION
+local RISK_RAMP_DURATION = _ButtonGameConfig.RISK_RAMP_DURATION
+local MULTIPLIER_TICK_RATE = _ButtonGameConfig.MULTIPLIER_TICK_RATE
+local STARTING_MULTIPLIER = _ButtonGameConfig.STARTING_MULTIPLIER
 -- ── Game tuning ───────────────────────────────────────────────────────────────
--- Default multiplicator increments — used when a button attribute is missing.
--- The actual values come from the button's Level1..Level5 attributes.
-local DEFAULT_MULTIPLIERS = { 1, 2, 5, 8, 15 }
 local MAX_RISK = 0.8
 local TICK_RATE = 0.5
 local LOOSE_WIN_MULTIPLIER = 0.3
@@ -31,8 +30,8 @@ local EXPLOSION_KILL_PRESSURE = 180000
 local EXPLOSION_SOUND_ID = "rbxassetid://139771888058836"
 local EXPLOSION_SOUND_VOLUME = 0.8
 local EXPLOSION_SOUND_ROLLOFF = 120
--- Alias — keeps the rest of the file unchanged while sourcing the value from the shared config
-local TOTAL_DURATION = TOTAL_STAGE_DURATION
+-- Alias — keeps the risk/progress math unchanged while sourcing the value from the shared config
+local TOTAL_DURATION = RISK_RAMP_DURATION
 -- ── Sound preloading ──────────────────────────────────────────────────────────
 -- A template Sound in ReplicatedStorage replicates to all clients on join,
 -- causing them to pre-buffer the audio asset before any explosion fires.
@@ -98,27 +97,15 @@ local function endButtonGame(player)
 	UiService:HideCurrent(player)
 end
 local function startButtonGame(player, session)
-	local _binding = session
-	local baseCash = _binding.baseCash
-	local currentMultiplier = 0
+	local room = session.room
+	local buttonModel = room.buttonModel
+	-- BaseCash + Multiplier now live on the player (PlayerProgressionService),
+	-- not on the button. Read once at game start — held for the whole session.
+	local baseCash = PlayerProgressionService:get(player, "BaseCash")
+	local multiplierPerSecond = PlayerProgressionService:get(player, "Multiplier")
+	-- Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
+	local currentMultiplier = STARTING_MULTIPLIER
 	local isActive = true
-	-- ── Read per-button multiplier increments from attributes (Level1..Level5) ─────
-	-- Attributes sit on the Model (Workspace → Buttons → Model), not on the Part itself.
-	-- Same cast pattern as ButtonModule.ts for BaseCash — already validated in-codebase.
-	local buttonModel = session.proximityPrompt:FindFirstAncestorWhichIsA("Model")
-	local getLevel = function(i)
-		local _result = buttonModel
-		if _result ~= nil then
-			_result = _result:GetAttribute(`Level{i + 1}`)
-		end
-		local _condition = _result
-		if _condition == nil then
-			_condition = DEFAULT_MULTIPLIERS[i + 1]
-		end
-		return _condition
-	end
-	local levelValues = { getLevel(0), getLevel(1), getLevel(2), getLevel(3), getLevel(4) }
-	Events.ButtonLevelsEvent:FireClient(player, levelValues[1], levelValues[2], levelValues[3], levelValues[4], levelValues[5])
 	Events.BaseCashEvent:FireClient(player, baseCash)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 	Events.RiskUpdateEvent:FireClient(player, 0)
@@ -135,27 +122,16 @@ local function startButtonGame(player, session)
 		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
-	-- Tourne à sa propre fréquence (tickInterval), totalement indépendante du
-	-- TICK_RATE. Chaque tick attend exactement tickInterval secondes — pas de
-	-- rattrapage en lot possible.
+	-- Increment plat : chaque seconde, currentMultiplier += multiplierPerSecond
+	-- (la valeur Multiplier du joueur). Indépendant de la boucle risque.
 	task.spawn(function()
-		local lastIndex = #STAGE_TIMING_CONFIGS - 1
-		local stageIndex = 0
-		local timeInStage = 0
 		while isActive do
-			local stageTiming = STAGE_TIMING_CONFIGS[stageIndex + 1]
-			task.wait(stageTiming.tickInterval)
+			task.wait(MULTIPLIER_TICK_RATE)
 			if not isActive then
 				break
 			end
-			timeInStage += stageTiming.tickInterval
-			currentMultiplier += levelValues[stageIndex + 1]
+			currentMultiplier += multiplierPerSecond
 			Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
-			-- Passage au stage suivant quand la durée est écoulée
-			if stageIndex < lastIndex and timeInStage >= stageTiming.duration then
-				stageIndex += 1
-				timeInStage = 0
-			end
 		end
 	end)
 	-- ── Boucle risque & progression ───────────────────────────────────────────
@@ -206,7 +182,7 @@ local function startButtonGame(player, session)
 					end
 					local humanoid = _humanoid
 					-- Capture button reference before session is cleared
-					local buttonPart = session.proximityPrompt.Parent
+					local buttonPart = room.buttonPart
 					-- Deregister button immediately (avoids WaitForChild blocking the UI)
 					ButtonSessionService:cleanup(player)
 					-- Freeze movement for the parry window

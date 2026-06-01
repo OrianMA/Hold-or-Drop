@@ -3,7 +3,7 @@ import { CameraController } from "shared/CameraController";
 import { spawnFloatingMultiplierLabel } from "client/ui/FloatingMultiplierLabel";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { MainUIController } from "client/ui/MainUIController";
-import { STAGE_TIMING_CONFIGS, TOTAL_STAGE_DURATION } from "shared/ButtonGameConfig";
+import { STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
 import { FormatCash } from "shared/NumberFormat";
 import {
 	ContentProvider,
@@ -28,9 +28,6 @@ let floatingTemplate: Frame | undefined;
 let buttonOriginalSize: UDim2 | undefined;
 let multiplierTextOriginalSize: number | undefined;
 let multiplierTextOriginalColor: Color3 | undefined;
-// Level marker labels — Level1 (leftmost) and Level5 (rightmost) stay in Studio position;
-// Level2–4 are repositioned at runtime based on cumulative stage durations.
-let levelLabels: (TextLabel | undefined)[] = [];
 
 // Lighting effects — created once in init()
 let colorCorrection: ColorCorrectionEffect | undefined;
@@ -475,34 +472,6 @@ export function init(): void {
 		}
 	});
 
-	// ── Level labels — text + positions ──────────────────────────────────────────
-	// Fired once per game start, right before BaseCashEvent.
-	// • All 5 labels get their text updated with the button's attribute values.
-	// • Level1 (x=0) and Level5 (x=1) keep their Studio positions.
-	// • Level2–4 are placed at the cumulative-duration percentage along the bar.
-	Events.ButtonLevelsEvent.OnClientEvent.Connect((v1: number, v2: number, v3: number, v4: number, v5: number) => {
-		if (!isGameActive) return;
-		const values = [v1, v2, v3, v4, v5];
-
-		// Update text for all labels (Level1Text stays at left edge, no repositioning needed)
-		for (let i = 0; i < 5; i++) {
-			const label = levelLabels[i];
-			if (label) label.Text = `+${tostring(math.round(values[i] * 10) / 10)}`;
-		}
-
-		// Reposition labels 2–4 (indices 1–3) at cumulative-duration percentages
-		let cumulative = 0;
-		for (let i = 1; i <= 3; i++) {
-			cumulative += STAGE_TIMING_CONFIGS[i - 1].duration;
-			const xScale = cumulative / TOTAL_STAGE_DURATION;
-			const label = levelLabels[i];
-			if (label) {
-				const pos = label.Position;
-				label.Position = new UDim2(xScale, 0, pos.Y.Scale, pos.Y.Offset);
-			}
-		}
-	});
-
 	Events.ProgressUpdateEvent.OnClientEvent.Connect((progress: number) => {
 		if (!isGameActive || !progressionIndicator) return;
 		TweenService.Create(progressionIndicator, FillProgressBarTI, {
@@ -532,11 +501,13 @@ export function setup(mainUI: ScreenGui): void {
 	const progressBarParent = sliderParent.WaitForChild("ProgressBar") as CanvasGroup;
 	progressionIndicator = progressBarParent.WaitForChild("ProgressionIndicator") as Frame;
 
-	// Level marker labels (Level1Text..Level5Text) sit inside the Slider frame
-	levelLabels = [1, 2, 3, 4, 5].map((n) => {
+	// Legacy 5-stage level markers (Level1Text..Level5Text) are no longer driven —
+	// the multiplier now grows by a flat per-second amount. Hide any that remain
+	// in the Studio layout so the bar stays clean.
+	for (const n of [1, 2, 3, 4, 5]) {
 		const child = sliderParent.FindFirstChild(`Level${n}Text`);
-		return child?.IsA("TextLabel") ? (child as TextLabel) : undefined;
-	});
+		if (child?.IsA("TextLabel")) child.Visible = false;
+	}
 
 	// Save original sizes/colors on first run so we can restore each game
 	if (!buttonOriginalSize) buttonOriginalSize = releaseButton.Size;
@@ -548,7 +519,7 @@ export function setup(mainUI: ScreenGui): void {
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	released = false;
-	previousMultiplier = 0;
+	previousMultiplier = STARTING_MULTIPLIER;
 	multiplierLabel.TextSize = multiplierTextOriginalSize;
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor;
 	multiplierTextSize = multiplierTextOriginalSize;
@@ -562,7 +533,7 @@ export function setup(mainUI: ScreenGui): void {
 	print(releaseButton.Activated);
 
 	// Reset UI
-	multiplierLabel.Text = "0x";
+	multiplierLabel.Text = `${STARTING_MULTIPLIER}x`;
 	progressionIndicator.Position = new UDim2(0, 0, 0.5, 0);
 
 	// Clean up any leftover connections from a previous game

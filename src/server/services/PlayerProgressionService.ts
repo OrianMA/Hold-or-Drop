@@ -1,28 +1,32 @@
 import { DataStoreService, Players } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
 
-// Per-player data persisted via DataStoreService. Mirrored to Roblox attributes
-// so the owning client can read state directly (auto-replication).
+// Per-player progression values persisted via DataStoreService and mirrored to
+// Roblox attributes so the owning client can read state directly (auto-replication).
 //
-// Stores numeric values listed in NUMERIC_KEYS → mirrored as same-name
-// attributes (Money → player.GetAttribute("Money")).
+// Fields (all numeric — mirrored as same-name attributes):
+//   • BaseCash           — base payout of the player's button
+//   • Multiplier         — per-second multiplier that grows during gameplay
+//   • AdditionalSecurity — clamped to [0, 1]; reduces the explosion risk
 //
-// NB: DataStore access requires API Services enabled in Studio:
+// DataStore access requires API Services enabled in Studio:
 // Game Settings → Security → "Enable Studio Access to API Services".
 
-const NUMERIC_KEYS = ["Money"] as const;
-export type NumericKey = (typeof NUMERIC_KEYS)[number];
+const NUMERIC_KEYS = ["BaseCash", "Multiplier", "AdditionalSecurity"] as const;
+export type ProgressionKey = (typeof NUMERIC_KEYS)[number];
 
-type PlayerData = {
-	[K in NumericKey]: number;
+type ProgressionData = {
+	[K in ProgressionKey]: number;
 };
 
-const DEFAULT_DATA: PlayerData = {
-	Money: 0,
+const DEFAULT_DATA: ProgressionData = {
+	BaseCash: 100,
+	Multiplier: 0.1,
+	AdditionalSecurity: 0,
 };
 
-// Bump the store name (e.g. "_v2") if you ever need to reset everyone's data.
-const STORE_NAME = "PlayerData_v1";
+// Bump the store name (e.g. "_v2") if you ever need to reset everyone's progression.
+const STORE_NAME = "PlayerProgression_v1";
 const dataStore = DataStoreService.GetDataStore(STORE_NAME);
 
 // Only players whose data loaded successfully are eligible for save — avoids
@@ -33,28 +37,31 @@ function keyFor(player: Player): string {
 	return `Player_${player.UserId}`;
 }
 
-function loadData(player: Player): PlayerData | undefined {
-	// CHEAT — skip the load entirely, hand back a default profile. The next
-	// regular save (PlayerRemoving / BindToClose) will overwrite the stored
-	// entry with whatever fresh state the player ends up with.
+function clampForKey(key: ProgressionKey, value: number): number {
+	// AdditionalSecurity is a probability — outside [0, 1] would silently break gameplay math.
+	if (key === "AdditionalSecurity") return math.clamp(value, 0, 1);
+	return value;
+}
+
+function loadData(player: Player): ProgressionData | undefined {
 	if (RESET_DATA_CHEAT) {
-		warn(`PlayerDataService: resetData cheat — wiping in-memory state for ${player.Name}`);
+		warn(`PlayerProgressionService: resetData cheat — wiping in-memory state for ${player.Name}`);
 		return { ...DEFAULT_DATA };
 	}
 
 	const [success, result] = pcall(() => dataStore.GetAsync(keyFor(player)));
 	if (!success) {
-		warn(`PlayerDataService: failed to load ${player.Name}: ${result}`);
+		warn(`PlayerProgressionService: failed to load ${player.Name}: ${result}`);
 		return undefined;
 	}
 	if (result === undefined) return { ...DEFAULT_DATA };
 	if (!typeIs(result, "table")) return { ...DEFAULT_DATA };
 
-	const loaded = result as Partial<PlayerData>;
-	const merged: PlayerData = { ...DEFAULT_DATA };
+	const loaded = result as Partial<ProgressionData>;
+	const merged: ProgressionData = { ...DEFAULT_DATA };
 	for (const key of NUMERIC_KEYS) {
 		const value = loaded[key];
-		if (typeIs(value, "number")) merged[key] = value;
+		if (typeIs(value, "number")) merged[key] = clampForKey(key, value);
 	}
 	return merged;
 }
@@ -73,16 +80,17 @@ function setupPlayer(player: Player): void {
 function savePlayer(player: Player): void {
 	if (!loadedPlayers.has(player)) return;
 
-	const data: PlayerData = { ...DEFAULT_DATA };
+	const data: ProgressionData = { ...DEFAULT_DATA };
 	for (const key of NUMERIC_KEYS) {
-		data[key] = (player.GetAttribute(key) as number | undefined) ?? DEFAULT_DATA[key];
+		const value = (player.GetAttribute(key) as number | undefined) ?? DEFAULT_DATA[key];
+		data[key] = clampForKey(key, value);
 	}
 
 	const [success, err] = pcall(() => dataStore.SetAsync(keyFor(player), data));
-	if (!success) warn(`PlayerDataService: failed to save ${player.Name}: ${err}`);
+	if (!success) warn(`PlayerProgressionService: failed to save ${player.Name}: ${err}`);
 }
 
-export const PlayerDataService = {
+export const PlayerProgressionService = {
 	init(): void {
 		Players.PlayerAdded.Connect(setupPlayer);
 		for (const player of Players.GetPlayers()) setupPlayer(player);
@@ -108,15 +116,15 @@ export const PlayerDataService = {
 		});
 	},
 
-	get(player: Player, key: NumericKey): number {
+	get(player: Player, key: ProgressionKey): number {
 		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_DATA[key];
 	},
 
-	set(player: Player, key: NumericKey, value: number): void {
-		player.SetAttribute(key, value);
+	set(player: Player, key: ProgressionKey, value: number): void {
+		player.SetAttribute(key, clampForKey(key, value));
 	},
 
-	add(player: Player, key: NumericKey, amount: number): void {
+	add(player: Player, key: ProgressionKey, amount: number): void {
 		this.set(player, key, this.get(player, key) + amount);
 	},
 };

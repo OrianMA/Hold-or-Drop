@@ -32,8 +32,6 @@ do
 	_container.ProgressUpdateEvent = ProgressUpdateEvent
 	local GameResultEvent = DefineEvent("GameResultEvent", script)
 	_container.GameResultEvent = GameResultEvent
-	local ButtonLevelsEvent = DefineEvent("ButtonLevelsEvent", script)
-	_container.ButtonLevelsEvent = ButtonLevelsEvent
 	-- EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)
 	local EndGameStartEvent = DefineEvent("EndGameStartEvent", script)
 	_container.EndGameStartEvent = EndGameStartEvent

@@ -5,9 +5,7 @@ local CameraController = TS.import(script, game:GetService("ReplicatedStorage"),
 local spawnFloatingMultiplierLabel = TS.import(script, script.Parent.Parent, "ui", "FloatingMultiplierLabel").spawnFloatingMultiplierLabel
 local MultiplierVisuals = TS.import(script, script.Parent.Parent, "ui", "MultiplierVisuals").MultiplierVisuals
 local MainUIController = TS.import(script, script.Parent.Parent, "ui", "MainUIController").MainUIController
-local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig")
-local STAGE_TIMING_CONFIGS = _ButtonGameConfig.STAGE_TIMING_CONFIGS
-local TOTAL_STAGE_DURATION = _ButtonGameConfig.TOTAL_STAGE_DURATION
+local STARTING_MULTIPLIER = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig").STARTING_MULTIPLIER
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
@@ -30,9 +28,6 @@ local floatingTemplate
 local buttonOriginalSize
 local multiplierTextOriginalSize
 local multiplierTextOriginalColor
--- Level marker labels — Level1 (leftmost) and Level5 (rightmost) stay in Studio position;
--- Level2–4 are repositioned at runtime based on cumulative stage durations.
-local levelLabels = {}
 -- Lighting effects — created once in init()
 local colorCorrection
 local bloomEffect
@@ -513,35 +508,6 @@ local function init()
 			}):Play()
 		end
 	end)
-	-- ── Level labels — text + positions ──────────────────────────────────────────
-	-- Fired once per game start, right before BaseCashEvent.
-	-- • All 5 labels get their text updated with the button's attribute values.
-	-- • Level1 (x=0) and Level5 (x=1) keep their Studio positions.
-	-- • Level2–4 are placed at the cumulative-duration percentage along the bar.
-	Events.ButtonLevelsEvent.OnClientEvent:Connect(function(v1, v2, v3, v4, v5)
-		if not isGameActive then
-			return nil
-		end
-		local values = { v1, v2, v3, v4, v5 }
-		-- Update text for all labels (Level1Text stays at left edge, no repositioning needed)
-		for i = 0, 4 do
-			local label = levelLabels[i + 1]
-			if label then
-				label.Text = `+{tostring(math.round(values[i + 1] * 10) / 10)}`
-			end
-		end
-		-- Reposition labels 2–4 (indices 1–3) at cumulative-duration percentages
-		local cumulative = 0
-		for i = 1, 3 do
-			cumulative += STAGE_TIMING_CONFIGS[i].duration
-			local xScale = cumulative / TOTAL_STAGE_DURATION
-			local label = levelLabels[i + 1]
-			if label then
-				local pos = label.Position
-				label.Position = UDim2.new(xScale, 0, pos.Y.Scale, pos.Y.Offset)
-			end
-		end
-	end)
 	Events.ProgressUpdateEvent.OnClientEvent:Connect(function(progress)
 		if not isGameActive or not progressionIndicator then
 			return nil
@@ -574,23 +540,19 @@ local function setup(mainUI)
 	multiplierLabel = sliderParent:WaitForChild("MultiplierLabel")
 	local progressBarParent = sliderParent:WaitForChild("ProgressBar")
 	progressionIndicator = progressBarParent:WaitForChild("ProgressionIndicator")
-	-- Level marker labels (Level1Text..Level5Text) sit inside the Slider frame
-	local _exp = { 1, 2, 3, 4, 5 }
-	-- ▼ ReadonlyArray.map ▼
-	local _newValue = table.create(#_exp)
-	local _callback = function(n)
+	-- Legacy 5-stage level markers (Level1Text..Level5Text) are no longer driven —
+	-- the multiplier now grows by a flat per-second amount. Hide any that remain
+	-- in the Studio layout so the bar stays clean.
+	for _, n in { 1, 2, 3, 4, 5 } do
 		local child = sliderParent:FindFirstChild(`Level{n}Text`)
 		local _result = child
 		if _result ~= nil then
 			_result = _result:IsA("TextLabel")
 		end
-		return if _result then child else nil
+		if _result then
+			child.Visible = false
+		end
 	end
-	for _k, _v in _exp do
-		_newValue[_k] = _callback(_v, _k - 1, _exp)
-	end
-	-- ▲ ReadonlyArray.map ▲
-	levelLabels = _newValue
 	-- Save original sizes/colors on first run so we can restore each game
 	if not buttonOriginalSize then
 		buttonOriginalSize = releaseButton.Size
@@ -616,7 +578,7 @@ local function setup(mainUI)
 	baseFov = _condition
 	isGameActive = true
 	released = false
-	previousMultiplier = 0
+	previousMultiplier = STARTING_MULTIPLIER
 	multiplierLabel.TextSize = multiplierTextOriginalSize
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor
 	multiplierTextSize = multiplierTextOriginalSize
@@ -628,7 +590,7 @@ local function setup(mainUI)
 	releaseButton.Visible = true
 	print(releaseButton.Activated)
 	-- Reset UI
-	multiplierLabel.Text = "0x"
+	multiplierLabel.Text = `{STARTING_MULTIPLIER}x`
 	progressionIndicator.Position = UDim2.new(0, 0, 0.5, 0)
 	-- Clean up any leftover connections from a previous game
 	local _result_1 = spaceConn

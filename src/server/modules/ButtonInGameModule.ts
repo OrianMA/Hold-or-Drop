@@ -1,17 +1,14 @@
 import { Events } from "shared/Event";
 import { ButtonSession, ButtonSessionService } from "server/services/ButtonSessionService";
 import { UiService } from "server/services/UiService";
+import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { ReplicatedStorage, TweenService, Workspace } from "@rbxts/services";
 import { invincible } from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { ConfettiBurst } from "server/modules/ConfettiBurst";
-import { STAGE_TIMING_CONFIGS, TOTAL_STAGE_DURATION } from "shared/ButtonGameConfig";
+import { RISK_RAMP_DURATION, MULTIPLIER_TICK_RATE, STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
-
-// Default multiplicator increments — used when a button attribute is missing.
-// The actual values come from the button's Level1..Level5 attributes.
-const DEFAULT_MULTIPLIERS: [number, number, number, number, number] = [1, 2, 5, 8, 15];
 
 const MAX_RISK = 0.8;
 const TICK_RATE = 0.5;
@@ -30,8 +27,8 @@ const EXPLOSION_SOUND_ID = "rbxassetid://139771888058836";
 const EXPLOSION_SOUND_VOLUME = 0.8;
 const EXPLOSION_SOUND_ROLLOFF = 120;
 
-// Alias — keeps the rest of the file unchanged while sourcing the value from the shared config
-const TOTAL_DURATION = TOTAL_STAGE_DURATION;
+// Alias — keeps the risk/progress math unchanged while sourcing the value from the shared config
+const TOTAL_DURATION = RISK_RAMP_DURATION;
 
 // ── Sound preloading ──────────────────────────────────────────────────────────
 // A template Sound in ReplicatedStorage replicates to all clients on join,
@@ -104,32 +101,17 @@ export function endButtonGame(player: Player): void {
 }
 
 export function startButtonGame(player: Player, session: ButtonSession): void {
-	const { baseCash } = session;
-	let currentMultiplier = 0;
+	const room = session.room;
+	const buttonModel = room.buttonModel;
+
+	// BaseCash + Multiplier now live on the player (PlayerProgressionService),
+	// not on the button. Read once at game start — held for the whole session.
+	const baseCash = PlayerProgressionService.get(player, "BaseCash");
+	const multiplierPerSecond = PlayerProgressionService.get(player, "Multiplier");
+
+	// Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
+	let currentMultiplier = STARTING_MULTIPLIER;
 	let isActive = true;
-
-	// ── Read per-button multiplier increments from attributes (Level1..Level5) ─────
-	// Attributes sit on the Model (Workspace → Buttons → Model), not on the Part itself.
-	// Same cast pattern as ButtonModule.ts for BaseCash — already validated in-codebase.
-	const buttonModel = session.proximityPrompt.FindFirstAncestorWhichIsA("Model");
-	const getLevel = (i: number): number =>
-		(buttonModel?.GetAttribute(`Level${i + 1}`) as number | undefined) ?? DEFAULT_MULTIPLIERS[i];
-	const levelValues: [number, number, number, number, number] = [
-		getLevel(0),
-		getLevel(1),
-		getLevel(2),
-		getLevel(3),
-		getLevel(4),
-	];
-
-	Events.ButtonLevelsEvent.FireClient(
-		player,
-		levelValues[0],
-		levelValues[1],
-		levelValues[2],
-		levelValues[3],
-		levelValues[4],
-	);
 
 	Events.BaseCashEvent.FireClient(player, baseCash);
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
@@ -147,29 +129,15 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
-	// Tourne à sa propre fréquence (tickInterval), totalement indépendante du
-	// TICK_RATE. Chaque tick attend exactement tickInterval secondes — pas de
-	// rattrapage en lot possible.
+	// Increment plat : chaque seconde, currentMultiplier += multiplierPerSecond
+	// (la valeur Multiplier du joueur). Indépendant de la boucle risque.
 	task.spawn(() => {
-		const lastIndex = STAGE_TIMING_CONFIGS.size() - 1;
-		let stageIndex = 0;
-		let timeInStage = 0;
-
 		while (isActive) {
-			const stageTiming = STAGE_TIMING_CONFIGS[stageIndex];
-
-			task.wait(stageTiming.tickInterval);
+			task.wait(MULTIPLIER_TICK_RATE);
 			if (!isActive) break;
 
-			timeInStage += stageTiming.tickInterval;
-			currentMultiplier += levelValues[stageIndex];
+			currentMultiplier += multiplierPerSecond;
 			Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
-
-			// Passage au stage suivant quand la durée est écoulée
-			if (stageIndex < lastIndex && timeInStage >= stageTiming.duration) {
-				stageIndex++;
-				timeInStage = 0;
-			}
 		}
 	});
 
@@ -217,7 +185,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 					const humanoid = character?.FindFirstChildOfClass("Humanoid");
 					// Capture button reference before session is cleared
-					const buttonPart = session.proximityPrompt.Parent as BasePart | undefined;
+					const buttonPart = room.buttonPart;
 
 					// Deregister button immediately (avoids WaitForChild blocking the UI)
 					ButtonSessionService.cleanup(player);
