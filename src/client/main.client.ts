@@ -6,7 +6,7 @@ import { MoneyDisplay } from "./ui/MoneyDisplay";
 import { init as initInformationText } from "./ui/InformationText";
 import { init as initRoomPrompts } from "./rooms/RoomPromptController";
 import { init as initOwnerIndicator } from "./rooms/OwnerIndicatorController";
-import { init as initShopMenu } from "./behaviors/ShopMenuBehavior";
+import { init as initShopMenu } from "./behaviors/ShopBehavior";
 
 // Keep MainUI (the persistent HUD + popups) alive across respawns. By default a
 // ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the

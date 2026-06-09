@@ -10,6 +10,7 @@ local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").Mone
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
+local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 -- Keep MainUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
 -- references each behavior caches at startup — leaving ButtonMenu and the rest
@@ -26,3 +27,4 @@ initInformationText()
 initRoomPrompts()
 initOwnerIndicator()
 initButtonMenu(setupButtonInGame)
+initShopMenu()

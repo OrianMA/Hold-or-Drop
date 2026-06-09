@@ -1,19 +1,23 @@
-import { Players, Workspace } from "@rbxts/services";
+import { Players, RunService, Workspace } from "@rbxts/services";
 
 // Opens / closes the Shop menu (MainUI/ShopMenu).
 // The ProximityPrompt under Workspace/Shop/ProximityPromptPart opens it; the
-// CloseButton under ShopMenu/header closes it. Purely client-side — opening a
-// menu needs no server authority (purchases get validated server-side later).
+// CloseButton under ShopMenu/Header closes it. Also auto-closes when the
+// player walks more than CLOSE_DISTANCE studs away from the prompt part.
+// Purely client-side — opening a menu needs no server authority (purchases
+// get validated server-side later).
 
 const SHOP_MODEL = "Shop";
 const PROMPT_PART = "ProximityPromptPart";
 const SHOP_MENU = "ShopMenu";
-const HEADER = "header";
+const HEADER = "Header";
 const CLOSE_BUTTON = "CloseButton";
+const CLOSE_DISTANCE = 15;
 
 export function init(): void {
 	const shop = Workspace.WaitForChild(SHOP_MODEL);
-	const prompt = shop.WaitForChild(PROMPT_PART).WaitForChild("ProximityPrompt") as ProximityPrompt;
+	const promptPart = shop.WaitForChild(PROMPT_PART) as BasePart;
+	const prompt = promptPart.WaitForChild("ProximityPrompt") as ProximityPrompt;
 
 	const mainUI = (Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("MainUI");
 	const shopMenu = mainUI.WaitForChild(SHOP_MENU) as GuiObject;
@@ -21,11 +25,26 @@ export function init(): void {
 
 	shopMenu.Visible = false; // start hidden regardless of the Studio default
 
-	prompt.Triggered.Connect(() => {
-		shopMenu.Visible = true;
-	});
+	// Heartbeat watcher is only attached while the menu is open so the closed
+	// state has zero per-frame cost.
+	let distanceWatcher: RBXScriptConnection | undefined;
 
-	closeButton.Activated.Connect(() => {
+	const close = (): void => {
 		shopMenu.Visible = false;
-	});
+		distanceWatcher?.Disconnect();
+		distanceWatcher = undefined;
+	};
+
+	const open = (): void => {
+		shopMenu.Visible = true;
+		distanceWatcher?.Disconnect();
+		distanceWatcher = RunService.Heartbeat.Connect(() => {
+			const root = Players.LocalPlayer.Character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+			if (!root) return;
+			if (root.Position.sub(promptPart.Position).Magnitude > CLOSE_DISTANCE) close();
+		});
+	};
+
+	prompt.Triggered.Connect(open);
+	closeButton.Activated.Connect(close);
 }
