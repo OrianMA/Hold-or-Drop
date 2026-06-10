@@ -4,24 +4,28 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local DataStoreService = _services.DataStoreService
 local Players = _services.Players
 local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").resetData
--- Per-player progression values persisted via DataStoreService and mirrored to
--- Roblox attributes so the owning client can read state directly (auto-replication).
+local STATS = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").STATS
+-- Per-player progression. The LEVELS are the persisted source of truth; the
+-- effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
+-- the levels via shared/ShopConfig and mirrored to attributes so the owning
+-- client, the game loop and the room billboard read them directly (replication).
 --
--- Fields (all numeric — mirrored as same-name attributes):
---   • BaseCash           — base payout of the player's button
---   • Multiplier         — per-second multiplier that grows during gameplay
---   • AdditionalSecurity — clamped to [0, 1]; reduces the explosion risk
+-- Stored per player (DataStore): BaseCashLevel, MultiplierLevel, SafetyLevel.
+-- Mirrored attributes: the three level attributes AND the three value attributes.
 --
 -- DataStore access requires API Services enabled in Studio:
 -- Game Settings → Security → "Enable Studio Access to API Services".
-local NUMERIC_KEYS = { "BaseCash", "Multiplier", "AdditionalSecurity" }
-local DEFAULT_DATA = {
+-- The three stats, in a stable iteration order.
+local STAT_LIST = { "BaseCash", "Multiplier", "Safety" }
+-- Value attributes the rest of the game reads (names unchanged from before).
+-- Fallback values if a value attribute is somehow missing (matches level 0).
+local DEFAULT_VALUES = {
 	BaseCash = 100,
 	Multiplier = 0.1,
 	AdditionalSecurity = 0,
 }
--- Bump the store name (e.g. "_v2") if you ever need to reset everyone's progression.
-local STORE_NAME = "PlayerProgression_v1"
+-- Schema changed from values → levels, so the store name is bumped to _v2.
+local STORE_NAME = "PlayerProgression_v2"
 local dataStore = DataStoreService:GetDataStore(STORE_NAME)
 -- Only players whose data loaded successfully are eligible for save — avoids
 -- wiping a player's progress because of a transient DataStore failure.
@@ -29,19 +33,30 @@ local loadedPlayers = {}
 local function keyFor(player)
 	return `Player_{player.UserId}`
 end
-local function clampForKey(key, value)
-	-- AdditionalSecurity is a probability — outside [0, 1] would silently break gameplay math.
-	if key == "AdditionalSecurity" then
-		return math.clamp(value, 0, 1)
+local function defaultLevels()
+	local levels = {}
+	for _, stat in STAT_LIST do
+		levels[STATS[stat].levelAttribute] = 0
 	end
-	return value
+	return levels
 end
-local function loadData(player)
+-- Sets both the level attribute and the derived value attribute for every stat.
+local function applyLevels(player, levels)
+	for _, stat in STAT_LIST do
+		local cfg = STATS[stat]
+		local _condition = levels[cfg.levelAttribute]
+		if _condition == nil then
+			_condition = 0
+		end
+		local level = _condition
+		player:SetAttribute(cfg.levelAttribute, level)
+		player:SetAttribute(cfg.valueAttribute, cfg.valueFor(level))
+	end
+end
+local function loadLevels(player)
 	if RESET_DATA_CHEAT then
 		warn(`PlayerProgressionService: resetData cheat — wiping in-memory state for {player.Name}`)
-		local _object = table.clone(DEFAULT_DATA)
-		setmetatable(_object, nil)
-		return _object
+		return defaultLevels()
 	end
 	local success, result = pcall(function()
 		return dataStore:GetAsync(keyFor(player))
@@ -50,41 +65,24 @@ local function loadData(player)
 		warn(`PlayerProgressionService: failed to load {player.Name}: {result}`)
 		return nil
 	end
-	if result == nil then
-		local _object = table.clone(DEFAULT_DATA)
-		setmetatable(_object, nil)
-		return _object
-	end
-	if not (type(result) == "table") then
-		local _object = table.clone(DEFAULT_DATA)
-		setmetatable(_object, nil)
-		return _object
+	if result == nil or not (type(result) == "table") then
+		return defaultLevels()
 	end
 	local loaded = result
-	local _object = table.clone(DEFAULT_DATA)
-	setmetatable(_object, nil)
-	local merged = _object
-	for _, key in NUMERIC_KEYS do
+	local merged = defaultLevels()
+	for _, stat in STAT_LIST do
+		local key = STATS[stat].levelAttribute
 		local value = loaded[key]
 		if type(value) == "number" then
-			merged[key] = clampForKey(key, value)
+			merged[key] = math.max(0, math.floor(value))
 		end
 	end
 	return merged
 end
 local function setupPlayer(player)
-	local data = loadData(player)
-	local _condition = data
-	if _condition == nil then
-		local _object = table.clone(DEFAULT_DATA)
-		setmetatable(_object, nil)
-		_condition = _object
-	end
-	local apply = _condition
-	for _, key in NUMERIC_KEYS do
-		player:SetAttribute(key, apply[key])
-	end
-	if data ~= nil then
+	local levels = loadLevels(player)
+	applyLevels(player, levels or defaultLevels())
+	if levels ~= nil then
 		local _player = player
 		loadedPlayers[_player] = true
 	end
@@ -94,16 +92,14 @@ local function savePlayer(player)
 	if not (loadedPlayers[_player] ~= nil) then
 		return nil
 	end
-	local _object = table.clone(DEFAULT_DATA)
-	setmetatable(_object, nil)
-	local data = _object
-	for _, key in NUMERIC_KEYS do
+	local data = defaultLevels()
+	for _, stat in STAT_LIST do
+		local key = STATS[stat].levelAttribute
 		local _condition = (player:GetAttribute(key))
 		if _condition == nil then
-			_condition = DEFAULT_DATA[key]
+			_condition = 0
 		end
-		local value = _condition
-		data[key] = clampForKey(key, value)
+		data[key] = _condition
 	end
 	local success, err = pcall(function()
 		return dataStore:SetAsync(keyFor(player), data)
@@ -145,15 +141,26 @@ local PlayerProgressionService = {
 	get = function(self, player, key)
 		local _condition = (player:GetAttribute(key))
 		if _condition == nil then
-			_condition = DEFAULT_DATA[key]
+			_condition = DEFAULT_VALUES[key]
 		end
 		return _condition
 	end,
-	set = function(self, player, key, value)
-		player:SetAttribute(key, clampForKey(key, value))
+	getLevel = function(self, player, stat)
+		local _condition = (player:GetAttribute(STATS[stat].levelAttribute))
+		if _condition == nil then
+			_condition = 0
+		end
+		return _condition
 	end,
-	add = function(self, player, key, amount)
-		self:set(player, key, self:get(player, key) + amount)
+	addLevel = function(self, player, stat, amount)
+		local cfg = STATS[stat]
+		local nextLevel = self:getLevel(player, stat) + amount
+		if cfg.maxLevel ~= nil then
+			nextLevel = math.min(nextLevel, cfg.maxLevel)
+		end
+		nextLevel = math.max(0, math.floor(nextLevel))
+		player:SetAttribute(cfg.levelAttribute, nextLevel)
+		player:SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel))
 	end,
 }
 return {

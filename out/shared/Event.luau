@@ -43,6 +43,11 @@ do
 	-- Args: (text: string, color?: Color3).
 	local InformationTextEvent = DefineEvent("InformationTextEvent", script)
 	_container.InformationTextEvent = InformationTextEvent
+	-- Shop — client → server. Player clicked a cash buy button.
+	-- Arg: itemId (ShopItemId from shared/ShopConfig). Server validates money,
+	-- cap and ownership, then deducts and bumps the level.
+	local ShopPurchaseEvent = DefineEvent("ShopPurchaseEvent", script)
+	_container.ShopPurchaseEvent = ShopPurchaseEvent
 end
 return {
 	Events = Events,

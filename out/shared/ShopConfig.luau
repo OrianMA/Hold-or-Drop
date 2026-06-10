@@ -1,0 +1,136 @@
+-- Compiled with roblox-ts v3.0.0
+local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
+local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
+local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
+local BASE_CASH = _ShopBalance.BASE_CASH
+local MULTIPLIER = _ShopBalance.MULTIPLIER
+local PRICE_GROWTH = _ShopBalance.PRICE_GROWTH
+local SAFETY = _ShopBalance.SAFETY
+-- ── Shop — structure + formulas ───────────────────────────────────────────────
+-- Pure logic, no side effects. Imported by both the server (purchase authority)
+-- and the client (display). Levels are the persisted source of truth
+-- (PlayerProgressionService); the effective values and prices are *derived* from
+-- the level here. All tunable numbers live in shared/ShopBalance.ts — edit there
+-- to rebalance.
+-- A stat is one upgradeable progression value. Multiple shop buttons may target
+-- the same stat (BaseCash is sold both as +1 and +5).
+-- One per shop button under MainUI/ShopMenu/Body.
+-- Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
+-- number rendering used by NumberFormat without flooring sub-1 values to "0".
+local function trimDecimals(value)
+	local hundredths = math.floor(value * 100 + 1e-7)
+	if hundredths % 100 == 0 then
+		return tostring(hundredths / 100)
+	end
+	if hundredths % 10 == 0 then
+		return string.format("%.1f", hundredths / 100)
+	end
+	return string.format("%.2f", hundredths / 100)
+end
+local STATS = {
+	BaseCash = {
+		valueAttribute = "BaseCash",
+		levelAttribute = "BaseCashLevel",
+		startPrice = BASE_CASH.startPrice,
+		valueFor = function(level)
+			return math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ^ level)
+		end,
+		display = function(value)
+			return FormatNumber(value)
+		end,
+	},
+	Multiplier = {
+		valueAttribute = "Multiplier",
+		levelAttribute = "MultiplierLevel",
+		startPrice = MULTIPLIER.startPrice,
+		valueFor = function(level)
+			return MULTIPLIER.baseValue * MULTIPLIER.valueGrowth ^ level
+		end,
+		display = function(value)
+			return if value < 1000 then trimDecimals(value) else FormatNumber(value)
+		end,
+	},
+	Safety = {
+		valueAttribute = "AdditionalSecurity",
+		levelAttribute = "SafetyLevel",
+		startPrice = SAFETY.startPrice,
+		maxLevel = SAFETY.maxLevel,
+		valueFor = function(level)
+			return math.min(level * SAFETY.perLevel, SAFETY.perLevel * SAFETY.maxLevel)
+		end,
+		display = function(value)
+			return string.format("%d%%", math.round(value * 100))
+		end,
+	},
+}
+local ITEMS = {
+	BaseCash = {
+		id = "BaseCash",
+		stat = "BaseCash",
+		quantity = 1,
+		frameName = "AButtonMoney",
+		title = "+1 Boost",
+	},
+	BaseCashX5 = {
+		id = "BaseCashX5",
+		stat = "BaseCash",
+		quantity = 5,
+		frameName = "BX5ButtonMoney",
+		title = "+5 Boost",
+	},
+	Multiplier = {
+		id = "Multiplier",
+		stat = "Multiplier",
+		quantity = 1,
+		frameName = "CMultiplier",
+		title = "+1 Boost",
+	},
+	Safety = {
+		id = "Safety",
+		stat = "Safety",
+		quantity = 1,
+		frameName = "DSafety",
+		title = "+1 Boost",
+	},
+}
+-- Iteration order for the client (matches the A/B/C/D frame ordering).
+local ITEM_ORDER = { "BaseCash", "BaseCashX5", "Multiplier", "Safety" }
+-- Price to go from `level` → `level + 1` for a stat. Deterministic integer so
+-- client and server always agree.
+local function priceForLevel(stat, level)
+	return math.floor(STATS[stat].startPrice * PRICE_GROWTH ^ level)
+end
+-- Total price to buy a whole item from `fromLevel` (strict sum of each level —
+-- no bulk discount). For a +1 item this is just priceForLevel.
+local function priceForItem(item, fromLevel)
+	local total = 0
+	do
+		local i = 0
+		local _shouldIncrement = false
+		while true do
+			if _shouldIncrement then
+				i += 1
+			else
+				_shouldIncrement = true
+			end
+			if not (i < item.quantity) then
+				break
+			end
+			total += priceForLevel(item.stat, fromLevel + i)
+		end
+	end
+	return total
+end
+-- True when the stat is at (or above) its cap and cannot be upgraded further.
+local function isAtCap(stat, level)
+	local max = STATS[stat].maxLevel
+	return max ~= nil and level >= max
+end
+return {
+	priceForLevel = priceForLevel,
+	priceForItem = priceForItem,
+	isAtCap = isAtCap,
+	STATS = STATS,
+	ITEMS = ITEMS,
+	ITEM_ORDER = ITEM_ORDER,
+}

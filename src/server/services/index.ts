@@ -5,6 +5,7 @@ import { UiService } from "./UiService";
 import { CharacterService } from "./CharacterService";
 import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
+import { ShopService } from "./ShopService";
 import { RoomService } from "server/rooms/RoomService";
 import { PopupConfig } from "server/UI/PopupConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
@@ -19,6 +20,8 @@ export const services: Array<{ init(): void }> = [
 	// Progression must init before RoomService so the BaseCash attribute exists
 	// when a room is assigned (the room also listens for later changes).
 	PlayerProgressionService,
+	// Shop needs PlayerData (money) + PlayerProgression (levels) ready first.
+	ShopService,
 	RoomService,
 	// Binds a ButtonModule per room — must run after RoomService builds them.
 	ButtonTriggerService,

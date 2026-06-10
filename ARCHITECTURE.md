@@ -50,7 +50,7 @@ src/
 │   ├── services/
 │   │   ├── index.ts         # Service registry + boot ORDER (critical)
 │   │   ├── RoomService… (rooms/) PlayerDataService, PlayerProgressionService,
-│   │   ├── ButtonTriggerService, ButtonSessionService, CharacterService, UiService
+│   │   ├── ShopService, ButtonTriggerService, ButtonSessionService, CharacterService, UiService
 │   ├── rooms/
 │   │   ├── Room.ts          # One room wrapper (parts, ownership, billboard)
 │   │   └── RoomService.ts   # player ↔ room assignment
@@ -67,13 +67,16 @@ src/
 │   └── main.server.ts
 ├── client/                  # StarterPlayerScripts — visuals, input, camera
 │   ├── main.client.ts       # Entry: wires up all client behaviors
-│   ├── behaviors/           # ButtonMenu / ButtonInGame / EndGameButton behaviors
+│   ├── behaviors/           # ButtonMenu / ButtonInGame / EndGameButton / Shop behaviors
+│   │   └── ShopBehavior (open/close) + ShopItemsController (the 4 upgrade buttons)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
 │   └── ui/                  # HUD + effects (MoneyDisplay, MainUIController, etc.)
 └── shared/                  # ReplicatedStorage — code/data used by both sides
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
     ├── Utils/DefineEvent.ts # Creates (server) / waits for (client) a RemoteEvent
     ├── ButtonGameConfig.ts  # Shared gameplay tuning constants
+    ├── ShopBalance.ts       # Shop economy numbers (THE rebalancing file)
+    ├── ShopConfig.ts        # Shop items + price/value formulas (logic, reads ShopBalance)
     ├── PopupType.ts         # Popup enum (shared contract)
     ├── NumberFormat.ts      # FormatCash helper
     └── CameraController.ts  # Scriptable camera helper (client-only at runtime)
@@ -97,13 +100,15 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 
 1. `UiService.init(PopupConfig)` — register popup classes
 2. `PlayerDataService` — load/persist `Money`
-3. `PlayerProgressionService` — load/persist `BaseCash`, `Multiplier`, `AdditionalSecurity`
-   (must run before RoomService so the `BaseCash` attribute exists at room assignment)
-4. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-5. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-6. `CharacterService` — normalize character scale on spawn
-7. `EndGameButtonModule.init()` — wire the payout-finished handshake
-8. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+3. `PlayerProgressionService` — load/persist the progression **levels**, derive
+   `BaseCash`, `Multiplier`, `AdditionalSecurity` (must run before RoomService so the
+   `BaseCash` attribute exists at room assignment)
+4. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
+5. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+6. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+7. `CharacterService` — normalize character scale on spawn
+8. `EndGameButtonModule.init()` — wire the payout-finished handshake
+9. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -151,8 +156,9 @@ session) and runs **two independent loops** via `task.spawn`:
 - **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): `currentMultiplier += Multiplier` each
   tick, starting from `STARTING_MULTIPLIER` (1). Flat per-second growth.
 - **Risk loop** (`TICK_RATE` = 0.5s): `getRisk(t)` is `MAX_RISK * (t/TOTAL_DURATION)²`
-  (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s). Each tick rolls
-  `math.random() < risk`; also drives the progress bar.
+  (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s), then scaled by
+  the player's **Safety**: `risk = getRisk(t) * (1 - safety)` (safety 0..0.5, read once at
+  session start). Each tick rolls `math.random() < risk`; also drives the progress bar.
 
 Endings:
 - **Release** (`ReleaseButtonEvent`): pays `baseCash * currentMultiplier`, confetti, → EndGame.
@@ -185,16 +191,19 @@ multiplier, lossMultiplier) to drive the client payout animation. The client sig
 - Both follow the same pattern: **DataStore-backed, mirrored to player Attributes** so the
   owning client can read state directly via replication.
 - `PlayerDataService` → `Money` (store `PlayerData_v1`).
-- `PlayerProgressionService` → `BaseCash` (100), `Multiplier` (0.1), `AdditionalSecurity`
-  (0, clamped [0,1]) (store `PlayerProgression_v1`).
+- `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `MultiplierLevel`,
+  `SafetyLevel` (store `PlayerProgression_v2`). The effective values `BaseCash`,
+  `Multiplier`, `AdditionalSecurity` are **derived** from the levels via `shared/ShopConfig`
+  and mirrored to attributes (both levels and values replicate). Storing levels means the
+  price/value curves can be retuned later with **zero save migration**.
 - **Safe-save guard:** only players whose load succeeded are added to `loadedPlayers` and
   thus eligible to save — a transient load failure never wipes progress.
 - `BindToClose` saves all players in parallel within the ~30s shutdown budget.
 - `get/set/add(player, key, …)` are the public accessors. Bump `STORE_NAME` (`_v2`) to wipe
   everyone. **API Services must be enabled** in Studio for DataStores to work.
 
-> `AdditionalSecurity` is **stored but not yet wired** into the risk math — intended as a
-> future risk-reduction stat.
+> `AdditionalSecurity` (0..0.5, sold as **Safety** in the shop) scales the explosion risk:
+> the risk loop reads it once at session start and applies `risk *= (1 - safety)` (see §6.3).
 
 ### 6.7 Camera & HUD (client)
 - `CameraController` (shared): `SetCinematic` (Scriptable), `AnimateTo` (tween CFrame),
@@ -211,6 +220,30 @@ multiplier, lossMultiplier) to drive the client payout animation. The client sig
   zoom, and a two-binding camera-shake design (restore clean CFrame at Camera-1, apply
   shake at Camera+1) to avoid spring drift. It listens to all the server gameplay events
   and translates them into effects.
+
+### 6.8 Shop (`shared/ShopConfig.ts`, `server/services/ShopService.ts`, `client/behaviors/ShopItemsController.ts`)
+- The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `MainUI/ShopMenu`,
+  open/close handled by `ShopBehavior`). Four buttons map to the upgrades:
+  `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CMultiplier` = Multiplier +1,
+  `DSafety` = Safety +1.
+- **`ShopBalance` (shared)** holds every tunable economy number (start prices, value/price
+  growth, Safety cap) and nothing else — **the file to edit when rebalancing**.
+- **`ShopConfig` (shared)** is the structure + logic, fed by `ShopBalance`: `ITEMS`, per-stat
+  `STATS` (value attribute, level attribute, `startPrice`, optional `maxLevel`, `valueFor`,
+  `display`) and pure pricing helpers — `priceForLevel` = `floor(start * PRICE_GROWTH^level)`,
+  `priceForItem` (strict sum of the next N levels), `isAtCap`. Imported by both sides so
+  prices/stat previews computed on the client always match the server.
+  - Curves: BaseCash `floor(100 * 1.1^level)`, Multiplier `0.1 * 1.1^level` (uncapped),
+    Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 2000.
+- **`ShopService` (server)** owns the only mutation path. On `ShopPurchaseEvent` it validates
+  the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
+  + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
+  pre-check is UX-only; the server never trusts it.
+- **`ShopItemsController` (client)** binds the four frames, renders current→next stat
+  (`BoostLyout/CurrentStatText` → `NextStatText`) and the cash price (`BuyButton/TextLabel`),
+  greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`.
+  It refreshes purely from replicated attributes (`Money` + the three level attributes) — no
+  server→client response event. **Robux buttons (`RobuxButton`) are not wired yet.**
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
@@ -235,6 +268,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `EndGameStartEvent` | S→C | Start payout animation (baseCash, mult, lossMult) |
 | `EndGameFinishedEvent` | C→S | Animation done → server credits money, hides popup |
 | `InformationTextEvent` | S→C | Flash info text in HUD (e.g. "Not enough money") |
+| `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
 
 Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for state the
 owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
@@ -251,7 +285,11 @@ owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on death |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
-| Default `BaseCash` / `Multiplier` | `PlayerProgressionService.ts` | 100 / 0.1 | New-player progression |
+| Default `BaseCash` / `Multiplier` | `PlayerProgressionService.ts` | 100 / 0.1 | New-player progression (level 0) |
+| Value growth (BaseCash/Multiplier) | `shared/ShopBalance.ts` | ×1.1 / level | Per-level stat multiplier |
+| Price growth | `shared/ShopBalance.ts` | ×1.5 / level | Per-level price multiplier |
+| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 2000 | BaseCash / Multiplier / Safety lvl 1 |
+| `Safety` cap | `shared/ShopBalance.ts` | 10 lvls → 50% | Max risk reduction (×5% per level) |
 
 ## 9. Cheats (`modules/CheatConfig.ts`)
 

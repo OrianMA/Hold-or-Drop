@@ -1,0 +1,105 @@
+import { FormatNumber } from "./NumberFormat";
+import { BASE_CASH, MULTIPLIER, PRICE_GROWTH, SAFETY } from "./ShopBalance";
+
+// ── Shop — structure + formulas ───────────────────────────────────────────────
+// Pure logic, no side effects. Imported by both the server (purchase authority)
+// and the client (display). Levels are the persisted source of truth
+// (PlayerProgressionService); the effective values and prices are *derived* from
+// the level here. All tunable numbers live in shared/ShopBalance.ts — edit there
+// to rebalance.
+
+// A stat is one upgradeable progression value. Multiple shop buttons may target
+// the same stat (BaseCash is sold both as +1 and +5).
+export type ShopStat = "BaseCash" | "Multiplier" | "Safety";
+
+// One per shop button under MainUI/ShopMenu/Body.
+export type ShopItemId = "BaseCash" | "BaseCashX5" | "Multiplier" | "Safety";
+
+export interface StatConfig {
+	// Attribute the rest of the game reads (unchanged names — game loop, billboard).
+	readonly valueAttribute: string;
+	// Attribute holding the persisted level (the source of truth).
+	readonly levelAttribute: string;
+	readonly startPrice: number; // price of the very first level (level 0 → 1)
+	readonly maxLevel?: number; // inclusive cap; undefined = uncapped
+	// Effective value at a given level. Property (not method) so it matches the
+	// arrow-function assignments below — roblox-ts separates `.` and `:` calls.
+	readonly valueFor: (level: number) => number;
+	// Human-readable rendering of a value (e.g. "50%", "11.7K").
+	readonly display: (value: number) => string;
+}
+
+// Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
+// number rendering used by NumberFormat without flooring sub-1 values to "0".
+function trimDecimals(value: number): string {
+	const hundredths = math.floor(value * 100 + 1e-7);
+	if (hundredths % 100 === 0) return tostring(hundredths / 100);
+	if (hundredths % 10 === 0) return string.format("%.1f", hundredths / 100);
+	return string.format("%.2f", hundredths / 100);
+}
+
+export const STATS: { readonly [K in ShopStat]: StatConfig } = {
+	BaseCash: {
+		valueAttribute: "BaseCash",
+		levelAttribute: "BaseCashLevel",
+		startPrice: BASE_CASH.startPrice,
+		valueFor: (level) => math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ** level),
+		display: (value) => FormatNumber(value),
+	},
+	Multiplier: {
+		valueAttribute: "Multiplier",
+		levelAttribute: "MultiplierLevel",
+		startPrice: MULTIPLIER.startPrice,
+		valueFor: (level) => MULTIPLIER.baseValue * MULTIPLIER.valueGrowth ** level,
+		// Small values keep decimals (0.1, 2.65); large values abbreviate.
+		display: (value) => (value < 1000 ? trimDecimals(value) : FormatNumber(value)),
+	},
+	Safety: {
+		valueAttribute: "AdditionalSecurity",
+		levelAttribute: "SafetyLevel",
+		startPrice: SAFETY.startPrice,
+		maxLevel: SAFETY.maxLevel,
+		valueFor: (level) => math.min(level * SAFETY.perLevel, SAFETY.perLevel * SAFETY.maxLevel),
+		display: (value) => string.format("%d%%", math.round(value * 100)),
+	},
+};
+
+export interface ShopItem {
+	readonly id: ShopItemId;
+	readonly stat: ShopStat;
+	readonly quantity: number; // levels granted per purchase
+	readonly frameName: string; // Studio frame under ShopMenu/Body
+	readonly title: string; // BoostTitleText
+}
+
+export const ITEMS: { readonly [K in ShopItemId]: ShopItem } = {
+	BaseCash: { id: "BaseCash", stat: "BaseCash", quantity: 1, frameName: "AButtonMoney", title: "+1 Boost" },
+	BaseCashX5: { id: "BaseCashX5", stat: "BaseCash", quantity: 5, frameName: "BX5ButtonMoney", title: "+5 Boost" },
+	Multiplier: { id: "Multiplier", stat: "Multiplier", quantity: 1, frameName: "CMultiplier", title: "+1 Boost" },
+	Safety: { id: "Safety", stat: "Safety", quantity: 1, frameName: "DSafety", title: "+1 Boost" },
+};
+
+// Iteration order for the client (matches the A/B/C/D frame ordering).
+export const ITEM_ORDER: readonly ShopItemId[] = ["BaseCash", "BaseCashX5", "Multiplier", "Safety"];
+
+// Price to go from `level` → `level + 1` for a stat. Deterministic integer so
+// client and server always agree.
+export function priceForLevel(stat: ShopStat, level: number): number {
+	return math.floor(STATS[stat].startPrice * PRICE_GROWTH ** level);
+}
+
+// Total price to buy a whole item from `fromLevel` (strict sum of each level —
+// no bulk discount). For a +1 item this is just priceForLevel.
+export function priceForItem(item: ShopItem, fromLevel: number): number {
+	let total = 0;
+	for (let i = 0; i < item.quantity; i++) {
+		total += priceForLevel(item.stat, fromLevel + i);
+	}
+	return total;
+}
+
+// True when the stat is at (or above) its cap and cannot be upgraded further.
+export function isAtCap(stat: ShopStat, level: number): boolean {
+	const max = STATS[stat].maxLevel;
+	return max !== undefined && level >= max;
+}

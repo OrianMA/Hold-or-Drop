@@ -28,4 +28,9 @@ export namespace Events {
 	// InformationTextCanvasGroup. Used e.g. for "Not enough money".
 	// Args: (text: string, color?: Color3).
 	export const InformationTextEvent = DefineEvent("InformationTextEvent", script);
+
+	// Shop — client → server. Player clicked a cash buy button.
+	// Arg: itemId (ShopItemId from shared/ShopConfig). Server validates money,
+	// cap and ownership, then deducts and bumps the level.
+	export const ShopPurchaseEvent = DefineEvent("ShopPurchaseEvent", script);
 }

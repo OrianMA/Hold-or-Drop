@@ -7,6 +7,7 @@ import { init as initInformationText } from "./ui/InformationText";
 import { init as initRoomPrompts } from "./rooms/RoomPromptController";
 import { init as initOwnerIndicator } from "./rooms/OwnerIndicatorController";
 import { init as initShopMenu } from "./behaviors/ShopBehavior";
+import { init as initShopItems } from "./behaviors/ShopItemsController";
 
 // Keep MainUI (the persistent HUD + popups) alive across respawns. By default a
 // ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
@@ -26,3 +27,4 @@ initRoomPrompts();
 initOwnerIndicator();
 initButtonMenu(setupButtonInGame);
 initShopMenu();
+initShopItems();

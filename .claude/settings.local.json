@@ -32,7 +32,12 @@
       "Bash(git checkout *)",
       "Bash(where gh.exe)",
       "Bash(powershell -Command \"Get-Command gh -ErrorAction SilentlyContinue | Select-Object Source\")",
-      "mcp__Roblox_Studio__get_studio_state"
+      "mcp__Roblox_Studio__get_studio_state",
+      "PowerShell(npm run build)",
+      "mcp__Roblox_Studio__start_stop_play",
+      "WebSearch",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ]
   }
 }

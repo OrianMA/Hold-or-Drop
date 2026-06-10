@@ -1,32 +1,35 @@
 import { DataStoreService, Players } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
+import { ShopStat, STATS } from "shared/ShopConfig";
 
-// Per-player progression values persisted via DataStoreService and mirrored to
-// Roblox attributes so the owning client can read state directly (auto-replication).
+// Per-player progression. The LEVELS are the persisted source of truth; the
+// effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
+// the levels via shared/ShopConfig and mirrored to attributes so the owning
+// client, the game loop and the room billboard read them directly (replication).
 //
-// Fields (all numeric — mirrored as same-name attributes):
-//   • BaseCash           — base payout of the player's button
-//   • Multiplier         — per-second multiplier that grows during gameplay
-//   • AdditionalSecurity — clamped to [0, 1]; reduces the explosion risk
+// Stored per player (DataStore): BaseCashLevel, MultiplierLevel, SafetyLevel.
+// Mirrored attributes: the three level attributes AND the three value attributes.
 //
 // DataStore access requires API Services enabled in Studio:
 // Game Settings → Security → "Enable Studio Access to API Services".
 
-const NUMERIC_KEYS = ["BaseCash", "Multiplier", "AdditionalSecurity"] as const;
-export type ProgressionKey = (typeof NUMERIC_KEYS)[number];
+// The three stats, in a stable iteration order.
+const STAT_LIST: readonly ShopStat[] = ["BaseCash", "Multiplier", "Safety"];
 
-type ProgressionData = {
-	[K in ProgressionKey]: number;
-};
+// Value attributes the rest of the game reads (names unchanged from before).
+export type ProgressionKey = "BaseCash" | "Multiplier" | "AdditionalSecurity";
 
-const DEFAULT_DATA: ProgressionData = {
+// Fallback values if a value attribute is somehow missing (matches level 0).
+const DEFAULT_VALUES: { readonly [K in ProgressionKey]: number } = {
 	BaseCash: 100,
 	Multiplier: 0.1,
 	AdditionalSecurity: 0,
 };
 
-// Bump the store name (e.g. "_v2") if you ever need to reset everyone's progression.
-const STORE_NAME = "PlayerProgression_v1";
+type LevelData = { [levelAttribute: string]: number };
+
+// Schema changed from values → levels, so the store name is bumped to _v2.
+const STORE_NAME = "PlayerProgression_v2";
 const dataStore = DataStoreService.GetDataStore(STORE_NAME);
 
 // Only players whose data loaded successfully are eligible for save — avoids
@@ -37,16 +40,26 @@ function keyFor(player: Player): string {
 	return `Player_${player.UserId}`;
 }
 
-function clampForKey(key: ProgressionKey, value: number): number {
-	// AdditionalSecurity is a probability — outside [0, 1] would silently break gameplay math.
-	if (key === "AdditionalSecurity") return math.clamp(value, 0, 1);
-	return value;
+function defaultLevels(): LevelData {
+	const levels: LevelData = {};
+	for (const stat of STAT_LIST) levels[STATS[stat].levelAttribute] = 0;
+	return levels;
 }
 
-function loadData(player: Player): ProgressionData | undefined {
+// Sets both the level attribute and the derived value attribute for every stat.
+function applyLevels(player: Player, levels: LevelData): void {
+	for (const stat of STAT_LIST) {
+		const cfg = STATS[stat];
+		const level = levels[cfg.levelAttribute] ?? 0;
+		player.SetAttribute(cfg.levelAttribute, level);
+		player.SetAttribute(cfg.valueAttribute, cfg.valueFor(level));
+	}
+}
+
+function loadLevels(player: Player): LevelData | undefined {
 	if (RESET_DATA_CHEAT) {
 		warn(`PlayerProgressionService: resetData cheat — wiping in-memory state for ${player.Name}`);
-		return { ...DEFAULT_DATA };
+		return defaultLevels();
 	}
 
 	const [success, result] = pcall(() => dataStore.GetAsync(keyFor(player)));
@@ -54,36 +67,31 @@ function loadData(player: Player): ProgressionData | undefined {
 		warn(`PlayerProgressionService: failed to load ${player.Name}: ${result}`);
 		return undefined;
 	}
-	if (result === undefined) return { ...DEFAULT_DATA };
-	if (!typeIs(result, "table")) return { ...DEFAULT_DATA };
+	if (result === undefined || !typeIs(result, "table")) return defaultLevels();
 
-	const loaded = result as Partial<ProgressionData>;
-	const merged: ProgressionData = { ...DEFAULT_DATA };
-	for (const key of NUMERIC_KEYS) {
+	const loaded = result as Partial<LevelData>;
+	const merged = defaultLevels();
+	for (const stat of STAT_LIST) {
+		const key = STATS[stat].levelAttribute;
 		const value = loaded[key];
-		if (typeIs(value, "number")) merged[key] = clampForKey(key, value);
+		if (typeIs(value, "number")) merged[key] = math.max(0, math.floor(value));
 	}
 	return merged;
 }
 
 function setupPlayer(player: Player): void {
-	const data = loadData(player);
-	const apply = data ?? { ...DEFAULT_DATA };
-
-	for (const key of NUMERIC_KEYS) {
-		player.SetAttribute(key, apply[key]);
-	}
-
-	if (data !== undefined) loadedPlayers.add(player);
+	const levels = loadLevels(player);
+	applyLevels(player, levels ?? defaultLevels());
+	if (levels !== undefined) loadedPlayers.add(player);
 }
 
 function savePlayer(player: Player): void {
 	if (!loadedPlayers.has(player)) return;
 
-	const data: ProgressionData = { ...DEFAULT_DATA };
-	for (const key of NUMERIC_KEYS) {
-		const value = (player.GetAttribute(key) as number | undefined) ?? DEFAULT_DATA[key];
-		data[key] = clampForKey(key, value);
+	const data = defaultLevels();
+	for (const stat of STAT_LIST) {
+		const key = STATS[stat].levelAttribute;
+		data[key] = (player.GetAttribute(key) as number | undefined) ?? 0;
 	}
 
 	const [success, err] = pcall(() => dataStore.SetAsync(keyFor(player), data));
@@ -116,15 +124,24 @@ export const PlayerProgressionService = {
 		});
 	},
 
+	// Reads a derived value (BaseCash / Multiplier / AdditionalSecurity).
 	get(player: Player, key: ProgressionKey): number {
-		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_DATA[key];
+		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_VALUES[key];
 	},
 
-	set(player: Player, key: ProgressionKey, value: number): void {
-		player.SetAttribute(key, clampForKey(key, value));
+	// Reads the persisted level of a stat.
+	getLevel(player: Player, stat: ShopStat): number {
+		return (player.GetAttribute(STATS[stat].levelAttribute) as number | undefined) ?? 0;
 	},
 
-	add(player: Player, key: ProgressionKey, amount: number): void {
-		this.set(player, key, this.get(player, key) + amount);
+	// Adds `amount` levels to a stat (clamped to its cap), re-deriving the value.
+	// This is the only mutation path — the shop calls it after validating payment.
+	addLevel(player: Player, stat: ShopStat, amount: number): void {
+		const cfg = STATS[stat];
+		let nextLevel = this.getLevel(player, stat) + amount;
+		if (cfg.maxLevel !== undefined) nextLevel = math.min(nextLevel, cfg.maxLevel);
+		nextLevel = math.max(0, math.floor(nextLevel));
+		player.SetAttribute(cfg.levelAttribute, nextLevel);
+		player.SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel));
 	},
 };

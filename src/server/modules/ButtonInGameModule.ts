@@ -108,6 +108,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// not on the button. Read once at game start — held for the whole session.
 	const baseCash = PlayerProgressionService.get(player, "BaseCash");
 	const multiplierPerSecond = PlayerProgressionService.get(player, "Multiplier");
+	// Safety (0..0.5) scales the explosion risk down multiplicatively. Read once
+	// so mid-run shop purchases can't change the odds of an in-progress hold.
+	const safety = PlayerProgressionService.get(player, "AdditionalSecurity");
 
 	// Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
 	let currentMultiplier = STARTING_MULTIPLIER;
@@ -152,7 +155,8 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 			timeHeld += TICK_RATE;
 
-			const risk = getRisk(timeHeld);
+			// Safety reduces the effective risk: at 50% safety the ceiling halves.
+			const risk = getRisk(timeHeld) * (1 - safety);
 			Events.RiskUpdateEvent.FireClient(player, risk);
 
 			const progress = math.min(timeHeld / TOTAL_DURATION, 1);

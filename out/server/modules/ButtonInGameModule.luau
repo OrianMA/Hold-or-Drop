@@ -103,6 +103,9 @@ local function startButtonGame(player, session)
 	-- not on the button. Read once at game start — held for the whole session.
 	local baseCash = PlayerProgressionService:get(player, "BaseCash")
 	local multiplierPerSecond = PlayerProgressionService:get(player, "Multiplier")
+	-- Safety (0..0.5) scales the explosion risk down multiplicatively. Read once
+	-- so mid-run shop purchases can't change the odds of an in-progress hold.
+	local safety = PlayerProgressionService:get(player, "AdditionalSecurity")
 	-- Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
 	local currentMultiplier = STARTING_MULTIPLIER
 	local isActive = true
@@ -144,7 +147,8 @@ local function startButtonGame(player, session)
 				break
 			end
 			timeHeld += TICK_RATE
-			local risk = getRisk(timeHeld)
+			-- Safety reduces the effective risk: at 50% safety the ceiling halves.
+			local risk = getRisk(timeHeld) * (1 - safety)
 			Events.RiskUpdateEvent:FireClient(player, risk)
 			local progress = math.min(timeHeld / TOTAL_DURATION, 1)
 			Events.ProgressUpdateEvent:FireClient(player, progress)

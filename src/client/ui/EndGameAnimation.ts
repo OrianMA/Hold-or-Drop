@@ -41,8 +41,6 @@ const BASE_CASH_TARGET_COLOR = new Color3(1, 0.25, 0.25);
 // then fly to the target. Same feel as the in-game floating labels.
 const FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate";
 const FLOATING_FLY_TI = new TweenInfo(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
-const FLOATING_BUMP_IN_TI = new TweenInfo(0.07, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
-const FLOATING_BUMP_OUT_TI = new TweenInfo(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const FLOATING_DISPERSE_TI = new TweenInfo(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out);
 const FLOATING_DISPERSE_MIN = 70; // px
 const FLOATING_DISPERSE_MAX = 130; // px
@@ -107,22 +105,11 @@ function spawnFloatingChunk(
 	const amountLabel = frame.FindFirstChild("Amount") as TextLabel | undefined;
 	if (amountLabel) amountLabel.Text = `+${formatCash(amount)}`;
 
-	const icon = frame.FindFirstChild("Icon") as ImageLabel | undefined;
-	const uiScale = new Instance("UIScale");
-	uiScale.Scale = 0.9;
-	uiScale.Parent = icon ?? frame;
-
-	// 1. Spawn on the origin's center.
+	// 1. Spawn on the origin's center (at native size — no spawn bump).
 	const originCenter = origin.AbsolutePosition.add(origin.AbsoluteSize.div(2));
 	frame.Position = new UDim2(0, originCenter.X, 0, originCenter.Y);
 
 	handlers.onSpawn();
-
-	// Quick bump for a satisfying "pop".
-	TweenService.Create(uiScale, FLOATING_BUMP_IN_TI, { Scale: 1.1 }).Play();
-	task.delay(FLOATING_BUMP_IN_TI.Time, () => {
-		TweenService.Create(uiScale, FLOATING_BUMP_OUT_TI, { Scale: 1.0 }).Play();
-	});
 
 	// 2. Disperse in a random direction.
 	const angle = math.random() * math.pi * 2;

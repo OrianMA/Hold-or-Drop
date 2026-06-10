@@ -36,8 +36,6 @@ local BASE_CASH_TARGET_COLOR = Color3.new(1, 0.25, 0.25)
 -- then fly to the target. Same feel as the in-game floating labels.
 local FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate"
 local FLOATING_FLY_TI = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-local FLOATING_BUMP_IN_TI = TweenInfo.new(0.07, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local FLOATING_BUMP_OUT_TI = TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local FLOATING_DISPERSE_TI = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local FLOATING_DISPERSE_MIN = 70
 local FLOATING_DISPERSE_MAX = 130
@@ -93,25 +91,12 @@ local function spawnFloatingChunk(parent, amount, origin, target, handlers)
 	if amountLabel then
 		amountLabel.Text = `+{formatCash(amount)}`
 	end
-	local icon = frame:FindFirstChild("Icon")
-	local uiScale = Instance.new("UIScale")
-	uiScale.Scale = 0.9
-	uiScale.Parent = icon or frame
-	-- 1. Spawn on the origin's center.
+	-- 1. Spawn on the origin's center (at native size — no spawn bump).
 	local _absolutePosition = origin.AbsolutePosition
 	local _arg0 = origin.AbsoluteSize / 2
 	local originCenter = _absolutePosition + _arg0
 	frame.Position = UDim2.new(0, originCenter.X, 0, originCenter.Y)
 	handlers.onSpawn()
-	-- Quick bump for a satisfying "pop".
-	TweenService:Create(uiScale, FLOATING_BUMP_IN_TI, {
-		Scale = 1.1,
-	}):Play()
-	task.delay(FLOATING_BUMP_IN_TI.Time, function()
-		TweenService:Create(uiScale, FLOATING_BUMP_OUT_TI, {
-			Scale = 1.0,
-		}):Play()
-	end)
 	-- 2. Disperse in a random direction.
 	local angle = math.random() * math.pi * 2
 	local distance = math.random(FLOATING_DISPERSE_MIN, FLOATING_DISPERSE_MAX)
