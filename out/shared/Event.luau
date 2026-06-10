@@ -48,6 +48,11 @@ do
 	-- cap and ownership, then deducts and bumps the level.
 	local ShopPurchaseEvent = DefineEvent("ShopPurchaseEvent", script)
 	_container.ShopPurchaseEvent = ShopPurchaseEvent
+	-- Rebirth — client → server. Player clicked the Rebirth button (no args).
+	-- Server validates Money >= rebirthCost(Rebirths), resets cash + the 3 stat
+	-- levels, increments Rebirths and re-derives MultRebirth.
+	local RebirthEvent = DefineEvent("RebirthEvent", script)
+	_container.RebirthEvent = RebirthEvent
 end
 return {
 	Events = Events,

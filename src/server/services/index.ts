@@ -6,6 +6,7 @@ import { CharacterService } from "./CharacterService";
 import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { ShopService } from "./ShopService";
+import { RebirthService } from "./RebirthService";
 import { RoomService } from "server/rooms/RoomService";
 import { PopupConfig } from "server/UI/PopupConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
@@ -22,6 +23,8 @@ export const services: Array<{ init(): void }> = [
 	PlayerProgressionService,
 	// Shop needs PlayerData (money) + PlayerProgression (levels) ready first.
 	ShopService,
+	// Rebirth: validate + reset. Needs PlayerData (money) + PlayerProgression ready.
+	RebirthService,
 	RoomService,
 	// Binds a ButtonModule per room — must run after RoomService builds them.
 	ButtonTriggerService,

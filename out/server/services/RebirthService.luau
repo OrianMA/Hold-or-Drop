@@ -1,0 +1,30 @@
+-- Compiled with roblox-ts v3.0.0
+local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
+local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
+local rebirthCost = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").rebirthCost
+local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
+-- Authoritative rebirth. The client pre-checks affordability for instant
+-- feedback, but the reset is fully re-validated here — never trust the client.
+-- On success: Money → 0, the 3 stat levels → 0, Rebirths += 1 (MultRebirth grows).
+local DENIED_COLOR = Color3.new(1, 0.4, 0.4)
+local function handleRebirth(player)
+	local rebirths = PlayerProgressionService:getRebirths(player)
+	local cost = rebirthCost(rebirths)
+	if PlayerDataService:get(player, "Money") < cost then
+		Events.InformationTextEvent:FireClient(player, "Pas assez d'argent pour le Rebirth", DENIED_COLOR)
+		return nil
+	end
+	PlayerDataService:set(player, "Money", 0)
+	PlayerProgressionService:rebirth(player)
+end
+local RebirthService = {
+	init = function(self)
+		Events.RebirthEvent.OnServerEvent:Connect(function(player)
+			return handleRebirth(player)
+		end)
+	end,
+}
+return {
+	RebirthService = RebirthService,
+}

@@ -33,4 +33,9 @@ export namespace Events {
 	// Arg: itemId (ShopItemId from shared/ShopConfig). Server validates money,
 	// cap and ownership, then deducts and bumps the level.
 	export const ShopPurchaseEvent = DefineEvent("ShopPurchaseEvent", script);
+
+	// Rebirth — client → server. Player clicked the Rebirth button (no args).
+	// Server validates Money >= rebirthCost(Rebirths), resets cash + the 3 stat
+	// levels, increments Rebirths and re-derives MultRebirth.
+	export const RebirthEvent = DefineEvent("RebirthEvent", script);
 }
