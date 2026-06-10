@@ -106,6 +106,9 @@ local function startButtonGame(player, session)
 	-- Safety (0..0.5) scales the explosion risk down multiplicatively. Read once
 	-- so mid-run shop purchases can't change the odds of an in-progress hold.
 	local safety = PlayerProgressionService:get(player, "AdditionalSecurity")
+	-- Permanent rebirth multiplier — applied to the final payout. Read once so a
+	-- mid-run rebirth can't change the value of an in-progress hold.
+	local multRebirth = PlayerProgressionService:getMultRebirth(player)
 	-- Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
 	local currentMultiplier = STARTING_MULTIPLIER
 	local isActive = true
@@ -119,10 +122,10 @@ local function startButtonGame(player, session)
 		end
 		isActive = false
 		releaseConn:Disconnect()
-		local earned = baseCash * currentMultiplier
+		local earned = math.floor(baseCash * currentMultiplier * multRebirth)
 		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 		ConfettiBurst:play(buttonModel)
-		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
+		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
 	-- Increment plat : chaque seconde, currentMultiplier += multiplierPerSecond
@@ -169,10 +172,10 @@ local function startButtonGame(player, session)
 				task.wait(0.2)
 				gracePeriodConn:Disconnect()
 				if cancelledByPlayer then
-					local earned = baseCash * currentMultiplier
+					local earned = math.floor(baseCash * currentMultiplier * multRebirth)
 					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 					ConfettiBurst:play(buttonModel)
-					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
+					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth)
 				else
 					local character = player.Character
 					local _result = character
@@ -264,9 +267,9 @@ local function startButtonGame(player, session)
 							humanoid.JumpPower = origJumpPower
 							humanoid.JumpHeight = origJumpHeight
 						end
-						local earned = baseCash * currentMultiplier
+						local earned = math.floor(baseCash * currentMultiplier * multRebirth)
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
+						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth)
 					else
 						if hrp then
 							hrp.Anchored = false
@@ -285,9 +288,9 @@ local function startButtonGame(player, session)
 							humanoid.Health = 0
 						end
 						Events.PlayerKilledEvent:FireClient(player)
-						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)
+						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier * multRebirth)
 						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER)
+						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER, multRebirth)
 					end
 				end
 				return nil

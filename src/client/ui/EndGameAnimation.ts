@@ -222,6 +222,7 @@ export function runEndGameAnimation(
 	baseCash: number,
 	multiplier: number,
 	lossMultiplier: number,
+	multRebirth: number,
 	onComplete: () => void,
 ): void {
 	const refs = resolveRefs(frame);
@@ -272,7 +273,7 @@ export function runEndGameAnimation(
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText);
 
 	// ── Phase 2: BaseCashText counts up to the total earned ───────────────────────
-	const totalEarn = effectiveBaseCash * multiplier;
+	const totalEarn = effectiveBaseCash * multiplier * multRebirth;
 	const grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE;
 	animateCash(baseCashText, effectiveBaseCash, totalEarn, effectiveBaseSize, grownSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI);
 

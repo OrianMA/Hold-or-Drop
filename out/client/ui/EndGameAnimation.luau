@@ -202,7 +202,7 @@ local initialMultiplierPosition
 local initialMultiplierTransparency
 -- Runs the full ButtonFinishGame animation, then calls onComplete().
 -- Safe to call from a regular task (uses task.wait internally).
-local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, onComplete)
+local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, multRebirth, onComplete)
 	local refs = resolveRefs(frame)
 	if not refs then
 		onComplete()
@@ -271,7 +271,7 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	-- ── Phase 1: MultiplierText merges into BaseCashText and disappears ───────────
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText)
 	-- ── Phase 2: BaseCashText counts up to the total earned ───────────────────────
-	local totalEarn = effectiveBaseCash * multiplier
+	local totalEarn = effectiveBaseCash * multiplier * multRebirth
 	local grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE
 	animateCash(baseCashText, effectiveBaseCash, totalEarn, effectiveBaseSize, grownSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI)
 	-- ── Phase 3: spray N floating texts into the money HUD ────────────────────────

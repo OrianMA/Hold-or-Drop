@@ -29,7 +29,7 @@ local function waitForRespawn(player)
 	task.wait(POST_RESPAWN_DELAY)
 end
 local EndGameButtonModule = {
-	enter = function(self, player, mode, baseCash, multiplier, earned, lossMultiplier)
+	enter = function(self, player, mode, baseCash, multiplier, earned, lossMultiplier, multRebirth)
 		ButtonSessionService:cleanup(player)
 		UiService:HideCurrent(player)
 		local _player = player
@@ -48,7 +48,7 @@ local EndGameButtonModule = {
 				return nil
 			end
 			UiService:Show(player, PopupType.ButtonFinishGame)
-			Events.EndGameStartEvent:FireClient(player, baseCash, multiplier, lossMultiplier)
+			Events.EndGameStartEvent:FireClient(player, baseCash, multiplier, lossMultiplier, multRebirth)
 		end)
 	end,
 	init = function(self)
