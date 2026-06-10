@@ -4,7 +4,9 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local DataStoreService = _services.DataStoreService
 local Players = _services.Players
 local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").resetData
-local STATS = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").STATS
+local _ShopConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig")
+local STATS = _ShopConfig.STATS
+local rebirthMult = _ShopConfig.rebirthMult
 -- Per-player progression. The LEVELS are the persisted source of truth; the
 -- effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
 -- the levels via shared/ShopConfig and mirrored to attributes so the owning
@@ -17,6 +19,10 @@ local STATS = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Sho
 -- Game Settings → Security → "Enable Studio Access to API Services".
 -- The three stats, in a stable iteration order.
 local STAT_LIST = { "BaseCash", "Multiplier", "Safety" }
+-- Persisted alongside the stat levels (same store table). The reward multiplier
+-- is derived from it like the stat values are derived from their levels.
+local REBIRTHS_KEY = "Rebirths"
+local MULT_REBIRTH_ATTR = "MultRebirth"
 -- Value attributes the rest of the game reads (names unchanged from before).
 -- Fallback values if a value attribute is somehow missing (matches level 0).
 local DEFAULT_VALUES = {
@@ -38,6 +44,7 @@ local function defaultLevels()
 	for _, stat in STAT_LIST do
 		levels[STATS[stat].levelAttribute] = 0
 	end
+	levels[REBIRTHS_KEY] = 0
 	return levels
 end
 -- Sets both the level attribute and the derived value attribute for every stat.
@@ -52,6 +59,13 @@ local function applyLevels(player, levels)
 		player:SetAttribute(cfg.levelAttribute, level)
 		player:SetAttribute(cfg.valueAttribute, cfg.valueFor(level))
 	end
+	local _condition = levels[REBIRTHS_KEY]
+	if _condition == nil then
+		_condition = 0
+	end
+	local rebirths = _condition
+	player:SetAttribute(REBIRTHS_KEY, rebirths)
+	player:SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(rebirths))
 end
 local function loadLevels(player)
 	if RESET_DATA_CHEAT then
@@ -77,6 +91,10 @@ local function loadLevels(player)
 			merged[key] = math.max(0, math.floor(value))
 		end
 	end
+	local rebirthsLoaded = loaded[REBIRTHS_KEY]
+	if type(rebirthsLoaded) == "number" then
+		merged[REBIRTHS_KEY] = math.max(0, math.floor(rebirthsLoaded))
+	end
 	return merged
 end
 local function setupPlayer(player)
@@ -101,6 +119,11 @@ local function savePlayer(player)
 		end
 		data[key] = _condition
 	end
+	local _condition = (player:GetAttribute(REBIRTHS_KEY))
+	if _condition == nil then
+		_condition = 0
+	end
+	data[REBIRTHS_KEY] = _condition
 	local success, err = pcall(function()
 		return dataStore:SetAsync(keyFor(player), data)
 	end)
@@ -161,6 +184,30 @@ local PlayerProgressionService = {
 		nextLevel = math.max(0, math.floor(nextLevel))
 		player:SetAttribute(cfg.levelAttribute, nextLevel)
 		player:SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel))
+	end,
+	getRebirths = function(self, player)
+		local _condition = (player:GetAttribute(REBIRTHS_KEY))
+		if _condition == nil then
+			_condition = 0
+		end
+		return _condition
+	end,
+	getMultRebirth = function(self, player)
+		local _condition = (player:GetAttribute(MULT_REBIRTH_ATTR))
+		if _condition == nil then
+			_condition = rebirthMult(0)
+		end
+		return _condition
+	end,
+	rebirth = function(self, player)
+		for _, stat in STAT_LIST do
+			local cfg = STATS[stat]
+			player:SetAttribute(cfg.levelAttribute, 0)
+			player:SetAttribute(cfg.valueAttribute, cfg.valueFor(0))
+		end
+		local nextRebirths = self:getRebirths(player) + 1
+		player:SetAttribute(REBIRTHS_KEY, nextRebirths)
+		player:SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths))
 	end,
 }
 return {

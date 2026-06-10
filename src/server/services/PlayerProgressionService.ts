@@ -1,6 +1,6 @@
 import { DataStoreService, Players } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
-import { ShopStat, STATS } from "shared/ShopConfig";
+import { ShopStat, STATS, rebirthMult } from "shared/ShopConfig";
 
 // Per-player progression. The LEVELS are the persisted source of truth; the
 // effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
@@ -15,6 +15,11 @@ import { ShopStat, STATS } from "shared/ShopConfig";
 
 // The three stats, in a stable iteration order.
 const STAT_LIST: readonly ShopStat[] = ["BaseCash", "Multiplier", "Safety"];
+
+// Persisted alongside the stat levels (same store table). The reward multiplier
+// is derived from it like the stat values are derived from their levels.
+const REBIRTHS_KEY = "Rebirths";
+const MULT_REBIRTH_ATTR = "MultRebirth";
 
 // Value attributes the rest of the game reads (names unchanged from before).
 export type ProgressionKey = "BaseCash" | "Multiplier" | "AdditionalSecurity";
@@ -43,6 +48,7 @@ function keyFor(player: Player): string {
 function defaultLevels(): LevelData {
 	const levels: LevelData = {};
 	for (const stat of STAT_LIST) levels[STATS[stat].levelAttribute] = 0;
+	levels[REBIRTHS_KEY] = 0;
 	return levels;
 }
 
@@ -54,6 +60,9 @@ function applyLevels(player: Player, levels: LevelData): void {
 		player.SetAttribute(cfg.levelAttribute, level);
 		player.SetAttribute(cfg.valueAttribute, cfg.valueFor(level));
 	}
+	const rebirths = levels[REBIRTHS_KEY] ?? 0;
+	player.SetAttribute(REBIRTHS_KEY, rebirths);
+	player.SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(rebirths));
 }
 
 function loadLevels(player: Player): LevelData | undefined {
@@ -76,6 +85,8 @@ function loadLevels(player: Player): LevelData | undefined {
 		const value = loaded[key];
 		if (typeIs(value, "number")) merged[key] = math.max(0, math.floor(value));
 	}
+	const rebirthsLoaded = loaded[REBIRTHS_KEY];
+	if (typeIs(rebirthsLoaded, "number")) merged[REBIRTHS_KEY] = math.max(0, math.floor(rebirthsLoaded));
 	return merged;
 }
 
@@ -93,6 +104,7 @@ function savePlayer(player: Player): void {
 		const key = STATS[stat].levelAttribute;
 		data[key] = (player.GetAttribute(key) as number | undefined) ?? 0;
 	}
+	data[REBIRTHS_KEY] = (player.GetAttribute(REBIRTHS_KEY) as number | undefined) ?? 0;
 
 	const [success, err] = pcall(() => dataStore.SetAsync(keyFor(player), data));
 	if (!success) warn(`PlayerProgressionService: failed to save ${player.Name}: ${err}`);
@@ -143,5 +155,28 @@ export const PlayerProgressionService = {
 		nextLevel = math.max(0, math.floor(nextLevel));
 		player.SetAttribute(cfg.levelAttribute, nextLevel);
 		player.SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel));
+	},
+
+	// Reads the persisted rebirth count.
+	getRebirths(player: Player): number {
+		return (player.GetAttribute(REBIRTHS_KEY) as number | undefined) ?? 0;
+	},
+
+	// Reads the derived permanent money multiplier.
+	getMultRebirth(player: Player): number {
+		return (player.GetAttribute(MULT_REBIRTH_ATTR) as number | undefined) ?? rebirthMult(0);
+	},
+
+	// Performs a rebirth: resets the 3 stat levels to 0 and increments Rebirths,
+	// re-deriving every value. Does NOT touch Money — the caller resets that.
+	rebirth(player: Player): void {
+		for (const stat of STAT_LIST) {
+			const cfg = STATS[stat];
+			player.SetAttribute(cfg.levelAttribute, 0);
+			player.SetAttribute(cfg.valueAttribute, cfg.valueFor(0));
+		}
+		const nextRebirths = this.getRebirths(player) + 1;
+		player.SetAttribute(REBIRTHS_KEY, nextRebirths);
+		player.SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths));
 	},
 };
