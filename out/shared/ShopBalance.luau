@@ -13,28 +13,32 @@
 --   1.5 → each level costs +50% of the previous.
 local PRICE_GROWTH = 1.5
 -- BaseCash — the button's base payout. Uncapped.
---   value = baseValue * valueGrowth ^ level   (L0=100, L10≈259, L50≈11.7K)
+--   value = baseValue * valueGrowth ^ level   (L0=100, L10≈619, L20≈3.8K)
 --   price = startPrice * PRICE_GROWTH ^ level  (L0→1 = 25)
+--   Invariant: valueGrowth < PRICE_GROWTH (1.20 < 1.5) so price outpaces value.
 local BASE_CASH = {
 	baseValue = 100,
-	valueGrowth = 1.8,
+	valueGrowth = 1.2,
 	startPrice = 25,
 }
 -- Multiplier — per-second growth during a hold. Uncapped.
---   value = baseValue * valueGrowth ^ level   (L0=0.1, L10≈0.26, L50≈11.7)
+--   value = baseValue * valueGrowth ^ level   (L0=0.1, L10≈0.52, L20≈2.7)
 --   price = startPrice * PRICE_GROWTH ^ level  (L0→1 = 100)
+--   Invariant: valueGrowth < PRICE_GROWTH (1.18 < 1.5).
 local MULTIPLIER = {
 	baseValue = 0.1,
-	valueGrowth = 1.3,
+	valueGrowth = 1.18,
 	startPrice = 100,
 }
 -- Safety — risk reduction, capped. The cap value is perLevel * maxLevel.
 --   value = min(level * perLevel, perLevel * maxLevel)   (L10 = 50%)
---   price = startPrice * PRICE_GROWTH ^ level             (L0→1 = 2000)
+--   price = startPrice * PRICE_GROWTH ^ level             (L0→1 = 500)
+--   startPrice lowered to 500: Safety resets each rebirth cycle, so it must be
+--   reachable within a single early cycle.
 local SAFETY = {
 	perLevel = 0.05,
 	maxLevel = 10,
-	startPrice = 2000,
+	startPrice = 500,
 }
 return {
 	PRICE_GROWTH = PRICE_GROWTH,
