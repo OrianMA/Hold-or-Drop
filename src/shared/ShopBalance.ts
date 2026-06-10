@@ -43,3 +43,15 @@ export const SAFETY = {
 	maxLevel: 10, // cap → 10 × 5% = 50%
 	startPrice: 500,
 };
+
+// ── Rebirth ──────────────────────────────────────────────────────────────────
+// Reset everything (cash + the 3 stat levels) for a permanent money multiplier.
+//   cost(R) = floor(baseCost * costGrowth ^ R)   (R = rebirths already done)
+//   mult(R) = multTable[R] for R inside the table, then linear queue of multTail.
+// multTable index 0 = no rebirth (×1). R1→×2, R2→×3, R3→×3.5, … R7→×5.
+export const REBIRTH = {
+	baseCost: 2500,
+	costGrowth: 2.4,
+	multTable: [1, 2, 3, 3.5, 4, 4.5, 4.75, 5],
+	multTail: 0.25,
+};

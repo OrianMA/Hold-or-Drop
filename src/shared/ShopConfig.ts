@@ -1,5 +1,5 @@
 import { FormatNumber } from "./NumberFormat";
-import { BASE_CASH, MULTIPLIER, PRICE_GROWTH, SAFETY } from "./ShopBalance";
+import { BASE_CASH, MULTIPLIER, PRICE_GROWTH, REBIRTH, SAFETY } from "./ShopBalance";
 
 // ── Shop — structure + formulas ───────────────────────────────────────────────
 // Pure logic, no side effects. Imported by both the server (purchase authority)
@@ -102,4 +102,22 @@ export function priceForItem(item: ShopItem, fromLevel: number): number {
 export function isAtCap(stat: ShopStat, level: number): boolean {
 	const max = STATS[stat].maxLevel;
 	return max !== undefined && level >= max;
+}
+
+// ── Rebirth pricing & reward (pure, shared client/server) ─────────────────────
+
+// Cash threshold required to perform rebirth number R+1 (R = rebirths already done).
+export function rebirthCost(rebirths: number): number {
+	const r = math.max(0, math.floor(rebirths));
+	return math.floor(REBIRTH.baseCost * REBIRTH.costGrowth ** r);
+}
+
+// Permanent money multiplier after `rebirths` rebirths. Table for the designed
+// early curve, then a constant linear queue (+multTail per extra rebirth).
+export function rebirthMult(rebirths: number): number {
+	const r = math.max(0, math.floor(rebirths));
+	const multTable = REBIRTH.multTable;
+	const lastIndex = multTable.size() - 1;
+	if (r <= lastIndex) return multTable[r];
+	return multTable[lastIndex] + (r - lastIndex) * REBIRTH.multTail;
 }

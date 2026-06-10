@@ -5,6 +5,7 @@ local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS
 local BASE_CASH = _ShopBalance.BASE_CASH
 local MULTIPLIER = _ShopBalance.MULTIPLIER
 local PRICE_GROWTH = _ShopBalance.PRICE_GROWTH
+local REBIRTH = _ShopBalance.REBIRTH
 local SAFETY = _ShopBalance.SAFETY
 -- ── Shop — structure + formulas ───────────────────────────────────────────────
 -- Pure logic, no side effects. Imported by both the server (purchase authority)
@@ -126,10 +127,29 @@ local function isAtCap(stat, level)
 	local max = STATS[stat].maxLevel
 	return max ~= nil and level >= max
 end
+-- ── Rebirth pricing & reward (pure, shared client/server) ─────────────────────
+-- Cash threshold required to perform rebirth number R+1 (R = rebirths already done).
+local function rebirthCost(rebirths)
+	local r = math.max(0, math.floor(rebirths))
+	return math.floor(REBIRTH.baseCost * REBIRTH.costGrowth ^ r)
+end
+-- Permanent money multiplier after `rebirths` rebirths. Table for the designed
+-- early curve, then a constant linear queue (+multTail per extra rebirth).
+local function rebirthMult(rebirths)
+	local r = math.max(0, math.floor(rebirths))
+	local multTable = REBIRTH.multTable
+	local lastIndex = #multTable - 1
+	if r <= lastIndex then
+		return multTable[r + 1]
+	end
+	return multTable[lastIndex + 1] + (r - lastIndex) * REBIRTH.multTail
+end
 return {
 	priceForLevel = priceForLevel,
 	priceForItem = priceForItem,
 	isAtCap = isAtCap,
+	rebirthCost = rebirthCost,
+	rebirthMult = rebirthMult,
 	STATS = STATS,
 	ITEMS = ITEMS,
 	ITEM_ORDER = ITEM_ORDER,
