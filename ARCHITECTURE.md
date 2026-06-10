@@ -100,15 +100,17 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 
 1. `UiService.init(PopupConfig)` — register popup classes
 2. `PlayerDataService` — load/persist `Money`
-3. `PlayerProgressionService` — load/persist the progression **levels**, derive
-   `BaseCash`, `Multiplier`, `AdditionalSecurity` (must run before RoomService so the
-   `BaseCash` attribute exists at room assignment)
+3. `PlayerProgressionService` — load/persist the progression **levels** + `Rebirths`, derive
+   `BaseCash`, `Multiplier`, `AdditionalSecurity`, `MultRebirth` (must run before RoomService
+   so the `BaseCash` attribute exists at room assignment)
 4. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
-5. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-6. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-7. `CharacterService` — normalize character scale on spawn
-8. `EndGameButtonModule.init()` — wire the payout-finished handshake
-9. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+5. `RebirthService` — handle `RebirthEvent`: validate `Money ≥ rebirthCost(Rebirths)`, reset
+   `Money` + stat levels, increment `Rebirths` (needs PlayerData + PlayerProgression ready)
+6. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+7. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+8. `CharacterService` — normalize character scale on spawn
+9. `EndGameButtonModule.init()` — wire the payout-finished handshake
+10. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -150,8 +152,8 @@ popup.
 > `StartButtonClickedEvent` wiring when modifying this flow.
 
 ### 6.3 The game loop (`modules/ButtonInGameModule.ts`) — the heart
-`startButtonGame(player, session)` reads `BaseCash` + `Multiplier` once (held for the
-session) and runs **two independent loops** via `task.spawn`:
+`startButtonGame(player, session)` reads `BaseCash` + `Multiplier` + `MultRebirth` once (held
+for the session) and runs **two independent loops** via `task.spawn`:
 
 - **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): `currentMultiplier += Multiplier` each
   tick, starting from `STARTING_MULTIPLIER` (1). Flat per-second growth.
@@ -161,13 +163,17 @@ session) and runs **two independent loops** via `task.spawn`:
   session start). Each tick rolls `math.random() < risk`; also drives the progress bar.
 
 Endings:
-- **Release** (`ReleaseButtonEvent`): pays `baseCash * currentMultiplier`, confetti, → EndGame.
+- **Release** (`ReleaseButtonEvent`): pays `floor(baseCash * currentMultiplier * MultRebirth)`, confetti, → EndGame.
 - **Explosion roll hits:** fire `ButtonExplodedEvent`, open a **0.2s grace** (player can
   still release to cancel), then a **0.5s perfect-parry window** (`PerfectParryEvent`):
   - **Parry success:** visual-only explosion (`blastPressure=0`), sparkle effect, knockback
     tween, full payout. Movement frozen during the window, restored after.
   - **Parry fail:** lethal explosion (`EXPLOSION_KILL_PRESSURE`), disable Motor6Ds,
-    `Humanoid.Health=0`, pay only `floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)`.
+    `Humanoid.Health=0`, pay only `floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier * MultRebirth)`.
+
+> All four payout paths (release, grace-cancel, parry-success, death) are floored and scaled
+> by the permanent `MultRebirth` (see §6.6). `MultRebirth` is read once at session start so a
+> mid-run rebirth can't change an in-progress hold.
 
 The explosion (`triggerExplosionAt`) uses a tight `BlastRadius` (12) so the fling is scoped
 to the anchored player; the sound is cloned from a **pre-buffered ReplicatedStorage
@@ -176,7 +182,8 @@ template** to avoid a CDN fetch at runtime.
 ### 6.4 End game (`modules/EndGameButtonModule.ts`)
 `enter(...)` cleans up the session, stashes `pendingEarned`, then (after a delay or
 respawn) shows the `ButtonFinishGame` popup and fires `EndGameStartEvent` (baseCash,
-multiplier, lossMultiplier) to drive the client payout animation. The client signals
+multiplier, lossMultiplier, **multRebirth**) to drive the client payout animation — the
+client folds `multRebirth` into the displayed total so it matches the credited amount. The client signals
 `EndGameFinishedEvent` when the animation ends → server credits `Money` and hides the popup.
 **Money is credited only after the client animation completes** (single source of truth).
 
@@ -192,10 +199,15 @@ multiplier, lossMultiplier) to drive the client payout animation. The client sig
   owning client can read state directly via replication.
 - `PlayerDataService` → `Money` (store `PlayerData_v1`).
 - `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `MultiplierLevel`,
-  `SafetyLevel` (store `PlayerProgression_v2`). The effective values `BaseCash`,
-  `Multiplier`, `AdditionalSecurity` are **derived** from the levels via `shared/ShopConfig`
-  and mirrored to attributes (both levels and values replicate). Storing levels means the
-  price/value curves can be retuned later with **zero save migration**.
+  `SafetyLevel` **and the `Rebirths` count** (store `PlayerProgression_v2`). The effective
+  values `BaseCash`, `Multiplier`, `AdditionalSecurity` are **derived** from the levels, and
+  `MultRebirth` is derived from `Rebirths`, all via `shared/ShopConfig` and mirrored to
+  attributes (levels, values, `Rebirths` and `MultRebirth` all replicate). Storing levels/count
+  means the curves can be retuned later with **zero save migration** — and `Rebirths` is a new
+  field that defaults to 0 for existing saves (no version bump).
+- `rebirth(player)` (the only rebirth mutation) resets the 3 stat levels to 0 and increments
+  `Rebirths`, re-deriving every value. It does **not** touch `Money` — `RebirthService` zeroes
+  that via `PlayerDataService` so each service owns its own store.
 - **Safe-save guard:** only players whose load succeeded are added to `loadedPlayers` and
   thus eligible to save — a transient load failure never wipes progress.
 - `BindToClose` saves all players in parallel within the ~30s shutdown budget.
@@ -233,8 +245,9 @@ multiplier, lossMultiplier) to drive the client payout animation. The client sig
   `display`) and pure pricing helpers — `priceForLevel` = `floor(start * PRICE_GROWTH^level)`,
   `priceForItem` (strict sum of the next N levels), `isAtCap`. Imported by both sides so
   prices/stat previews computed on the client always match the server.
-  - Curves: BaseCash `floor(100 * 1.1^level)`, Multiplier `0.1 * 1.1^level` (uncapped),
-    Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 2000.
+  - Curves: BaseCash `floor(100 * 1.2^level)`, Multiplier `0.1 * 1.18^level` (uncapped),
+    Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 500. Value
+    growth stays **below** the ×1.5 `PRICE_GROWTH` so ROI decelerates (no runaway).
 - **`ShopService` (server)** owns the only mutation path. On `ShopPurchaseEvent` it validates
   the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
   + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
@@ -244,6 +257,14 @@ multiplier, lossMultiplier) to drive the client payout animation. The client sig
   greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`.
   It refreshes purely from replicated attributes (`Money` + the three level attributes) — no
   server→client response event. **Robux buttons (`RobuxButton`) are not wired yet.**
+- **Rebirth** (`server/services/RebirthService.ts`, `client/behaviors/RebirthController.ts`):
+  a permanent money multiplier earned by resetting everything. `ShopConfig` exposes pure
+  `rebirthCost(R) = floor(2500 × 2.4^R)` and `rebirthMult(R)` (table `[1,2,3,3.5,4,4.5,4.75,5]`,
+  then `+0.25`/rebirth). The client `RebirthPanel` — a duplicate of a shop item frame under
+  `MainUI/ShopMenu/Body`, so it reuses the same `BoostLyout`/`ButtonsLayout` paths — shows
+  current→next `×N` and the cost, greys when unaffordable, and fires `RebirthEvent`.
+  `RebirthService` re-validates (`Money ≥ rebirthCost`) and performs the reset. Payout scales
+  by the resulting `MultRebirth` (see §6.3, §6.6).
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
@@ -265,10 +286,11 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `RiskUpdateEvent` | S→C | Current risk value |
 | `ProgressUpdateEvent` | S→C | Progress-bar fill [0,1] |
 | `GameResultEvent` | S→C | (exploded, earned, multiplier) — re-enable HUD |
-| `EndGameStartEvent` | S→C | Start payout animation (baseCash, mult, lossMult) |
+| `EndGameStartEvent` | S→C | Start payout animation (baseCash, mult, lossMult, multRebirth) |
 | `EndGameFinishedEvent` | C→S | Animation done → server credits money, hides popup |
 | `InformationTextEvent` | S→C | Flash info text in HUD (e.g. "Not enough money") |
 | `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
+| `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |
 
 Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for state the
 owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
@@ -286,10 +308,13 @@ owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on death |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
 | Default `BaseCash` / `Multiplier` | `PlayerProgressionService.ts` | 100 / 0.1 | New-player progression (level 0) |
-| Value growth (BaseCash/Multiplier) | `shared/ShopBalance.ts` | ×1.1 / level | Per-level stat multiplier |
+| Value growth (BaseCash / Multiplier) | `shared/ShopBalance.ts` | ×1.2 / ×1.18 per level | Per-level stat multiplier (must stay < price growth) |
 | Price growth | `shared/ShopBalance.ts` | ×1.5 / level | Per-level price multiplier |
-| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 2000 | BaseCash / Multiplier / Safety lvl 1 |
+| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 500 | BaseCash / Multiplier / Safety lvl 1 |
 | `Safety` cap | `shared/ShopBalance.ts` | 10 lvls → 50% | Max risk reduction (×5% per level) |
+| Rebirth base cost | `shared/ShopBalance.ts` | 2500 | Cash for the 1st rebirth |
+| Rebirth cost growth | `shared/ShopBalance.ts` | ×2.4 / rebirth | `cost(R)=floor(2500×2.4^R)` |
+| Rebirth mult curve | `shared/ShopBalance.ts` | `[1,2,3,3.5,4,4.5,4.75,5]` +0.25/rebirth | Permanent payout `×MultRebirth` |
 
 ## 9. Cheats (`modules/CheatConfig.ts`)
 
