@@ -7,7 +7,7 @@ local invincible = false
 -- load in with the default profile every time, and the next regular save
 -- overwrites the DataStore with the new state. Useful for re-testing the
 -- onboarding flow.
-local resetData = false
+local resetData = true
 return {
 	invincible = invincible,
 	resetData = resetData,

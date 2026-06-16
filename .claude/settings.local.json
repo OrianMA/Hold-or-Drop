@@ -37,7 +37,14 @@
       "mcp__Roblox_Studio__start_stop_play",
       "WebSearch",
       "mcp__visualize__read_me",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(git push *)",
+      "PowerShell($c = Get-Command gh -ErrorAction SilentlyContinue; if \\($c\\) { \"gh found: \" + $c.Source; gh --version | Select-Object -First 1 } else { \"gh NOT found\" })",
+      "mcp__Roblox_Studio__user_mouse_input",
+      "mcp__Roblox_Studio__screen_capture",
+      "Bash(git rev-list *)",
+      "Bash(git ls-remote *)",
+      "PowerShell($t = @\\('GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN'\\) | ForEach-Object { if \\(Test-Path \"env:$_\"\\) { \"$_=SET\" } else { \"$_=unset\" } }; $t -join '; ')"
     ]
   }
 }

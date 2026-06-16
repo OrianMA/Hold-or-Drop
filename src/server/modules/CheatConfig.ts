@@ -8,4 +8,4 @@ export const invincible = false; // le bouton n'explosera jamais
 // load in with the default profile every time, and the next regular save
 // overwrites the DataStore with the new state. Useful for re-testing the
 // onboarding flow.
-export const resetData = false;
+export const resetData = true;
