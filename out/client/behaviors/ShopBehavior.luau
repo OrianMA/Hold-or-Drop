@@ -4,10 +4,13 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local Players = _services.Players
 local RunService = _services.RunService
 local Workspace = _services.Workspace
--- Opens / closes the Shop menu (MainUI/ShopMenu).
+local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
+-- Opens / closes the Shop menu (InGameUI/ShopMenu).
 -- The ProximityPrompt under Workspace/Shop/ProximityPromptPart opens it; the
 -- CloseButton under ShopMenu/Header closes it. Also auto-closes when the
 -- player walks more than CLOSE_DISTANCE studs away from the prompt part.
+-- Opening hides the persistent HUD; closing brings it back (every close path
+-- goes through close(), so the distance auto-close restores it too).
 -- Purely client-side — opening a menu needs no server authority (purchases
 -- get validated server-side later).
 local SHOP_MODEL = "Shop"
@@ -20,8 +23,8 @@ local function init()
 	local shop = Workspace:WaitForChild(SHOP_MODEL)
 	local promptPart = shop:WaitForChild(PROMPT_PART)
 	local prompt = promptPart:WaitForChild("ProximityPrompt")
-	local mainUI = (Players.LocalPlayer:WaitForChild("PlayerGui")):WaitForChild("MainUI")
-	local shopMenu = mainUI:WaitForChild(SHOP_MENU)
+	local inGameUI = (Players.LocalPlayer:WaitForChild("PlayerGui")):WaitForChild("InGameUI")
+	local shopMenu = inGameUI:WaitForChild(SHOP_MENU)
 	local closeButton = shopMenu:WaitForChild(HEADER):WaitForChild(CLOSE_BUTTON)
 	shopMenu.Visible = false
 	-- Heartbeat watcher is only attached while the menu is open so the closed
@@ -29,6 +32,7 @@ local function init()
 	local distanceWatcher
 	local close = function()
 		shopMenu.Visible = false
+		InGameUIController:enable()
 		local _result = distanceWatcher
 		if _result ~= nil then
 			_result:Disconnect()
@@ -37,6 +41,7 @@ local function init()
 	end
 	local open = function()
 		shopMenu.Visible = true
+		InGameUIController:disable()
 		local _result = distanceWatcher
 		if _result ~= nil then
 			_result:Disconnect()

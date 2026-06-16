@@ -16,7 +16,7 @@ do
 	end
 	function Popup:GetPlayerFrame(player)
 		local playerGui = player:WaitForChild("PlayerGui")
-		local screenGui = playerGui:WaitForChild("MainUI")
+		local screenGui = playerGui:WaitForChild("InGameUI")
 		local currentFrame = screenGui:WaitForChild(self.className)
 		return currentFrame
 	end

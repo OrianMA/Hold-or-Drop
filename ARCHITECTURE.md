@@ -70,7 +70,7 @@ src/
 │   ├── behaviors/           # ButtonMenu / ButtonInGame / EndGameButton / Shop behaviors
 │   │   └── ShopBehavior (open/close) + ShopItemsController (the 4 upgrade buttons)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
-│   └── ui/                  # HUD + effects (MoneyDisplay, MainUIController, etc.)
+│   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, etc.)
 └── shared/                  # ReplicatedStorage — code/data used by both sides
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
     ├── Utils/DefineEvent.ts # Creates (server) / waits for (client) a RemoteEvent
@@ -191,7 +191,7 @@ client folds `multRebirth` into the displayed total so it matches the credited a
 - `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `ButtonInGame`, `ButtonFinishGame`.
 - Server `PopupConfig` maps each type to a behavior class; `UiService` shows/hides by type
   and tracks one current popup per player (showing a new one hides the previous).
-- A popup resolves `PlayerGui/MainUI/<className>` Frame and toggles `Visible`.
+- A popup resolves `PlayerGui/InGameUI/<className>` Frame and toggles `Visible`.
 - Client mirrors this with `PopupBehaviors/` + `behaviors/` that animate the frames.
 
 ### 6.6 Persistence (`PlayerDataService`, `PlayerProgressionService`)
@@ -220,9 +220,9 @@ client folds `multRebirth` into the displayed total so it matches the credited a
 ### 6.7 Camera & HUD (client)
 - `CameraController` (shared): `SetCinematic` (Scriptable), `AnimateTo` (tween CFrame),
   `BringBackPlayerCamera` (return to character + reset to Custom).
-- `MainUIController`: toggles the persistent HUD Frame named `MainUI` (sibling of the
-  popups inside the ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
-- **Persistent GUI:** `MainUI.ResetOnSpawn = false` is set directly on the ScreenGui in
+- `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
+  popups inside the `InGameUI` ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
+- **Persistent GUI:** `InGameUI.ResetOnSpawn = false` is set directly on the ScreenGui in
   Studio so it survives death/respawn. `main.client.ts` additionally sets
   `StarterGui.ResetPlayerGuiOnSpawn = false` as a player-wide safety net. Client behaviors
   cache their UI references once at startup; without this guard, respawning would wipe
@@ -234,7 +234,7 @@ client folds `multRebirth` into the displayed total so it matches the credited a
   and translates them into effects.
 
 ### 6.8 Shop (`shared/ShopConfig.ts`, `server/services/ShopService.ts`, `client/behaviors/ShopItemsController.ts`)
-- The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `MainUI/ShopMenu`,
+- The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `InGameUI/ShopMenu`,
   open/close handled by `ShopBehavior`). Four buttons map to the upgrades:
   `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CMultiplier` = Multiplier +1,
   `DSafety` = Safety +1.
@@ -257,14 +257,26 @@ client folds `multRebirth` into the displayed total so it matches the credited a
   greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`.
   It refreshes purely from replicated attributes (`Money` + the three level attributes) — no
   server→client response event. **Robux buttons (`RobuxButton`) are not wired yet.**
-- **Rebirth** (`server/services/RebirthService.ts`, `client/behaviors/RebirthController.ts`):
-  a permanent money multiplier earned by resetting everything. `ShopConfig` exposes pure
-  `rebirthCost(R) = floor(2500 × 2.4^R)` and `rebirthMult(R)` (table `[1,2,3,3.5,4,4.5,4.75,5]`,
-  then `+0.25`/rebirth). The client `RebirthPanel` — a duplicate of a shop item frame under
-  `MainUI/ShopMenu/Body`, so it reuses the same `BoostLyout`/`ButtonsLayout` paths — shows
-  current→next `×N` and the cost, greys when unaffordable, and fires `RebirthEvent`.
-  `RebirthService` re-validates (`Money ≥ rebirthCost`) and performs the reset. Payout scales
-  by the resulting `MultRebirth` (see §6.3, §6.6).
+### 6.9 Rebirth (`server/services/RebirthService.ts`, `client/behaviors/RebirthMenuBehavior.ts`, `client/behaviors/RebirthMenuController.ts`)
+A permanent money multiplier earned by resetting everything. It lives in its **own panel**
+(`InGameUI/RebirthMenu`), **independent of the shop** — opened from the HUD button
+`InGameUI/HUD/ButtonsFrame/RebirthFrame/ImageButton`, closed via `RebirthMenu/CloseFrame/CloseButton`.
+- `ShopConfig` exposes the pure pricing/reward: `rebirthCost(R) = floor(2500 × 2.4^R)` and
+  `rebirthMult(R)` (table `[1,2,3,3.5,4,4.5,4.75,5]`, then `+0.25`/rebirth).
+- **`RebirthMenuBehavior` (client)** — open/close only; starts hidden regardless of the Studio
+  default (mirrors `ShopBehavior`).
+- **`RebirthMenuController` (client)** — read-only display driven by the replicated `Money` +
+  `Rebirths` attributes (refreshes on either change). Renders the current/next titles
+  (`RebirthInfoElements/{CurrentRebirth,NextRebirth}/RebirthLevelTitle` → `"Rebirth {R}"`), the
+  `×N` rewards as `"x{mult} money"` (`…/Frame/MultiplierText`), and the progression bar
+  (`ProgressionBar/CurrentProgressionFrame` X-scale = `clamp(Money/cost, 0, 1)`,
+  `ProgressionBar/BackgroundFrame/MoneyNeededText` = `"{Money}/{cost}"` via `FormatNumber`).
+  The buy button (`ButtonsFrame/RebirthButton/Button`) fires `RebirthEvent` when affordable,
+  else flashes the information panel client-side via `InformationText.show(...)`.
+  `SafeRebirthButton` (a Robux "keep your levels" variant) is present in Studio but **not wired
+  yet** (no Developer Product).
+- **`RebirthService` (server)** re-validates (`Money ≥ rebirthCost`) and performs the reset —
+  never trusts the client. Payout scales by the resulting `MultRebirth` (see §6.3, §6.6).
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 

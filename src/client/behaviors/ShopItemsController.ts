@@ -3,7 +3,7 @@ import { Events } from "shared/Event";
 import { ITEM_ORDER, ITEMS, ShopItem, STATS, isAtCap, priceForItem } from "shared/ShopConfig";
 import { FormatNumber } from "shared/NumberFormat";
 
-// Wires the four shop item frames (MainUI/ShopMenu/Body/*). Read-only display
+// Wires the four shop item frames (InGameUI/ShopMenu/Body/*). Read-only display
 // driven by replicated attributes (Money + the per-stat level attributes); the
 // cash button fires ShopPurchaseEvent. The server re-validates every purchase,
 // so the client guard here is purely for instant UX.
@@ -69,8 +69,8 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 }
 
 export function init(): void {
-	const mainUI = (player.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("MainUI");
-	const body = mainUI.WaitForChild("ShopMenu").WaitForChild("Body");
+	const inGameUI = (player.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("InGameUI");
+	const body = inGameUI.WaitForChild("ShopMenu").WaitForChild("Body");
 
 	const refreshers: Array<() => void> = [];
 	for (const id of ITEM_ORDER) {

@@ -9,7 +9,7 @@ local STATS = _ShopConfig.STATS
 local isAtCap = _ShopConfig.isAtCap
 local priceForItem = _ShopConfig.priceForItem
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
--- Wires the four shop item frames (MainUI/ShopMenu/Body/*). Read-only display
+-- Wires the four shop item frames (InGameUI/ShopMenu/Body/*). Read-only display
 -- driven by replicated attributes (Money + the per-stat level attributes); the
 -- cash button fires ShopPurchaseEvent. The server re-validates every purchase,
 -- so the client guard here is purely for instant UX.
@@ -75,8 +75,8 @@ local function bindItem(body, item)
 	return refresh
 end
 local function init()
-	local mainUI = (player:WaitForChild("PlayerGui")):WaitForChild("MainUI")
-	local body = mainUI:WaitForChild("ShopMenu"):WaitForChild("Body")
+	local inGameUI = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI")
+	local body = inGameUI:WaitForChild("ShopMenu"):WaitForChild("Body")
 	local refreshers = {}
 	for _, id in ITEM_ORDER do
 		local _arg0 = bindItem(body, ITEMS[id])

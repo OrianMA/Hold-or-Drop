@@ -2,9 +2,8 @@ import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
 import { spawnFloatingMultiplierLabel } from "client/ui/FloatingMultiplierLabel";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
-import { MainUIController } from "client/ui/MainUIController";
 import { STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
-import { FormatCash } from "shared/NumberFormat";
+import { FormatCash, FormatNumber } from "shared/NumberFormat";
 import {
 	ContentProvider,
 	GuiService,
@@ -64,6 +63,14 @@ const parrySoundTemplate = (() => {
 // Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
 const ANIM_PARRY_ID = "rbxassetid://6481315203";
 
+// Live multiplier label text. Keep one decimal below 1000 (e.g. "2.5") so the
+// early game stays precise, then abbreviate larger values with k/M/B suffixes
+// (e.g. "1.5K", "3M") so long holds don't overflow the label.
+function formatMultiplier(value: number): string {
+	if (value < 1000) return tostring(math.round(value * 10) / 10);
+	return FormatNumber(value);
+}
+
 function playSound(id: string, volume = 1, pitch = 1): void {
 	const sound = new Instance("Sound");
 	sound.SoundId = id;
@@ -116,7 +123,7 @@ function createVignetteEdge(
 	return frame;
 }
 
-function buildVignette(mainUI: ScreenGui): CanvasGroup {
+function buildVignette(inGameUI: ScreenGui): CanvasGroup {
 	const [topLeft] = GuiService.GetGuiInset();
 	const insetY = topLeft.Y;
 
@@ -127,7 +134,7 @@ function buildVignette(mainUI: ScreenGui): CanvasGroup {
 	canvas.BackgroundTransparency = 1;
 	canvas.GroupTransparency = 1;
 	canvas.ZIndex = 1;
-	canvas.Parent = mainUI;
+	canvas.Parent = inGameUI;
 
 	// Four gradient edges: top, bottom, left, right
 	// Rotation controls which side is opaque (0 = opaque at start of gradient direction)
@@ -376,10 +383,8 @@ export function init(): void {
 	});
 
 	Events.GameResultEvent.OnClientEvent.Connect((exploded: boolean, cashEarned: number, multiplier: number) => {
-		// Re-enable the persistent HUD now that the active gameplay is over —
-		// the EndGameButton state (popup + animation) runs on top of it.
-		MainUIController.enable();
-
+		// The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
+		// EndGameButtonBehavior re-enables it on EndGameStartEvent.
 		if (!exploded) {
 			const wasParry = parryKnockbackCamConn !== undefined;
 			parryKnockbackCamConn?.Disconnect();
@@ -430,7 +435,7 @@ export function init(): void {
 
 		// Texte + bump déclenchés à l'impact du label flottant
 		const onLabelArrived = () => {
-			capturedLabel.Text = `${tostring(math.round(capturedMultiplier * 10) / 10)}x`;
+			capturedLabel.Text = `${formatMultiplier(capturedMultiplier)}x`;
 			TweenService.Create(capturedLabel, UpgradeMultiplayerTI, {
 				TextSize: capturedSize,
 				TextColor3: capturedColor,
@@ -492,8 +497,8 @@ export function init(): void {
 }
 
 // Called each time the player starts a new game (after clicking StartButton)
-export function setup(mainUI: ScreenGui): void {
-	const popup = mainUI.WaitForChild("ButtonInGame") as Frame;
+export function setup(inGameUI: ScreenGui): void {
+	const popup = inGameUI.WaitForChild("ButtonInGame") as Frame;
 	releaseButton = popup.WaitForChild("ReleaseButton") as TextButton;
 	baseCashText = popup.WaitForChild("BaseCashText") as TextLabel;
 	const sliderParent = popup.WaitForChild("Slider") as Frame;
@@ -513,7 +518,7 @@ export function setup(mainUI: ScreenGui): void {
 	if (!buttonOriginalSize) buttonOriginalSize = releaseButton.Size;
 	if (!multiplierTextOriginalSize) multiplierTextOriginalSize = multiplierLabel.TextSize;
 	if (!multiplierTextOriginalColor) multiplierTextOriginalColor = multiplierLabel.TextColor3;
-	if (!vignetteCanvas) vignetteCanvas = buildVignette(mainUI);
+	if (!vignetteCanvas) vignetteCanvas = buildVignette(inGameUI);
 
 	// Reset per-game state
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
@@ -533,7 +538,7 @@ export function setup(mainUI: ScreenGui): void {
 	print(releaseButton.Activated);
 
 	// Reset UI
-	multiplierLabel.Text = `${STARTING_MULTIPLIER}x`;
+	multiplierLabel.Text = `${formatMultiplier(STARTING_MULTIPLIER)}x`;
 	progressionIndicator.Position = new UDim2(0, 0, 0.5, 0);
 
 	// Clean up any leftover connections from a previous game

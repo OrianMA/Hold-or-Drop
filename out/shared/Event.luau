@@ -38,7 +38,7 @@ do
 	-- EndGameButton — client → server (animation finished, server hides the popup)
 	local EndGameFinishedEvent = DefineEvent("EndGameFinishedEvent", script)
 	_container.EndGameFinishedEvent = EndGameFinishedEvent
-	-- Generic info popup — server tells client to flash text in MainUI's
+	-- Generic info popup — server tells client to flash text in InGameUI's
 	-- InformationTextCanvasGroup. Used e.g. for "Not enough money".
 	-- Args: (text: string, color?: Color3).
 	local InformationTextEvent = DefineEvent("InformationTextEvent", script)

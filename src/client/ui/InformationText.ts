@@ -2,7 +2,7 @@ import { Players, TweenService } from "@rbxts/services";
 import { Events } from "shared/Event";
 
 // Generic "flash text in the HUD" controller.
-// Animates MainUI/InformationTextCanvasGroup with the same timings as the old
+// Animates InGameUI/InformationTextCanvasGroup with the same timings as the old
 // ButtonFinishGame/FinishTextCanvasGroup (which it replaces). The contained
 // TextLabel's Text and TextColor3 are overwritten on each show() call.
 //

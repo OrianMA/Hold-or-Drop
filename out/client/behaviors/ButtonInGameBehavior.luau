@@ -4,9 +4,10 @@ local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Ev
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
 local spawnFloatingMultiplierLabel = TS.import(script, script.Parent.Parent, "ui", "FloatingMultiplierLabel").spawnFloatingMultiplierLabel
 local MultiplierVisuals = TS.import(script, script.Parent.Parent, "ui", "MultiplierVisuals").MultiplierVisuals
-local MainUIController = TS.import(script, script.Parent.Parent, "ui", "MainUIController").MainUIController
 local STARTING_MULTIPLIER = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig").STARTING_MULTIPLIER
-local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
+local _NumberFormat = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat")
+local FormatCash = _NumberFormat.FormatCash
+local FormatNumber = _NumberFormat.FormatNumber
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
@@ -58,6 +59,15 @@ local parrySoundTemplate = (function()
 end)()
 -- Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
 local ANIM_PARRY_ID = "rbxassetid://6481315203"
+-- Live multiplier label text. Keep one decimal below 1000 (e.g. "2.5") so the
+-- early game stays precise, then abbreviate larger values with k/M/B suffixes
+-- (e.g. "1.5K", "3M") so long holds don't overflow the label.
+local function formatMultiplier(value)
+	if value < 1000 then
+		return tostring(math.round(value * 10) / 10)
+	end
+	return FormatNumber(value)
+end
 local function playSound(id, volume, pitch)
 	if volume == nil then
 		volume = 1
@@ -105,7 +115,7 @@ local function createVignetteEdge(parent, rotation, anchorPoint, position, size)
 	gradient.Parent = frame
 	return frame
 end
-local function buildVignette(mainUI)
+local function buildVignette(inGameUI)
 	local topLeft = GuiService:GetGuiInset()
 	local insetY = topLeft.Y
 	local canvas = Instance.new("CanvasGroup")
@@ -115,7 +125,7 @@ local function buildVignette(mainUI)
 	canvas.BackgroundTransparency = 1
 	canvas.GroupTransparency = 1
 	canvas.ZIndex = 1
-	canvas.Parent = mainUI
+	canvas.Parent = inGameUI
 	-- Four gradient edges: top, bottom, left, right
 	-- Rotation controls which side is opaque (0 = opaque at start of gradient direction)
 	createVignetteEdge(canvas, 90, Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 0), UDim2.new(1, 0, 0.45, 0))
@@ -413,9 +423,8 @@ local function init()
 		end
 	end)
 	Events.GameResultEvent.OnClientEvent:Connect(function(exploded, cashEarned, multiplier)
-		-- Re-enable the persistent HUD now that the active gameplay is over —
-		-- the EndGameButton state (popup + animation) runs on top of it.
-		MainUIController:enable()
+		-- The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
+		-- EndGameButtonBehavior re-enables it on EndGameStartEvent.
 		if not exploded then
 			local wasParry = parryKnockbackCamConn ~= nil
 			local _result = parryKnockbackCamConn
@@ -469,7 +478,7 @@ local function init()
 		MultiplierVisuals:capture(capturedSize, capturedColor)
 		-- Texte + bump déclenchés à l'impact du label flottant
 		local onLabelArrived = function()
-			capturedLabel.Text = `{tostring(math.round(capturedMultiplier * 10) / 10)}x`
+			capturedLabel.Text = `{formatMultiplier(capturedMultiplier)}x`
 			TweenService:Create(capturedLabel, UpgradeMultiplayerTI, {
 				TextSize = capturedSize,
 				TextColor3 = capturedColor,
@@ -532,8 +541,8 @@ local function init()
 	end)
 end
 -- Called each time the player starts a new game (after clicking StartButton)
-local function setup(mainUI)
-	local popup = mainUI:WaitForChild("ButtonInGame")
+local function setup(inGameUI)
+	local popup = inGameUI:WaitForChild("ButtonInGame")
 	releaseButton = popup:WaitForChild("ReleaseButton")
 	baseCashText = popup:WaitForChild("BaseCashText")
 	local sliderParent = popup:WaitForChild("Slider")
@@ -564,7 +573,7 @@ local function setup(mainUI)
 		multiplierTextOriginalColor = multiplierLabel.TextColor3
 	end
 	if not vignetteCanvas then
-		vignetteCanvas = buildVignette(mainUI)
+		vignetteCanvas = buildVignette(inGameUI)
 	end
 	-- Reset per-game state
 	local _result = Workspace.CurrentCamera
@@ -590,7 +599,7 @@ local function setup(mainUI)
 	releaseButton.Visible = true
 	print(releaseButton.Activated)
 	-- Reset UI
-	multiplierLabel.Text = `{STARTING_MULTIPLIER}x`
+	multiplierLabel.Text = `{formatMultiplier(STARTING_MULTIPLIER)}x`
 	progressionIndicator.Position = UDim2.new(0, 0, 0.5, 0)
 	-- Clean up any leftover connections from a previous game
 	local _result_1 = spaceConn

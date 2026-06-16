@@ -15,7 +15,7 @@ local SAFETY = _ShopBalance.SAFETY
 -- to rebalance.
 -- A stat is one upgradeable progression value. Multiple shop buttons may target
 -- the same stat (BaseCash is sold both as +1 and +5).
--- One per shop button under MainUI/ShopMenu/Body.
+-- One per shop button under InGameUI/ShopMenu/Body.
 -- Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
 -- number rendering used by NumberFormat without flooring sub-1 values to "0".
 local function trimDecimals(value)

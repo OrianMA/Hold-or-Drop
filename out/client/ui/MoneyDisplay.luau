@@ -3,10 +3,10 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local Players = _services.Players
 local TweenService = _services.TweenService
-local MainUIController = TS.import(script, script.Parent, "MainUIController").MainUIController
+local InGameUIController = TS.import(script, script.Parent, "InGameUIController").InGameUIController
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 -- Renders the local player's Money attribute into a TextLabel named "MoneyText"
--- sitting under MoneyParent inside MainUI. The attribute is set by the server
+-- sitting under MoneyParent inside the InGameUI HUD. The attribute is set by the server
 -- (PlayerDataService) and auto-replicates to this client.
 --
 -- Updates animate via a NumberValue proxy tweened with TweenService — the label
@@ -32,7 +32,7 @@ local currentTarget = 0
 local initialized = false
 local activeTween
 local function findLabel()
-	local moneyParent = MainUIController:getMoneyParent()
+	local moneyParent = InGameUIController:getMoneyParent()
 	if not moneyParent then
 		return nil
 	end

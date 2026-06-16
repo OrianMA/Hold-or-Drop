@@ -5,7 +5,7 @@ local Players = _services.Players
 local TweenService = _services.TweenService
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 -- Generic "flash text in the HUD" controller.
--- Animates MainUI/InformationTextCanvasGroup with the same timings as the old
+-- Animates InGameUI/InformationTextCanvasGroup with the same timings as the old
 -- ButtonFinishGame/FinishTextCanvasGroup (which it replaces). The contained
 -- TextLabel's Text and TextColor3 are overwritten on each show() call.
 --

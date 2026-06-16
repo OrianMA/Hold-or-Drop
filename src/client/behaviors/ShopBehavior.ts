@@ -1,9 +1,12 @@
 import { Players, RunService, Workspace } from "@rbxts/services";
+import { InGameUIController } from "client/ui/InGameUIController";
 
-// Opens / closes the Shop menu (MainUI/ShopMenu).
+// Opens / closes the Shop menu (InGameUI/ShopMenu).
 // The ProximityPrompt under Workspace/Shop/ProximityPromptPart opens it; the
 // CloseButton under ShopMenu/Header closes it. Also auto-closes when the
 // player walks more than CLOSE_DISTANCE studs away from the prompt part.
+// Opening hides the persistent HUD; closing brings it back (every close path
+// goes through close(), so the distance auto-close restores it too).
 // Purely client-side — opening a menu needs no server authority (purchases
 // get validated server-side later).
 
@@ -19,8 +22,8 @@ export function init(): void {
 	const promptPart = shop.WaitForChild(PROMPT_PART) as BasePart;
 	const prompt = promptPart.WaitForChild("ProximityPrompt") as ProximityPrompt;
 
-	const mainUI = (Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("MainUI");
-	const shopMenu = mainUI.WaitForChild(SHOP_MENU) as GuiObject;
+	const inGameUI = (Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("InGameUI");
+	const shopMenu = inGameUI.WaitForChild(SHOP_MENU) as GuiObject;
 	const closeButton = shopMenu.WaitForChild(HEADER).WaitForChild(CLOSE_BUTTON) as GuiButton;
 
 	shopMenu.Visible = false; // start hidden regardless of the Studio default
@@ -31,12 +34,14 @@ export function init(): void {
 
 	const close = (): void => {
 		shopMenu.Visible = false;
+		InGameUIController.enable();
 		distanceWatcher?.Disconnect();
 		distanceWatcher = undefined;
 	};
 
 	const open = (): void => {
 		shopMenu.Visible = true;
+		InGameUIController.disable();
 		distanceWatcher?.Disconnect();
 		distanceWatcher = RunService.Heartbeat.Connect(() => {
 			const root = Players.LocalPlayer.Character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;

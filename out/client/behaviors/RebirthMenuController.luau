@@ -1,0 +1,75 @@
+-- Compiled with roblox-ts v3.0.0
+local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
+local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Players
+local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
+local _ShopConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig")
+local rebirthCost = _ShopConfig.rebirthCost
+local rebirthMult = _ShopConfig.rebirthMult
+local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
+local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
+-- Drives the Rebirth menu display (InGameUI/RebirthMenu) and the buy action.
+-- Read-only display fed by the replicated Money + Rebirths attributes; the buy
+-- button fires RebirthEvent when affordable, otherwise flashes the information
+-- panel. The server (RebirthService) re-validates, so the client guard here is
+-- purely for instant UX.
+local player = Players.LocalPlayer
+local DENIED_COLOR = Color3.new(1, 0.4, 0.4)
+local function getRebirths()
+	local _condition = (player:GetAttribute("Rebirths"))
+	if _condition == nil then
+		_condition = 0
+	end
+	return _condition
+end
+local function getMoney()
+	local _condition = (player:GetAttribute("Money"))
+	if _condition == nil then
+		_condition = 0
+	end
+	return _condition
+end
+-- "x2", "x3.5" — trim trailing zeros.
+local function formatMult(value)
+	local hundredths = math.floor(value * 100 + 1e-7)
+	local trimmed = if hundredths % 100 == 0 then tostring(hundredths / 100) else string.format("%.2f", hundredths / 100)
+	return `x{trimmed}`
+end
+local function init()
+	local menu = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI"):WaitForChild("RebirthMenu")
+	local info = menu:WaitForChild("RebirthInfoElements")
+	local currentRebirth = info:WaitForChild("CurrentRebirth")
+	local nextRebirth = info:WaitForChild("NextRebirth")
+	local currentTitle = currentRebirth:WaitForChild("RebirthLevelTitle")
+	local currentMult = currentRebirth:WaitForChild("Frame"):WaitForChild("MultiplierText")
+	local nextTitle = nextRebirth:WaitForChild("RebirthLevelTitle")
+	local nextMult = nextRebirth:WaitForChild("Frame"):WaitForChild("MultiplierText")
+	local progressionBar = menu:WaitForChild("ProgressionBar")
+	local fill = progressionBar:WaitForChild("CurrentProgressionFrame")
+	local moneyNeededText = progressionBar:WaitForChild("BackgroundFrame"):WaitForChild("MoneyNeededText")
+	local buyButton = menu:WaitForChild("ButtonsFrame"):WaitForChild("RebirthButton"):WaitForChild("Button")
+	local function refresh()
+		local rebirths = getRebirths()
+		local money = getMoney()
+		local cost = rebirthCost(rebirths)
+		currentTitle.Text = `Rebirth {rebirths}`
+		nextTitle.Text = `Rebirth {rebirths + 1}`
+		currentMult.Text = `{formatMult(rebirthMult(rebirths))} money`
+		nextMult.Text = `{formatMult(rebirthMult(rebirths + 1))} money`
+		local progress = math.clamp(money / cost, 0, 1)
+		fill.Size = UDim2.new(progress, 0, 1, 0)
+		moneyNeededText.Text = `{FormatNumber(money)}/{FormatNumber(cost)}`
+	end
+	buyButton.Activated:Connect(function()
+		if getMoney() < rebirthCost(getRebirths()) then
+			InformationText:show("Pas assez d'argent pour le Rebirth", DENIED_COLOR)
+			return nil
+		end
+		Events.RebirthEvent:FireServer()
+	end)
+	player:GetAttributeChangedSignal("Money"):Connect(refresh)
+	player:GetAttributeChangedSignal("Rebirths"):Connect(refresh)
+	refresh()
+end
+return {
+	init = init,
+}

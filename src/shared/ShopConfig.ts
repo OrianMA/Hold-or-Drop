@@ -12,7 +12,7 @@ import { BASE_CASH, MULTIPLIER, PRICE_GROWTH, REBIRTH, SAFETY } from "./ShopBala
 // the same stat (BaseCash is sold both as +1 and +5).
 export type ShopStat = "BaseCash" | "Multiplier" | "Safety";
 
-// One per shop button under MainUI/ShopMenu/Body.
+// One per shop button under InGameUI/ShopMenu/Body.
 export type ShopItemId = "BaseCash" | "BaseCashX5" | "Multiplier" | "Safety";
 
 export interface StatConfig {

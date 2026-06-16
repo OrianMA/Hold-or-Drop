@@ -1,6 +1,7 @@
 import { Players } from "@rbxts/services";
 import { Events } from "shared/Event";
 import { runEndGameAnimation } from "client/ui/EndGameAnimation";
+import { InGameUIController } from "client/ui/InGameUIController";
 
 // Entry point for the ButtonFinishGame UI state on the client.
 // Server fires EndGameStartEvent after the popup has been shown — we resolve
@@ -9,9 +10,13 @@ import { runEndGameAnimation } from "client/ui/EndGameAnimation";
 export function init(): void {
 	Events.EndGameStartEvent.OnClientEvent.Connect(
 		(baseCash: number, multiplier: number, lossMultiplier: number, multRebirth: number) => {
+			// The finish popup is opening — bring back the persistent HUD that the
+			// ButtonMenu hid, so the payout animation can fly cash into it.
+			InGameUIController.enable();
+
 			const playerGui = Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui;
-			const mainUI = playerGui.WaitForChild("MainUI") as ScreenGui;
-			const frame = mainUI.WaitForChild("ButtonFinishGame") as Frame;
+			const inGameUI = playerGui.WaitForChild("InGameUI") as ScreenGui;
+			const frame = inGameUI.WaitForChild("ButtonFinishGame") as Frame;
 
 			task.spawn(() => {
 				runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, multRebirth, () => {

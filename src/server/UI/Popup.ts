@@ -5,7 +5,7 @@ export class Popup implements IPopup {
 
 	GetPlayerFrame(player: Player): Frame {
 		const playerGui = player.WaitForChild("PlayerGui") as PlayerGui;
-		const screenGui = playerGui.WaitForChild("MainUI") as ScreenGui;
+		const screenGui = playerGui.WaitForChild("InGameUI") as ScreenGui;
 		const currentFrame = screenGui.WaitForChild(this.className) as Frame;
 
 		return currentFrame;

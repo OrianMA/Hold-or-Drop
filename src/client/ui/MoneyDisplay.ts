@@ -1,9 +1,9 @@
 import { Players, TweenService } from "@rbxts/services";
-import { MainUIController } from "client/ui/MainUIController";
+import { InGameUIController } from "client/ui/InGameUIController";
 import { FormatCash } from "shared/NumberFormat";
 
 // Renders the local player's Money attribute into a TextLabel named "MoneyText"
-// sitting under MoneyParent inside MainUI. The attribute is set by the server
+// sitting under MoneyParent inside the InGameUI HUD. The attribute is set by the server
 // (PlayerDataService) and auto-replicates to this client.
 //
 // Updates animate via a NumberValue proxy tweened with TweenService — the label
@@ -33,7 +33,7 @@ let initialized = false;
 let activeTween: Tween | undefined;
 
 function findLabel(): TextLabel | undefined {
-	const moneyParent = MainUIController.getMoneyParent();
+	const moneyParent = InGameUIController.getMoneyParent();
 	if (!moneyParent) return undefined;
 	const found = moneyParent.FindFirstChild(LABEL_NAME, true);
 	return found?.IsA("TextLabel") ? found : undefined;

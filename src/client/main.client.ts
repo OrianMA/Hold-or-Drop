@@ -8,13 +8,14 @@ import { init as initRoomPrompts } from "./rooms/RoomPromptController";
 import { init as initOwnerIndicator } from "./rooms/OwnerIndicatorController";
 import { init as initShopMenu } from "./behaviors/ShopBehavior";
 import { init as initShopItems } from "./behaviors/ShopItemsController";
-import { init as initRebirth } from "./behaviors/RebirthController";
+import { init as initRebirthMenu } from "./behaviors/RebirthMenuBehavior";
+import { init as initRebirthController } from "./behaviors/RebirthMenuController";
 
-// Keep MainUI (the persistent HUD + popups) alive across respawns. By default a
+// Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 // ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
 // references each behavior caches at startup — leaving ButtonMenu and the rest
 // non-functional after death.
-// The authoritative fix is `MainUI.ResetOnSpawn = false` set directly on the
+// The authoritative fix is `InGameUI.ResetOnSpawn = false` set directly on the
 // ScreenGui in Studio (the idiomatic per-GUI Roblox flag). We also set the
 // player-wide flag here as a belt-and-braces guard in case a future ScreenGui
 // is added without thinking about its ResetOnSpawn.
@@ -29,4 +30,5 @@ initOwnerIndicator();
 initButtonMenu(setupButtonInGame);
 initShopMenu();
 initShopItems();
-initRebirth();
+initRebirthMenu();
+initRebirthController();

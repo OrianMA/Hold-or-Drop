@@ -1,6 +1,6 @@
 import { ReplicatedStorage, TweenService } from "@rbxts/services";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
-import { MainUIController } from "client/ui/MainUIController";
+import { InGameUIController } from "client/ui/InGameUIController";
 import { MoneyDisplay } from "client/ui/MoneyDisplay";
 import { InformationText } from "client/ui/InformationText";
 import { FormatCash } from "shared/NumberFormat";
@@ -8,11 +8,14 @@ import { FormatCash } from "shared/NumberFormat";
 // ── ButtonFinishGame payout animation ───────────────────────────────────────────
 //
 // Sequence (after the "Finish" flash + optional kill penalty):
-//   1. MultiplierText flies into BaseCashText and disappears (no floating text).
-//   2. BaseCashText counts up from its base value to the total earned (grow + red).
-//   3. BaseCashText stays put and sprays N floating texts toward the money HUD.
-//      Each spawn drops BaseCashText's value + size by one chunk (down to 0); each
-//      arrival bumps the player's HUD money up by that chunk.
+//   1.  MultiplierText flies into BaseCashText and disappears.
+//   2a. BaseCashText counts up by the in-game multiplier (grow + red).
+//   2b. If the player has rebirthed (multRebirth > 1), a gold "xN" rebirth text
+//       flies into BaseCashText, which then counts up again by the rebirth multiplier.
+//   3.  BaseCashText stays put (showing the full total) and sprays N floating texts
+//       toward the money HUD; each arrival banks one chunk of the total.
+//   4.  After the chunks land, a short pause, then the whole BaseCashText label flies
+//       to the HUD cash as the final move.
 
 // ── Tuning ──────────────────────────────────────────────────────────────────────
 
@@ -46,10 +49,27 @@ const FLOATING_DISPERSE_MIN = 70; // px
 const FLOATING_DISPERSE_MAX = 130; // px
 const FLOATING_HOLD = 0.12; // pause between dispersion and fly-to-target
 
+// Phase 2b — rebirth multiplier floating text (only when the player has rebirthed).
+const REBIRTH_MERGE_TI = new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
+const REBIRTH_COUNTUP_TI = new TweenInfo(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+const REBIRTH_LABEL_COLOR = new Color3(1, 0.82, 0.2); // gold — sets it apart from the in-game multiplier
+const REBIRTH_LABEL_START_OFFSET = 120; // px above BaseCashText where the rebirth text spawns
+const REBIRTH_COUNTUP_SIZE_RATIO = 0.6; // share of the size growth done in phase 2a (rest in 2b)
+
+// Phase 4 — after the spray, the whole BaseCashText label flies to the HUD money.
+const FINAL_MOVE_DELAY = 0.45; // extra pause after the chunks land, before the label flies
+const BASE_CASH_FLY_TI = new TweenInfo(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
+
 // ── Formatting ────────────────────────────────────────────────────────────────
 
 function formatMultiplier(value: number): string {
 	return `${tostring(math.round(value * 10) / 10)}x`;
+}
+
+// Rebirth multiplier label — "x2", "x3.5". Prefix form distinguishes it from the
+// in-game multiplier's "{n}x".
+function formatRebirthMultiplier(value: number): string {
+	return `x${tostring(math.round(value * 10) / 10)}`;
 }
 
 function formatCash(value: number): string {
@@ -189,6 +209,77 @@ function mergeMultiplierIntoBaseCash(multiplierText: TextLabel, baseCashText: Te
 	multiplierText.Visible = false;
 }
 
+// ── Phase 2b: rebirth multiplier text flies into BaseCashText (blocking) ─────────
+
+// Clones the floating template as a gold "xN", spawns it above BaseCashText and
+// flies it in. Blocks until it lands so the caller can run the boosting count-up.
+function flyRebirthMultiplierIntoBaseCash(parent: ScreenGui, multRebirth: number, target: GuiObject): void {
+	const template = getFloatingTemplate();
+	if (!template) return;
+
+	const frame = template.Clone();
+	frame.Name = "EndGameRebirthMultiplier";
+	frame.AnchorPoint = new Vector2(0.5, 0.5);
+	frame.ZIndex = 31;
+	frame.Visible = true;
+
+	const amountLabel = frame.FindFirstChild("Amount") as TextLabel | undefined;
+	if (amountLabel) {
+		amountLabel.Text = formatRebirthMultiplier(multRebirth);
+		amountLabel.TextColor3 = REBIRTH_LABEL_COLOR;
+	}
+	frame.Parent = parent;
+
+	const targetCenter = target.AbsolutePosition.add(target.AbsoluteSize.div(2));
+	frame.Position = new UDim2(0, targetCenter.X, 0, targetCenter.Y - REBIRTH_LABEL_START_OFFSET);
+
+	const fly = TweenService.Create(frame, REBIRTH_MERGE_TI, {
+		Position: new UDim2(0, targetCenter.X, 0, targetCenter.Y),
+	});
+	fly.Play();
+	fly.Completed.Wait();
+	frame.Destroy();
+}
+
+// ── Phase 4: the whole BaseCashText label flies to the HUD money ─────────────────
+
+// Clones BaseCashText to the ScreenGui (so the original resets cleanly), hides the
+// original, and flies the clone onto the HUD money. Cosmetic — the chunks already
+// banked the cash. onArrived fires when the clone lands.
+function flyBaseCashToHud(parent: ScreenGui, sourceLabel: TextLabel, target: GuiObject, onArrived: () => void): void {
+	if (parent.AbsoluteSize.X === 0) {
+		sourceLabel.Visible = false;
+		onArrived();
+		return;
+	}
+
+	const srcCenter = sourceLabel.AbsolutePosition.add(sourceLabel.AbsoluteSize.div(2));
+	const absSize = sourceLabel.AbsoluteSize;
+
+	const clone = sourceLabel.Clone();
+	clone.Name = "EndGameBaseCashFly";
+	clone.AnchorPoint = new Vector2(0.5, 0.5);
+	clone.Size = new UDim2(0, absSize.X, 0, absSize.Y);
+	clone.Position = new UDim2(0, srcCenter.X, 0, srcCenter.Y);
+	clone.ZIndex = 32;
+	clone.Visible = true;
+	clone.Parent = parent;
+
+	// The clone carries the visual to the HUD; hide the original immediately.
+	sourceLabel.Visible = false;
+
+	const targetCenter = target.AbsolutePosition.add(target.AbsoluteSize.div(2));
+	const fly = TweenService.Create(clone, BASE_CASH_FLY_TI, {
+		Position: new UDim2(0, targetCenter.X, 0, targetCenter.Y),
+		TextSize: initialBaseCashSize ?? clone.TextSize,
+	});
+	fly.Completed.Connect(() => {
+		clone.Destroy();
+		onArrived();
+	});
+	fly.Play();
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────────────
 
 interface EndGameRefs {
@@ -272,13 +363,25 @@ export function runEndGameAnimation(
 	// ── Phase 1: MultiplierText merges into BaseCashText and disappears ───────────
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText);
 
-	// ── Phase 2: BaseCashText counts up to the total earned ───────────────────────
+	// ── Phase 2a: BaseCashText counts up by the in-game multiplier ───────────────────────
 	const totalEarn = effectiveBaseCash * multiplier * multRebirth;
 	const grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE;
-	animateCash(baseCashText, effectiveBaseCash, totalEarn, effectiveBaseSize, grownSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI);
+		const afterMultiplier = effectiveBaseCash * multiplier;
+		const hasRebirthBonus = multRebirth > 1;
+		// With a rebirth bonus to follow, stop the growth short so phase 2b finishes it.
+		const afterMultiplierSize = hasRebirthBonus
+			? effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE * REBIRTH_COUNTUP_SIZE_RATIO
+			: grownSize;
+	animateCash(baseCashText, effectiveBaseCash, afterMultiplier, effectiveBaseSize, afterMultiplierSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI);
+
+		// Phase 2b: rebirth multiplier flies in and boosts BaseCashText (only if rebirthed).
+		if (hasRebirthBonus) {
+			flyRebirthMultiplierIntoBaseCash(screenGui, multRebirth, baseCashText);
+			animateCash(baseCashText, afterMultiplier, totalEarn, afterMultiplierSize, grownSize, BASE_CASH_TARGET_COLOR, BASE_CASH_TARGET_COLOR, REBIRTH_COUNTUP_TI);
+		}
 
 	// ── Phase 3: spray N floating texts into the money HUD ────────────────────────
-	const moneyParent = MainUIController.getMoneyParent();
+	const moneyParent = InGameUIController.getMoneyParent();
 	const n = FLOATING_TEXT_COUNT;
 	const chunk = n > 0 ? totalEarn / n : 0;
 
