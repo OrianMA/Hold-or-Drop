@@ -58,6 +58,7 @@ src/
 │   │   ├── ButtonModule.ts          # Per-room trigger handler
 │   │   ├── ButtonInGameModule.ts    # THE hold/risk/parry game loop
 │   │   ├── EndGameButtonModule.ts   # Post-game payout + popup coordination
+│   │   ├── NeonPipeColors.ts        # Tints Environment/NeonPipe per room occupancy
 │   │   ├── ConfettiBurst.ts, CheatConfig.ts
 │   ├── UI/
 │   │   ├── Popup.ts                 # Base popup (Show/Hide a named Frame)
@@ -133,6 +134,11 @@ once a server event fires.
   prompt **disabled** and publishes `AssignedRoom` / `InSession` attributes per player.
   `RoomPromptController` (client) enables only the local player's prompt — client-side
   writes don't replicate. Server still validates ownership on `Triggered`.
+- **Neon pipe colour** (`modules/NeonPipeColors.ts`): each room slot has a matching
+  `Workspace/Environment/NeonPipe/P{n}` folder of Neon parts. `RoomService` greys every
+  pipe at init (empty baseline), tints a slot's pipe its colour on `assign`, and greys it
+  again on `release`. Colours are slot-keyed constants at the top of the module
+  (P1 blue, P2 red, P3 yellow, P4 green, P5 purple; empty = grey) — edit there to retune.
 - **Owner display** (optional `OwnerDisplay` model in the room folder):
   - `NamePart/.../NameText` — server writes `"Base of {PlayerName}"` on assign and clears
     it on release; the SurfaceGui replicates so everyone sees the occupant's name.

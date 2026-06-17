@@ -5,6 +5,7 @@ local Players = _services.Players
 local Workspace = _services.Workspace
 local Room = TS.import(script, game:GetService("ServerScriptService"), "TS", "rooms", "Room").Room
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 -- Owns the player ↔ room mapping (the "player-only" domain).
 --
 -- At server start it scans Workspace/PlayerZones for P{n} folders (one Button
@@ -72,6 +73,8 @@ local function assign(player)
 	-- Tells this player's client which prompt to enable (RoomPromptController).
 	player:SetAttribute("AssignedRoom", room.name)
 	room:setGainCash(PlayerProgressionService:get(player, "BaseCash"))
+	-- Light this slot's neon pipe in the room's colour.
+	NeonPipeColors:setOccupied(room.name)
 	-- Teleport the player onto their room's spawn part on every (re)spawn, and move
 	-- an already-spawned character now (service init with players already in-game).
 	local spawnPart = room.spawnPart
@@ -115,9 +118,13 @@ local function release(player)
 	local _player_3 = player
 	roomByPlayer[_player_3] = nil
 	player:SetAttribute("AssignedRoom", "")
+	-- Slot freed — grey its neon pipe again.
+	NeonPipeColors:setEmpty(room.name)
 end
 local RoomService = {
 	init = function(self)
+		-- Grey every neon pipe first — empty baseline before any assignment below.
+		NeonPipeColors:init()
 		local zones = Workspace:WaitForChild(PLAYER_ZONES)
 		local children = zones:GetChildren()
 		table.sort(children, function(a, b)
