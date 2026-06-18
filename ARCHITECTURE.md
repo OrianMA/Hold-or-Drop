@@ -293,19 +293,37 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   (`ButtonInGameBehavior` client-side, `ButtonInGameModule` server-side) — only the asset
   definitions are centralised here, so re-pointing a sound is a one-line edit.
 - **Music is client presentation** (see §4). `MusicController` (client) owns two things,
-  both non-3D sounds parented to `SoundService`:
-  - **BGM**: a looping playlist. One Sound is reused; a single track loops via `Looped`,
-    multiple tracks advance on `Ended` and wrap back to the first. Started in `main.client.ts`.
-    It **ducks** for the whole run: `playButtonMusic` fades it out fast (0.4s); it stays silent
-    through the explosion/parry/payout, then `resumeBgm` eases it back in slowly (3s) once the
-    run is fully over — on **respawn** (death path, via `CharacterAdded`) or at the **end of the
-    payout animation** (survive path, fired from `EndGameButtonBehavior`). `resumeBgm` is a no-op
-    unless the BGM is currently ducked; a single stored tween is cancelled before each new fade.
-  - **Button-hold music**: created + preloaded at init (no CDN stall on first hold), looped.
-    `ButtonInGameBehavior` drives it — `playButtonMusic()` at hold start (`setup`),
-    `stopButtonMusic()` on release (`endInput`) and at the instant of explosion
-    (`ButtonExplodedEvent`, before the parry window). `stopButtonMusic()` only stops the music
-    (it no longer touches the BGM); both it and `resumeBgm` are idempotent.
+  parented to `SoundService`:
+  - **BGM**: a looping playlist played through the **new audio API** so a spectrum can be read
+    for the visualiser (§6.11): an `AudioPlayer` → `AudioDeviceOutput` (audible) plus a `Wire`
+    branch to an `AudioAnalyzer` (`SpectrumEnabled`, `WindowSize` Medium). A single track loops
+    via `Looping`; multiple tracks advance on `Ended` and wrap back to the first. Started in
+    `main.client.ts`. It **ducks** for the whole run: `playButtonMusic` tweens `AudioPlayer.Volume`
+    to 0 fast (0.4s); it stays silent through the explosion/parry/payout, then `resumeBgm` eases
+    it back in slowly (3s) once the run is fully over — on **respawn** (death path, via
+    `CharacterAdded`) or at the **end of the payout animation** (survive path, fired from
+    `EndGameButtonBehavior`). `resumeBgm` is a no-op unless ducked; a single stored tween is
+    cancelled before each new fade. `getBgmAnalyzer()` exposes the analyzer to the visualiser
+    (client-only — `GetSpectrum` returns empty server-side).
+  - **Button-hold music**: a **classic `Sound`** (unchanged by the audio-API migration), created
+    + preloaded at init (no CDN stall on first hold), looped. `ButtonInGameBehavior` drives it —
+    `playButtonMusic()` at hold start (`setup`), `stopButtonMusic()` on release (`endInput`) and
+    at the instant of explosion (`ButtonExplodedEvent`, before the parry window).
+    `stopButtonMusic()` only stops the music (it no longer touches the BGM); both it and
+    `resumeBgm` are idempotent.
+
+### 6.11 Audio Visualizer (`client/ui/AudioVisualizer.ts`)
+Lobby decoration, 100 % client / presentation — no server logic. Any part tagged
+`AudioVisualizer` (CollectionService) gets a `SurfaceGui` + 32 bars (cyan→violet gradient) built
+**once**; discovery is by tag (`GetTagged` + `GetInstanceAddedSignal`/`Removed`), so a part can be
+moved, resized (Scale layout) or **duplicated anywhere** and it just works. A `RenderStepped` loop
+throttled to ~30 Hz reads `MusicController.getBgmAnalyzer():GetSpectrum()` **once** (shared across
+all panels), buckets the linear 0–24 kHz bins into 32 **log-spaced** bands (`readBands`), applies a
+perceptual **square-root compression** (`SPECTRUM_SCALE`, `COMPRESS_EXP`, `FREQ_MAX` 6 kHz) and a
+fast-attack/slow-release smoothing, then writes each bar's `Size` (Scale Y). A part whose **name
+contains `Reversed`** renders mirrored in X (bass on the right, treble on the left, colours
+included) — for two panels face to face. `GetSpectrum` is client-only; the same `readBands`
+boundary can fall back to `Sound.PlaybackLoudness` if needed.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
