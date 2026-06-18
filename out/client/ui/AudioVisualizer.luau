@@ -12,10 +12,11 @@ local VISUALIZER_TAG = "AudioVisualizer"
 local BAR_COUNT = 32
 local UPDATE_HZ = 30
 local RELEASE_PER_SEC = 2.2
-local SPECTRUM_SCALE = 120
+local SPECTRUM_SCALE = 12
+local COMPRESS_EXP = 0.5
 local MIN_BAR_SCALE = 0.02
 local FREQ_MIN = 20
-local FREQ_MAX = 16000
+local FREQ_MAX = 6000
 local SAMPLE_RATE_HALF = 24000
 local BAR_GAP_SCALE = 0.3
 local COLOR_LEFT = Color3.fromRGB(86, 224, 255)
@@ -125,7 +126,7 @@ local function readBands(target)
 			end
 		end
 		local level = sum / (hi - lo)
-		target[i + 1] = math.clamp(level * SPECTRUM_SCALE, 0, 1)
+		target[i + 1] = math.clamp(math.pow(level * SPECTRUM_SCALE, COMPRESS_EXP), 0, 1)
 	end
 end
 local function step(dt)

@@ -11,10 +11,11 @@ const VISUALIZER_TAG = "AudioVisualizer";
 const BAR_COUNT = 32;
 const UPDATE_HZ = 30; // fréquence analyse/rendu (throttlée, pas 60)
 const RELEASE_PER_SEC = 2.2; // chute lente ; l'attaque est instantanée
-const SPECTRUM_SCALE = 120; // mappe les niveaux RMS -> [0,1] ; semé d'après Task 1, à affiner en Task 6
+const SPECTRUM_SCALE = 12; // niveau brut -> ~1 sur les basses fortes (calibré en Task 6)
+const COMPRESS_EXP = 0.5; // compression perceptuelle (racine) : remonte les bandes faibles sans tout saturer
 const MIN_BAR_SCALE = 0.02; // les barres ne s'effondrent jamais totalement
 const FREQ_MIN = 20; // Hz, bande la plus basse
-const FREQ_MAX = 16000; // Hz, bande la plus haute
+const FREQ_MAX = 6000; // Hz, bande la plus haute (la musique a peu d'énergie au-dessus)
 const SAMPLE_RATE_HALF = 24000; // GetSpectrum couvre 0..24 kHz
 const BAR_GAP_SCALE = 0.3; // fraction d'un slot laissée en espace
 const COLOR_LEFT = Color3.fromRGB(86, 224, 255); // cyan
@@ -105,7 +106,7 @@ function readBands(target: Array<number>): void {
 			sum += spectrum[b];
 		}
 		const level = sum / (hi - lo);
-		target[i] = math.clamp(level * SPECTRUM_SCALE, 0, 1);
+		target[i] = math.clamp(math.pow(level * SPECTRUM_SCALE, COMPRESS_EXP), 0, 1);
 	}
 }
 
