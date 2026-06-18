@@ -47,7 +47,8 @@
       "PowerShell($t = @\\('GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN'\\) | ForEach-Object { if \\(Test-Path \"env:$_\"\\) { \"$_=SET\" } else { \"$_=unset\" } }; $t -join '; ')",
       "Bash(bash \"C:/Users/Grorian/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh\" --project-dir \"C:/Users/Grorian/Documents/GitHub/Hold-or-Drop\")",
       "WebFetch(domain:create.roblox.com)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "PowerShell($gh = Get-Command gh -ErrorAction SilentlyContinue; if \\($gh\\) { \"GH_PATH=\" + $gh.Source } else { $p = \"$env:ProgramFiles\\\\GitHub CLI\\\\gh.exe\"; if \\(Test-Path $p\\) { \"GH_AT=$p\" } else { \"GH_NOT_FOUND\" } })"
     ]
   }
 }
