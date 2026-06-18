@@ -1,3 +1,6 @@
 /node_modules
 /include
 *.tsbuildinfo
+
+# Brainstorming visual-companion working files
+/.superpowers/
