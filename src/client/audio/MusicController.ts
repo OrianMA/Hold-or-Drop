@@ -1,23 +1,22 @@
 import { ContentProvider, Players, SoundService, TweenService } from "@rbxts/services";
 import { AudioConfig } from "shared/AudioConfig";
 
-// Centralised client music: the background playlist (BGM) and the button-hold
-// music. Both are non-3D personal sounds parented to SoundService. SFX stay in
-// their own call sites (ButtonInGameBehavior / ButtonInGameModule) — this module
-// only owns music.
+// Musique client : BGM (nouvelle API audio, pour exposer un spectre au visualiser) +
+// musique du bouton (Sound classique, inchangée). SFX restent à leurs call sites.
 
-// BGM ducks out fast when a hold starts, then eases back in slowly once the run
-// is fully over (respawn after death, or the end of the payout animation).
+// La BGM ducke vite au début d'un hold puis revient lentement une fois le run terminé.
 const BGM_FADE_OUT = 0.4;
 const BGM_RESUME = 3;
 
-// BGM — one Sound reused for the whole playlist.
-let bgmSound: Sound | undefined;
+// BGM via la nouvelle API audio : AudioPlayer -> AudioDeviceOutput (audible) et
+// AudioPlayer -> AudioAnalyzer (analyse spectre pour le visualiser de lobby).
+let bgmPlayer: AudioPlayer | undefined;
+let bgmAnalyzer: AudioAnalyzer | undefined;
 let bgmIndex = 0;
 let bgmFadeTween: Tween | undefined;
 let bgmDucked = false;
 
-// Button-hold music — created once, played/stopped on demand.
+// Musique du bouton — Sound classique, créée/jouée à la demande.
 let buttonMusic: Sound | undefined;
 
 function createSound(id: string, volume: number, name: string, looped: boolean): Sound {
@@ -30,21 +29,29 @@ function createSound(id: string, volume: number, name: string, looped: boolean):
 	return sound;
 }
 
-// Fade the BGM volume to a target. Cancels any in-flight fade so a quick
-// hold → release doesn't leave two tweens fighting over Volume.
+function createWire(source: Instance, target: Instance, parent: Instance): void {
+	const wire = new Instance("Wire");
+	wire.SourceInstance = source;
+	wire.SourceName = "Output";
+	wire.TargetInstance = target;
+	wire.TargetName = "Input";
+	wire.Parent = parent;
+}
+
+// Fait fondre le volume de la BGM vers une cible. Annule tout fade en cours pour
+// qu'un hold -> release rapide ne laisse pas deux tweens se battre sur Volume.
 function fadeBgm(targetVolume: number, duration: number): void {
-	if (!bgmSound) return;
+	if (!bgmPlayer) return;
 	bgmFadeTween?.Cancel();
 	bgmFadeTween = TweenService.Create(
-		bgmSound,
+		bgmPlayer,
 		new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ Volume: targetVolume },
 	);
 	bgmFadeTween.Play();
 }
 
-// End of the run — eases the BGM back in slowly. No-op unless it's currently
-// ducked, so spurious respawns/joins don't trigger a pointless fade.
+// Fin du run — ramène la BGM lentement. No-op si elle n'est pas duckée.
 function resumeBgm(): void {
 	if (!bgmDucked) return;
 	bgmDucked = false;
@@ -52,40 +59,65 @@ function resumeBgm(): void {
 }
 
 function playBgmTrack(index: number): void {
-	if (!bgmSound) return;
+	if (!bgmPlayer) return;
 	const playlist = AudioConfig.bgm.playlist;
 	if (playlist.size() === 0) return;
 	bgmIndex = index % playlist.size();
 	const id = playlist[bgmIndex];
 	if (id === undefined) return;
-	bgmSound.SoundId = id;
-	bgmSound.Play();
+	bgmPlayer.Asset = id;
+	bgmPlayer.Play();
 }
 
 export const MusicController = {
 	init(): void {
-		// Background music. A single track loops seamlessly via Looped; several
-		// tracks advance on Ended and wrap back to the first.
+		// BGM. Une piste boucle via Looping ; plusieurs pistes avancent sur Ended et
+		// reviennent à la première.
 		const playlist = AudioConfig.bgm.playlist;
 		const firstTrack = playlist[0];
 		if (firstTrack !== undefined) {
-			bgmSound = createSound(firstTrack, AudioConfig.bgm.volume, "BGM", playlist.size() === 1);
+			const player = new Instance("AudioPlayer");
+			player.Name = "BGM";
+			player.Volume = AudioConfig.bgm.volume;
+			player.Looping = playlist.size() === 1;
+			player.Asset = firstTrack;
+			player.Parent = SoundService;
+
+			const output = new Instance("AudioDeviceOutput");
+			output.Player = Players.LocalPlayer;
+			output.Parent = player;
+
+			const analyzer = new Instance("AudioAnalyzer");
+			analyzer.SpectrumEnabled = true;
+			analyzer.WindowSize = Enum.AudioWindowSize.Medium;
+			analyzer.Parent = player;
+
+			createWire(player, output, player);
+			createWire(player, analyzer, player);
+
+			bgmPlayer = player;
+			bgmAnalyzer = analyzer;
+
 			if (playlist.size() > 1) {
-				bgmSound.Ended.Connect(() => playBgmTrack(bgmIndex + 1));
+				player.Ended.Connect(() => playBgmTrack(bgmIndex + 1));
 			}
+
+			// Précharge l'asset pour éviter un stall au premier Play.
+			task.spawn(() => {
+				ContentProvider.PreloadAsync([player]);
+			});
 			playBgmTrack(0);
 		}
 
-		// Button-hold music — created now so it's ready instantly, preloaded off
-		// the boot path to avoid a CDN fetch when the first hold starts.
+		// Musique du bouton — créée + préchargée maintenant (pas de stall au 1er hold), bouclée.
 		buttonMusic = createSound(AudioConfig.buttonGame.id, AudioConfig.buttonGame.volume, "ButtonGameMusic", true);
 		task.spawn(() => ContentProvider.PreloadAsync([buttonMusic!]));
 
-		// A respawn (typically after a lethal explosion) ends the run → bring the BGM back.
+		// Un respawn (typiquement après explosion mortelle) termine le run -> ramène la BGM.
 		Players.LocalPlayer.CharacterAdded.Connect(() => resumeBgm());
 	},
 
-	// Start of a hold — duck the BGM out and play the looped button music.
+	// Début d'un hold — ducke la BGM et joue la musique de bouton bouclée.
 	playButtonMusic(): void {
 		fadeBgm(0, BGM_FADE_OUT);
 		bgmDucked = true;
@@ -94,13 +126,16 @@ export const MusicController = {
 		buttonMusic.Play();
 	},
 
-	// Release or explosion — stop the button music only. The BGM stays ducked
-	// until the run is fully over (resumeBgm). Idempotent.
+	// Release ou explosion — stoppe seulement la musique de bouton. Idempotent.
 	stopButtonMusic(): void {
 		buttonMusic?.Stop();
 	},
 
-	// End of the run — respawn after death, or end of the payout animation.
-	// Eases the BGM back in slowly.
+	// Fin du run — respawn après mort, ou fin de l'animation de payout.
 	resumeBgm,
+
+	// Permet au visualiser de lire le spectre de la BGM (client uniquement).
+	getBgmAnalyzer(): AudioAnalyzer | undefined {
+		return bgmAnalyzer;
+	},
 };

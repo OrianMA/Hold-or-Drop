@@ -6,20 +6,19 @@ local Players = _services.Players
 local SoundService = _services.SoundService
 local TweenService = _services.TweenService
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
--- Centralised client music: the background playlist (BGM) and the button-hold
--- music. Both are non-3D personal sounds parented to SoundService. SFX stay in
--- their own call sites (ButtonInGameBehavior / ButtonInGameModule) — this module
--- only owns music.
--- BGM ducks out fast when a hold starts, then eases back in slowly once the run
--- is fully over (respawn after death, or the end of the payout animation).
+-- Musique client : BGM (nouvelle API audio, pour exposer un spectre au visualiser) +
+-- musique du bouton (Sound classique, inchangée). SFX restent à leurs call sites.
+-- La BGM ducke vite au début d'un hold puis revient lentement une fois le run terminé.
 local BGM_FADE_OUT = 0.4
 local BGM_RESUME = 3
--- BGM — one Sound reused for the whole playlist.
-local bgmSound
+-- BGM via la nouvelle API audio : AudioPlayer -> AudioDeviceOutput (audible) et
+-- AudioPlayer -> AudioAnalyzer (analyse spectre pour le visualiser de lobby).
+local bgmPlayer
+local bgmAnalyzer
 local bgmIndex = 0
 local bgmFadeTween
 local bgmDucked = false
--- Button-hold music — created once, played/stopped on demand.
+-- Musique du bouton — Sound classique, créée/jouée à la demande.
 local buttonMusic
 local function createSound(id, volume, name, looped)
 	local sound = Instance.new("Sound")
@@ -30,23 +29,30 @@ local function createSound(id, volume, name, looped)
 	sound.Parent = SoundService
 	return sound
 end
--- Fade the BGM volume to a target. Cancels any in-flight fade so a quick
--- hold → release doesn't leave two tweens fighting over Volume.
+local function createWire(source, target, parent)
+	local wire = Instance.new("Wire")
+	wire.SourceInstance = source
+	wire.SourceName = "Output"
+	wire.TargetInstance = target
+	wire.TargetName = "Input"
+	wire.Parent = parent
+end
+-- Fait fondre le volume de la BGM vers une cible. Annule tout fade en cours pour
+-- qu'un hold -> release rapide ne laisse pas deux tweens se battre sur Volume.
 local function fadeBgm(targetVolume, duration)
-	if not bgmSound then
+	if not bgmPlayer then
 		return nil
 	end
 	local _result = bgmFadeTween
 	if _result ~= nil then
 		_result:Cancel()
 	end
-	bgmFadeTween = TweenService:Create(bgmSound, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	bgmFadeTween = TweenService:Create(bgmPlayer, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Volume = targetVolume,
 	})
 	bgmFadeTween:Play()
 end
--- End of the run — eases the BGM back in slowly. No-op unless it's currently
--- ducked, so spurious respawns/joins don't trigger a pointless fade.
+-- Fin du run — ramène la BGM lentement. No-op si elle n'est pas duckée.
 local function resumeBgm()
 	if not bgmDucked then
 		return nil
@@ -55,7 +61,7 @@ local function resumeBgm()
 	fadeBgm(AudioConfig.bgm.volume, BGM_RESUME)
 end
 local function playBgmTrack(index)
-	if not bgmSound then
+	if not bgmPlayer then
 		return nil
 	end
 	local playlist = AudioConfig.bgm.playlist
@@ -67,31 +73,50 @@ local function playBgmTrack(index)
 	if id == nil then
 		return nil
 	end
-	bgmSound.SoundId = id
-	bgmSound:Play()
+	bgmPlayer.Asset = id
+	bgmPlayer:Play()
 end
 local MusicController = {
 	init = function(self)
-		-- Background music. A single track loops seamlessly via Looped; several
-		-- tracks advance on Ended and wrap back to the first.
+		-- BGM. Une piste boucle via Looping ; plusieurs pistes avancent sur Ended et
+		-- reviennent à la première.
 		local playlist = AudioConfig.bgm.playlist
 		local firstTrack = playlist[1]
 		if firstTrack ~= nil then
-			bgmSound = createSound(firstTrack, AudioConfig.bgm.volume, "BGM", #playlist == 1)
+			local player = Instance.new("AudioPlayer")
+			player.Name = "BGM"
+			player.Volume = AudioConfig.bgm.volume
+			player.Looping = #playlist == 1
+			player.Asset = firstTrack
+			player.Parent = SoundService
+			local output = Instance.new("AudioDeviceOutput")
+			output.Player = Players.LocalPlayer
+			output.Parent = player
+			local analyzer = Instance.new("AudioAnalyzer")
+			analyzer.SpectrumEnabled = true
+			analyzer.WindowSize = Enum.AudioWindowSize.Medium
+			analyzer.Parent = player
+			createWire(player, output, player)
+			createWire(player, analyzer, player)
+			bgmPlayer = player
+			bgmAnalyzer = analyzer
 			if #playlist > 1 then
-				bgmSound.Ended:Connect(function()
+				player.Ended:Connect(function()
 					return playBgmTrack(bgmIndex + 1)
 				end)
 			end
+			-- Précharge l'asset pour éviter un stall au premier Play.
+			task.spawn(function()
+				ContentProvider:PreloadAsync({ player })
+			end)
 			playBgmTrack(0)
 		end
-		-- Button-hold music — created now so it's ready instantly, preloaded off
-		-- the boot path to avoid a CDN fetch when the first hold starts.
+		-- Musique du bouton — créée + préchargée maintenant (pas de stall au 1er hold), bouclée.
 		buttonMusic = createSound(AudioConfig.buttonGame.id, AudioConfig.buttonGame.volume, "ButtonGameMusic", true)
 		task.spawn(function()
 			return ContentProvider:PreloadAsync({ buttonMusic })
 		end)
-		-- A respawn (typically after a lethal explosion) ends the run → bring the BGM back.
+		-- Un respawn (typiquement après explosion mortelle) termine le run -> ramène la BGM.
 		Players.LocalPlayer.CharacterAdded:Connect(function()
 			return resumeBgm()
 		end)
@@ -112,6 +137,9 @@ local MusicController = {
 		end
 	end,
 	resumeBgm = resumeBgm,
+	getBgmAnalyzer = function(self)
+		return bgmAnalyzer
+	end,
 }
 return {
 	MusicController = MusicController,
