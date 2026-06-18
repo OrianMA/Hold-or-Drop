@@ -108,6 +108,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// BaseCash + Multiplier now live on the player (PlayerProgressionService),
 	// not on the button. Read once at game start — held for the whole session.
 	const baseCash = PlayerProgressionService.get(player, "BaseCash");
+
 	const multiplierPerSecond = PlayerProgressionService.get(player, "Multiplier");
 	// Safety (0..0.5) scales the explosion risk down multiplicatively. Read once
 	// so mid-run shop purchases can't change the odds of an in-progress hold.
@@ -256,7 +257,15 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 						const earned = math.floor(baseCash * currentMultiplier * multRebirth);
 						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth);
+						EndGameButtonModule.enter(
+							player,
+							"released",
+							baseCash,
+							currentMultiplier,
+							earned,
+							1,
+							multRebirth,
+						);
 					} else {
 						if (hrp) hrp.Anchored = false;
 
