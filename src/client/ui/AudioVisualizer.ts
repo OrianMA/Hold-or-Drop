@@ -22,9 +22,17 @@ const COLOR_LEFT = Color3.fromRGB(86, 224, 255); // cyan
 const COLOR_RIGHT = Color3.fromRGB(157, 107, 255); // violet
 
 // Un panneau rendu (les barres vivent dans une SurfaceGui sur une part taguée).
+// `reversed` = miroir en X (basses à droite, aigus à gauche) ; déclenché quand le
+// nom de la part contient "Reversed" — pour poser deux panneaux face à face.
 interface Panel {
 	gui: SurfaceGui;
 	bars: Array<Frame>;
+	reversed: boolean;
+}
+
+function isReversed(part: BasePart): boolean {
+	const [found] = part.Name.find("Reversed", 1, true);
+	return found !== undefined;
 }
 
 const panels = new Map<BasePart, Panel>();
@@ -41,6 +49,7 @@ const SLOT = 1 / BAR_COUNT;
 const BAR_WIDTH = SLOT * (1 - BAR_GAP_SCALE);
 
 function buildPanel(part: BasePart): Panel {
+	const reversed = isReversed(part);
 	const gui = new Instance("SurfaceGui");
 	gui.Name = "AudioVisualizer";
 	gui.Face = Enum.NormalId.Front;
@@ -52,12 +61,15 @@ function buildPanel(part: BasePart): Panel {
 
 	const bars: Array<Frame> = [];
 	for (let i = 0; i < BAR_COUNT; i++) {
+		// Le slot physique i (gauche -> droite) affiche cette bande. En miroir, le
+		// slot de gauche affiche les aigus et celui de droite les basses.
+		const band = reversed ? BAR_COUNT - 1 - i : i;
 		const bar = new Instance("Frame");
 		bar.BorderSizePixel = 0;
 		bar.AnchorPoint = new Vector2(0.5, 1);
 		bar.Position = UDim2.fromScale((i + 0.5) * SLOT, 1);
 		bar.Size = UDim2.fromScale(BAR_WIDTH, MIN_BAR_SCALE);
-		bar.BackgroundColor3 = COLOR_LEFT.Lerp(COLOR_RIGHT, i / (BAR_COUNT - 1));
+		bar.BackgroundColor3 = COLOR_LEFT.Lerp(COLOR_RIGHT, band / (BAR_COUNT - 1));
 
 		const corner = new Instance("UICorner");
 		corner.CornerRadius = new UDim(0.4, 0);
@@ -66,7 +78,7 @@ function buildPanel(part: BasePart): Panel {
 		bar.Parent = gui;
 		bars[i] = bar;
 	}
-	return { gui, bars };
+	return { gui, bars, reversed };
 }
 
 function removePanel(part: BasePart): void {
@@ -120,7 +132,8 @@ function step(dt: number): void {
 	}
 	for (const [, panel] of panels) {
 		for (let i = 0; i < BAR_COUNT; i++) {
-			const h = MIN_BAR_SCALE + (1 - MIN_BAR_SCALE) * smoothed[i];
+			const band = panel.reversed ? BAR_COUNT - 1 - i : i;
+			const h = MIN_BAR_SCALE + (1 - MIN_BAR_SCALE) * smoothed[band];
 			panel.bars[i].Size = UDim2.fromScale(BAR_WIDTH, h);
 		}
 	}

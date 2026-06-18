@@ -22,6 +22,12 @@ local BAR_GAP_SCALE = 0.3
 local COLOR_LEFT = Color3.fromRGB(86, 224, 255)
 local COLOR_RIGHT = Color3.fromRGB(157, 107, 255)
 -- Un panneau rendu (les barres vivent dans une SurfaceGui sur une part taguée).
+-- `reversed` = miroir en X (basses à droite, aigus à gauche) ; déclenché quand le
+-- nom de la part contient "Reversed" — pour poser deux panneaux face à face.
+local function isReversed(part)
+	local found = string.find(part.Name, "Reversed", 1, true)
+	return found ~= nil
+end
 local panels = {}
 -- Buffers réutilisés entre les ticks (aucune allocation par tick côté nous).
 local smoothed = {}
@@ -33,6 +39,7 @@ end
 local SLOT = 1 / BAR_COUNT
 local BAR_WIDTH = SLOT * (1 - BAR_GAP_SCALE)
 local function buildPanel(part)
+	local reversed = isReversed(part)
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "AudioVisualizer"
 	gui.Face = Enum.NormalId.Front
@@ -43,12 +50,15 @@ local function buildPanel(part)
 	gui.Parent = part
 	local bars = {}
 	for i = 0, BAR_COUNT - 1 do
+		-- Le slot physique i (gauche -> droite) affiche cette bande. En miroir, le
+		-- slot de gauche affiche les aigus et celui de droite les basses.
+		local band = if reversed then BAR_COUNT - 1 - i else i
 		local bar = Instance.new("Frame")
 		bar.BorderSizePixel = 0
 		bar.AnchorPoint = Vector2.new(0.5, 1)
 		bar.Position = UDim2.fromScale((i + 0.5) * SLOT, 1)
 		bar.Size = UDim2.fromScale(BAR_WIDTH, MIN_BAR_SCALE)
-		bar.BackgroundColor3 = COLOR_LEFT:Lerp(COLOR_RIGHT, i / (BAR_COUNT - 1))
+		bar.BackgroundColor3 = COLOR_LEFT:Lerp(COLOR_RIGHT, band / (BAR_COUNT - 1))
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0.4, 0)
 		corner.Parent = bar
@@ -58,6 +68,7 @@ local function buildPanel(part)
 	return {
 		gui = gui,
 		bars = bars,
+		reversed = reversed,
 	}
 end
 local function removePanel(part)
@@ -139,7 +150,8 @@ local function step(dt)
 	end
 	for _, panel in panels do
 		for i = 0, BAR_COUNT - 1 do
-			local h = MIN_BAR_SCALE + (1 - MIN_BAR_SCALE) * smoothed[i + 1]
+			local band = if panel.reversed then BAR_COUNT - 1 - i else i
+			local h = MIN_BAR_SCALE + (1 - MIN_BAR_SCALE) * smoothed[band + 1]
 			panel.bars[i + 1].Size = UDim2.fromScale(BAR_WIDTH, h)
 		end
 	end
