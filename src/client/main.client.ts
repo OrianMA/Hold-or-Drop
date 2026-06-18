@@ -10,6 +10,7 @@ import { init as initShopMenu } from "./behaviors/ShopBehavior";
 import { init as initShopItems } from "./behaviors/ShopItemsController";
 import { init as initRebirthMenu } from "./behaviors/RebirthMenuBehavior";
 import { init as initRebirthController } from "./behaviors/RebirthMenuController";
+import { MusicController } from "./audio/MusicController";
 
 // Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 // ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
@@ -32,3 +33,4 @@ initShopMenu();
 initShopItems();
 initRebirthMenu();
 initRebirthController();
+MusicController.init();

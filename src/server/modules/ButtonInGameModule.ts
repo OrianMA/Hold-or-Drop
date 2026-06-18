@@ -7,6 +7,7 @@ import { invincible } from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { ConfettiBurst } from "server/modules/ConfettiBurst";
 import { RISK_RAMP_DURATION, MULTIPLIER_TICK_RATE, STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
+import { AudioConfig } from "shared/AudioConfig";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
 
@@ -23,9 +24,9 @@ const KNOCKBACK_DURATION = 0.5;
 // so the BlastPressure stays scoped to a single character.
 const EXPLOSION_BLAST_RADIUS = 12;
 const EXPLOSION_KILL_PRESSURE = 180000;
-const EXPLOSION_SOUND_ID = "rbxassetid://139771888058836";
-const EXPLOSION_SOUND_VOLUME = 0.8;
-const EXPLOSION_SOUND_ROLLOFF = 120;
+const EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id;
+const EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume;
+const EXPLOSION_SOUND_ROLLOFF = 120; // détail 3D propre au serveur
 
 // Alias — keeps the risk/progress math unchanged while sourcing the value from the shared config
 const TOTAL_DURATION = RISK_RAMP_DURATION;

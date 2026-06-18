@@ -8,6 +8,8 @@ local STARTING_MULTIPLIER = TS.import(script, game:GetService("ReplicatedStorage
 local _NumberFormat = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat")
 local FormatCash = _NumberFormat.FormatCash
 local FormatNumber = _NumberFormat.FormatNumber
+local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
+local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
@@ -44,16 +46,16 @@ local spaceConn
 local activatedConn
 local parryKnockbackCamConn
 local parryAnimTrack
--- Son bouton — joué via playSound() (non-3D, personnel)
-local SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284"
-local SOUND_PARRY_ID = "rbxassetid://119580857539801"
+-- Sons bouton — IDs centralisés dans AudioConfig, joués via playSound() (non-3D, personnel)
+local SOUND_BUTTON_EXPLODE_ID = AudioConfig.sfx.buttonExplode.id
+local SOUND_PARRY_ID = AudioConfig.sfx.parry.id
 -- Template persistant en SoundService : le client garde l'asset en mémoire dès le démarrage.
 -- Cloner ce template au moment du parry élimine le fetch CDN et le délai de buffering.
 local parrySoundTemplate = (function()
 	local sound = Instance.new("Sound")
 	sound.Name = "ParrySoundTemplate"
 	sound.SoundId = SOUND_PARRY_ID
-	sound.Volume = 1
+	sound.Volume = AudioConfig.sfx.parry.volume
 	sound.Parent = SoundService
 	return sound
 end)()
@@ -176,6 +178,7 @@ end
 local function endInput()
 	isGameActive = false
 	released = true
+	MusicController:stopButtonMusic()
 	local _result = spaceConn
 	if _result ~= nil then
 		_result:Disconnect()
@@ -529,7 +532,8 @@ local function init()
 		if not isGameActive then
 			return nil
 		end
-		playSound(SOUND_BUTTON_EXPLODE_ID, 1)
+		MusicController:stopButtonMusic()
+		playSound(SOUND_BUTTON_EXPLODE_ID, AudioConfig.sfx.buttonExplode.volume)
 		-- 0.2s grace period : release normal encore possible
 		task.delay(0.2, function()
 			if released then
@@ -587,6 +591,7 @@ local function setup(inGameUI)
 	baseFov = _condition
 	isGameActive = true
 	released = false
+	MusicController:playButtonMusic()
 	previousMultiplier = STARTING_MULTIPLIER
 	multiplierLabel.TextSize = multiplierTextOriginalSize
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor

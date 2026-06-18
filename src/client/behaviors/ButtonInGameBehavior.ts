@@ -4,6 +4,8 @@ import { spawnFloatingMultiplierLabel } from "client/ui/FloatingMultiplierLabel"
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
 import { FormatCash, FormatNumber } from "shared/NumberFormat";
+import { AudioConfig } from "shared/AudioConfig";
+import { MusicController } from "client/audio/MusicController";
 import {
 	ContentProvider,
 	GuiService,
@@ -45,9 +47,9 @@ let activatedConn: RBXScriptConnection | undefined;
 let parryKnockbackCamConn: RBXScriptConnection | undefined;
 let parryAnimTrack: AnimationTrack | undefined;
 
-// Son bouton — joué via playSound() (non-3D, personnel)
-const SOUND_BUTTON_EXPLODE_ID = "rbxassetid://133384716023284";
-const SOUND_PARRY_ID = "rbxassetid://119580857539801";
+// Sons bouton — IDs centralisés dans AudioConfig, joués via playSound() (non-3D, personnel)
+const SOUND_BUTTON_EXPLODE_ID = AudioConfig.sfx.buttonExplode.id;
+const SOUND_PARRY_ID = AudioConfig.sfx.parry.id;
 
 // Template persistant en SoundService : le client garde l'asset en mémoire dès le démarrage.
 // Cloner ce template au moment du parry élimine le fetch CDN et le délai de buffering.
@@ -55,7 +57,7 @@ const parrySoundTemplate = (() => {
 	const sound = new Instance("Sound");
 	sound.Name = "ParrySoundTemplate";
 	sound.SoundId = SOUND_PARRY_ID;
-	sound.Volume = 1;
+	sound.Volume = AudioConfig.sfx.parry.volume;
 	sound.Parent = SoundService;
 	return sound;
 })();
@@ -175,6 +177,7 @@ function resetPostProcess(instant = false, explode = false): void {
 function endInput(): void {
 	isGameActive = false;
 	released = true;
+	MusicController.stopButtonMusic(); // la musique du hold s'arrête à la release
 	spaceConn?.Disconnect();
 	spaceConn = undefined;
 	resetPostProcess();
@@ -486,7 +489,8 @@ export function init(): void {
 
 	Events.ButtonExplodedEvent.OnClientEvent.Connect(() => {
 		if (!isGameActive) return;
-		playSound(SOUND_BUTTON_EXPLODE_ID, 1); // son au moment où le bouton explose
+		MusicController.stopButtonMusic(); // la musique du hold s'arrête à l'instant de l'explosion
+		playSound(SOUND_BUTTON_EXPLODE_ID, AudioConfig.sfx.buttonExplode.volume); // son au moment où le bouton explose
 		// 0.2s grace period : release normal encore possible
 		task.delay(0.2, () => {
 			if (released) return;
@@ -524,6 +528,7 @@ export function setup(inGameUI: ScreenGui): void {
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	released = false;
+	MusicController.playButtonMusic(); // début du hold → musique du bouton en boucle
 	previousMultiplier = STARTING_MULTIPLIER;
 	multiplierLabel.TextSize = multiplierTextOriginalSize;
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor;

@@ -14,6 +14,7 @@ local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
+local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
 -- references each behavior caches at startup — leaving ButtonMenu and the rest
@@ -34,3 +35,4 @@ initShopMenu()
 initShopItems()
 initRebirthMenu()
 initRebirthController()
+MusicController:init()

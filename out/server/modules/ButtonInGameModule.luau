@@ -15,6 +15,7 @@ local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage")
 local RISK_RAMP_DURATION = _ButtonGameConfig.RISK_RAMP_DURATION
 local MULTIPLIER_TICK_RATE = _ButtonGameConfig.MULTIPLIER_TICK_RATE
 local STARTING_MULTIPLIER = _ButtonGameConfig.STARTING_MULTIPLIER
+local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 -- ── Game tuning ───────────────────────────────────────────────────────────────
 local MAX_RISK = 0.8
 local TICK_RATE = 0.5
@@ -27,8 +28,8 @@ local KNOCKBACK_DURATION = 0.5
 -- so the BlastPressure stays scoped to a single character.
 local EXPLOSION_BLAST_RADIUS = 12
 local EXPLOSION_KILL_PRESSURE = 180000
-local EXPLOSION_SOUND_ID = "rbxassetid://139771888058836"
-local EXPLOSION_SOUND_VOLUME = 0.8
+local EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id
+local EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume
 local EXPLOSION_SOUND_ROLLOFF = 120
 -- Alias — keeps the risk/progress math unchanged while sourcing the value from the shared config
 local TOTAL_DURATION = RISK_RAMP_DURATION

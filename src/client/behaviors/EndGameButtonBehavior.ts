@@ -2,6 +2,7 @@ import { Players } from "@rbxts/services";
 import { Events } from "shared/Event";
 import { runEndGameAnimation } from "client/ui/EndGameAnimation";
 import { InGameUIController } from "client/ui/InGameUIController";
+import { MusicController } from "client/audio/MusicController";
 
 // Entry point for the ButtonFinishGame UI state on the client.
 // Server fires EndGameStartEvent after the popup has been shown — we resolve
@@ -21,6 +22,8 @@ export function init(): void {
 			task.spawn(() => {
 				runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, multRebirth, () => {
 					Events.EndGameFinishedEvent.FireServer();
+					// Run fully over → ease the BGM back in (also covered by respawn on death).
+					MusicController.resumeBgm();
 				});
 			});
 		},

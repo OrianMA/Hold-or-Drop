@@ -4,6 +4,7 @@ local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_i
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local runEndGameAnimation = TS.import(script, script.Parent.Parent, "ui", "EndGameAnimation").runEndGameAnimation
 local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
+local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 -- Entry point for the ButtonFinishGame UI state on the client.
 -- Server fires EndGameStartEvent after the popup has been shown — we resolve
 -- the frame and hand off to the animation orchestrator. When the animation
@@ -19,6 +20,8 @@ local function init()
 		task.spawn(function()
 			runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, multRebirth, function()
 				Events.EndGameFinishedEvent:FireServer()
+				-- Run fully over → ease the BGM back in (also covered by respawn on death).
+				MusicController.resumeBgm()
 			end)
 		end)
 	end)

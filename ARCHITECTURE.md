@@ -71,11 +71,13 @@ src/
 │   ├── behaviors/           # ButtonMenu / ButtonInGame / EndGameButton / Shop behaviors
 │   │   └── ShopBehavior (open/close) + ShopItemsController (the 4 upgrade buttons)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
+│   ├── audio/MusicController.ts  # BGM playlist + button-hold music
 │   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, etc.)
 └── shared/                  # ReplicatedStorage — code/data used by both sides
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
     ├── Utils/DefineEvent.ts # Creates (server) / waits for (client) a RemoteEvent
     ├── ButtonGameConfig.ts  # Shared gameplay tuning constants
+    ├── AudioConfig.ts       # All sound asset IDs/volumes (music + SFX)
     ├── ShopBalance.ts       # Shop economy numbers (THE rebalancing file)
     ├── ShopConfig.ts        # Shop items + price/value formulas (logic, reads ShopBalance)
     ├── PopupType.ts         # Popup enum (shared contract)
@@ -283,6 +285,27 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   yet** (no Developer Product).
 - **`RebirthService` (server)** re-validates (`Money ≥ rebirthCost`) and performs the reset —
   never trusts the client. Payout scales by the resulting `MultRebirth` (see §6.3, §6.6).
+
+### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`)
+- **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
+  the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion`,
+  client `buttonExplode` / `parry`). SFX still play from their existing call sites
+  (`ButtonInGameBehavior` client-side, `ButtonInGameModule` server-side) — only the asset
+  definitions are centralised here, so re-pointing a sound is a one-line edit.
+- **Music is client presentation** (see §4). `MusicController` (client) owns two things,
+  both non-3D sounds parented to `SoundService`:
+  - **BGM**: a looping playlist. One Sound is reused; a single track loops via `Looped`,
+    multiple tracks advance on `Ended` and wrap back to the first. Started in `main.client.ts`.
+    It **ducks** for the whole run: `playButtonMusic` fades it out fast (0.4s); it stays silent
+    through the explosion/parry/payout, then `resumeBgm` eases it back in slowly (3s) once the
+    run is fully over — on **respawn** (death path, via `CharacterAdded`) or at the **end of the
+    payout animation** (survive path, fired from `EndGameButtonBehavior`). `resumeBgm` is a no-op
+    unless the BGM is currently ducked; a single stored tween is cancelled before each new fade.
+  - **Button-hold music**: created + preloaded at init (no CDN stall on first hold), looped.
+    `ButtonInGameBehavior` drives it — `playButtonMusic()` at hold start (`setup`),
+    `stopButtonMusic()` on release (`endInput`) and at the instant of explosion
+    (`ButtonExplodedEvent`, before the parry window). `stopButtonMusic()` only stops the music
+    (it no longer touches the BGM); both it and `resumeBgm` are idempotent.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
