@@ -18,12 +18,33 @@ type Slot = {
 	standX: number;
 	standZ: number;
 	standTopY: number; // target feet (bounding-box bottom) Y = pedestal top
+	scale: RigScale; // podium template body scale, re-applied so players match the editor size
 	track?: AnimationTrack;
 	occupant?: number;
 	hidden: boolean;
 };
 
 let slots: Slot[] | undefined;
+
+// The template's giant size lives in the Humanoid scale NumberValues, NOT in the
+// applied HumanoidDescription (which reads ~1). We capture them and feed them into
+// each player's description scale fields so ApplyDescription rebuilds the avatar at
+// the editor-authored size.
+type RigScale = { height: number; width: number; depth: number; head: number; proportion: number };
+
+function readScale(humanoid: Humanoid): RigScale {
+	const read = (name: string, fallback: number): number => {
+		const v = humanoid.FindFirstChild(name) as NumberValue | undefined;
+		return v !== undefined ? v.Value : fallback;
+	};
+	return {
+		height: read("BodyHeightScale", 1),
+		width: read("BodyWidthScale", 1),
+		depth: read("BodyDepthScale", 1),
+		head: read("HeadScale", 1),
+		proportion: read("BodyProportionScale", 0),
+	};
+}
 
 function buildSlots(podium: Instance): Slot[] | undefined {
 	const built: Slot[] = [];
@@ -42,6 +63,7 @@ function buildSlots(podium: Instance): Slot[] | undefined {
 			standX: bbCF.Position.X,
 			standZ: bbCF.Position.Z,
 			standTopY: bbCF.Position.Y - bbSize.Y / 2,
+			scale: readScale(humanoid),
 			hidden: false,
 		});
 	}
@@ -132,12 +154,20 @@ function hide(slot: Slot): void {
 function applyAvatar(slot: Slot, userId: number): void {
 	// On a transient fetch/apply failure we DON'T record the occupant, so the next
 	// refresh retries instead of leaving the rig stuck on the template appearance.
-	const [ok, desc] = pcall(() => Players.GetHumanoidDescriptionFromUserId(userId));
+	const [ok, descRaw] = pcall(() => Players.GetHumanoidDescriptionFromUserId(userId));
 	if (!ok) return;
-	const [applied] = pcall(() => slot.humanoid.ApplyDescription(desc as HumanoidDescription));
+	// Keep the player's appearance but force the podium template's body scale so the
+	// rig matches the size authored in the editor (ApplyDescription drives the avatar
+	// size from these scale fields).
+	const desc = descRaw as HumanoidDescription;
+	desc.HeightScale = slot.scale.height;
+	desc.WidthScale = slot.scale.width;
+	desc.DepthScale = slot.scale.depth;
+	desc.HeadScale = slot.scale.head;
+	desc.ProportionScale = slot.scale.proportion;
+	const [applied] = pcall(() => slot.humanoid.ApplyDescription(desc));
 	if (!applied) return;
-	// ApplyDescription rebuilds + rescales the body — re-anchor the root and
-	// re-seat the (now correctly sized) rig on the pedestal.
+	// Re-anchor the root and re-seat the (now editor-sized) rig on the pedestal.
 	const root = slot.rig.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 	if (root) root.Anchored = true;
 	placeOnPedestal(slot);

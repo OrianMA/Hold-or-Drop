@@ -9,6 +9,23 @@ local Cfg = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Leade
 -- 2 & 3 idle. Empty slots are hidden by parenting the rig out (it keeps its parts
 -- and reappears on the same spot when shown again).
 local slots
+-- The template's giant size lives in the Humanoid scale NumberValues, NOT in the
+-- applied HumanoidDescription (which reads ~1). We capture them and feed them into
+-- each player's description scale fields so ApplyDescription rebuilds the avatar at
+-- the editor-authored size.
+local function readScale(humanoid)
+	local read = function(name, fallback)
+		local v = humanoid:FindFirstChild(name)
+		return if v ~= nil then v.Value else fallback
+	end
+	return {
+		height = read("BodyHeightScale", 1),
+		width = read("BodyWidthScale", 1),
+		depth = read("BodyDepthScale", 1),
+		head = read("HeadScale", 1),
+		proportion = read("BodyProportionScale", 0),
+	}
+end
 local function buildSlots(podium)
 	local built = {}
 	for i = 1, 3 do
@@ -30,6 +47,7 @@ local function buildSlots(podium)
 			standX = bbCF.Position.X,
 			standZ = bbCF.Position.Z,
 			standTopY = bbCF.Position.Y - bbSize.Y / 2,
+			scale = readScale(humanoid),
 			hidden = false,
 		}
 		table.insert(built, _arg0)
@@ -120,20 +138,28 @@ end
 local function applyAvatar(slot, userId)
 	-- On a transient fetch/apply failure we DON'T record the occupant, so the next
 	-- refresh retries instead of leaving the rig stuck on the template appearance.
-	local ok, desc = pcall(function()
+	local ok, descRaw = pcall(function()
 		return Players:GetHumanoidDescriptionFromUserId(userId)
 	end)
 	if not ok then
 		return nil
 	end
+	-- Keep the player's appearance but force the podium template's body scale so the
+	-- rig matches the size authored in the editor (ApplyDescription drives the avatar
+	-- size from these scale fields).
+	local desc = descRaw
+	desc.HeightScale = slot.scale.height
+	desc.WidthScale = slot.scale.width
+	desc.DepthScale = slot.scale.depth
+	desc.HeadScale = slot.scale.head
+	desc.ProportionScale = slot.scale.proportion
 	local applied = pcall(function()
 		return slot.humanoid:ApplyDescription(desc)
 	end)
 	if not applied then
 		return nil
 	end
-	-- ApplyDescription rebuilds + rescales the body — re-anchor the root and
-	-- re-seat the (now correctly sized) rig on the pedestal.
+	-- Re-anchor the root and re-seat the (now editor-sized) rig on the pedestal.
 	local root = slot.rig:FindFirstChild("HumanoidRootPart")
 	if root then
 		root.Anchored = true
