@@ -109,11 +109,13 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 4. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
 5. `RebirthService` — handle `RebirthEvent`: validate `Money ≥ rebirthCost(Rebirths)`, reset
    `Money` + stat levels, increment `Rebirths` (needs PlayerData + PlayerProgression ready)
-6. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-7. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-8. `CharacterService` — normalize character scale on spawn
-9. `EndGameButtonModule.init()` — wire the payout-finished handshake
-10. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+6. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
+   self-driven 60s refresh loop (needs PlayerData ready — reads `Money`/`Playtime`)
+7. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+8. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+9. `CharacterService` — normalize character scale on spawn
+10. `EndGameButtonModule.init()` — wire the payout-finished handshake
+11. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -205,7 +207,8 @@ client folds `multRebirth` into the displayed total so it matches the credited a
 ### 6.6 Persistence (`PlayerDataService`, `PlayerProgressionService`)
 - Both follow the same pattern: **DataStore-backed, mirrored to player Attributes** so the
   owning client can read state directly via replication.
-- `PlayerDataService` → `Money` (store `PlayerData_v1`).
+- `PlayerDataService` → `Money` **and `Playtime`** (total seconds played, accumulated across
+  sessions; defaults 0 for existing saves — no version bump) (store `PlayerData_v1`).
 - `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `MultiplierLevel`,
   `SafetyLevel` **and the `Rebirths` count** (store `PlayerProgression_v2`). The effective
   values `BaseCash`, `Multiplier`, `AdditionalSecurity` are **derived** from the levels, and
@@ -259,7 +262,8 @@ client folds `multRebirth` into the displayed total so it matches the credited a
 - **`ShopService` (server)** owns the only mutation path. On `ShopPurchaseEvent` it validates
   the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
   + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
-  pre-check is UX-only; the server never trusts it.
+  pre-check is UX-only; the server never trusts it. On success it also fires the neon-pipe
+  purchase pulse for the buyer's room (`NeonPipeColors.pulse`, see §6.12).
 - **`ShopItemsController` (client)** binds the four frames, renders current→next stat
   (`BoostLyout/CurrentStatText` → `NextStatText`) and the cash price (`BuyButton/TextLabel`),
   greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`.
@@ -289,18 +293,22 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 ### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
   the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion`,
-  client `buttonExplode` / `parry`). SFX still play from their existing call sites
-  (`ButtonInGameBehavior` client-side, `ButtonInGameModule` server-side) — only the asset
-  definitions are centralised here, so re-pointing a sound is a one-line edit.
+  client `buttonExplode` / `parry` / `buttonUpgrade`). SFX still play from their existing call
+  sites (`ButtonInGameBehavior` client-side, `ButtonInGameModule` server-side, `NeonPipePulse`
+  for `buttonUpgrade` — see §6.12) — only the asset definitions are centralised here, so
+  re-pointing a sound is a one-line edit.
 - **Music is client presentation** (see §4). `MusicController` (client) owns two things,
   parented to `SoundService`:
   - **BGM**: a looping playlist played through the **new audio API** so a spectrum can be read
-    for the visualiser (§6.11): an `AudioPlayer` → `AudioDeviceOutput` (audible) plus a `Wire`
-    branch to an `AudioAnalyzer` (`SpectrumEnabled`, `WindowSize` Medium). A single track loops
-    via `Looping`; multiple tracks advance on `Ended` and wrap back to the first. Started in
-    `main.client.ts`. It **ducks** for the whole run: `playButtonMusic` tweens `AudioPlayer.Volume`
-    to 0 fast (0.4s); it stays silent through the explosion/parry/payout, then `resumeBgm` eases
-    it back in slowly (3s) once the run is fully over — on **respawn** (death path, via
+    for the visualiser (§6.11): an `AudioPlayer` → `AudioFader` → `AudioDeviceOutput` (audible)
+    plus a `Wire` branch from the **player** (before the fader) to an `AudioAnalyzer`
+    (`SpectrumEnabled`, `WindowSize` Medium). A single track loops via `Looping`; multiple tracks
+    advance on `Ended` and wrap back to the first. Started in `main.client.ts`. It **ducks** for
+    the whole run: `playButtonMusic` tweens the **`AudioFader.Volume`** (multiplier 1=full / 0=mute)
+    to 0 fast (0.4s) — the player's own `Volume` stays constant, so the analyzer (tapped before the
+    fader) keeps reading the full spectrum and the **visualiser keeps running through the run**. The
+    audible BGM stays silent through the explosion/parry/payout, then `resumeBgm` eases it back in
+    slowly (3s) once the run is fully over — on **respawn** (death path, via
     `CharacterAdded`) or at the **end of the payout animation** (survive path, fired from
     `EndGameButtonBehavior`). `resumeBgm` is a no-op unless ducked; a single stored tween is
     cancelled before each new fade. `getBgmAnalyzer()` exposes the analyzer to the visualiser
@@ -324,6 +332,104 @@ fast-attack/slow-release smoothing, then writes each bar's `Size` (Scale Y). A p
 contains `Reversed`** renders mirrored in X (bass on the right, treble on the left, colours
 included) — for two panels face to face. `GetSpectrum` is client-only; the same `readBands`
 boundary can fall back to `Sound.PlaybackLoudness` if needed.
+
+### 6.12 Neon pipe purchase pulse (`server/modules/NeonPipeColors.ts`, `client/ui/NeonPipePulse.ts`)
+Visual feedback on a shop purchase: a short segment of colour travels along **both** of the
+player's neon tubes from the shop to their button — as if the upgrade physically runs to the
+button. 100 % client / presentation (like §6.11).
+- **Signal (no RemoteEvent):** `ShopService` calls `NeonPipeColors.pulse(roomName)` after a
+  successful purchase (room from the buyer's `AssignedRoom` attribute). `pulse` only
+  **increments a `Pulse` attribute** on `Workspace/Environment/NeonPipe/P{n}` — the server
+  paints/replicates no colour for the effect.
+- **`NeonPipePulse` (client)** watches each `P{n}` folder's `Pulse` attribute. On the first
+  pulse for a slot it builds (once, cached) a **shop→button ordering** of each tube's
+  (`Right`/`Left`) ~108 parts via a nearest-neighbour walk seeded from the part closest to
+  `Workspace/Shop` — the parts are all named `Part`, so order is geometric, not by name.
+- **Multiple concurrent segments + queue:** the `Pulse` counter's **delta** drives N segments
+  (so several purchases coalesced into one replicated change still each animate). Every purchase
+  spawns its own segment that coexists with any already in flight; simultaneous ones are released
+  **staggered by `QUEUE_DELAY`** so they read as a clean train rather than one stack. A single
+  `RenderStepped` loop advances all live segments of a room, painting each band a **light /
+  near-white** shade of the slot colour (`LIGHT_FACTOR` lerp toward white, trailing fade) and
+  restoring the base behind them. Both tubes share one segment list so `Right`/`Left` stay in
+  sync. The base is sampled live from the pipe (the slot colour the server already painted in
+  §6.1), so no colour table is duplicated client-side.
+- **Button-arrival effect:** when a segment reaches the button (`progress >= 1`, the instant it
+  leaves the live list), `NeonPipePulse` fires a one-shot on that room's button —
+  `PlayerZones/P{n}/ButtonModel`: it enables the `ParticleEmmiter.UpgradeButtonParticles`
+  emitter for `PARTICLE_DURATION` (1.2 s) then disables it, and plays a 3D electric SFX
+  (`AudioConfig.sfx.buttonUpgrade`, a `Sound` created client-side once and parented to
+  `ButtonPart`). Both are resolved once in `buildRoomState` and cached on the `RoomState`;
+  either may be absent (e.g. a room whose button package lacks the emitter) and is then skipped.
+  Overlapping arrivals are handled by a `particleToken` so only the latest 1.2 s timer disables
+  the emitter. The emitter sits **disabled** at rest in Studio; its holder part is anchored /
+  non-collidable. 100 % client (every client animates the replicated `Pulse`, so all see it).
+- **Tunables** (top of `NeonPipePulse.ts`): `SEGMENT_LENGTH` 5, `TRAVEL_TIME` 5 s,
+  `LIGHT_FACTOR` 0.85 (0 = slot colour, 1 = white), `QUEUE_DELAY` 0.35 s, `TRAIL_FADE`,
+  `PARTICLE_DURATION` 1.2 s.
+
+### 6.13 Button character animations (`client/behaviors/ButtonAnimations.ts`)
+Plays the player's rig animations across the button-game flow. 100 % client, layered over the
+default Animate idle at `Action` priority. Five assets in `ANIM_IDS`, each of which **must be
+owned by / shared with the experience's group (`963505568`)** or Roblox refuses to load it —
+the track then plays with `Length 0` (nothing visible), logging *"the experience doesn't have
+access permission to use asset id …"*. An empty id is a deliberate no-op so the others keep
+working while ids are still being authored.
+- `interact` (`123442755794873`, "hand on button") — reaches onto the button then **holds its
+  last frame** while the ButtonMenu is open.
+- `quit` (`93300469810162`) — one-shot played when the player leaves the menu **before
+  pressing**; chains out of the frozen `interact` pose and blends back to defaults at its end.
+- `hold` (`100517121510078`, "press button") — presses down then **holds its last frame** for
+  the whole game (re-played fresh after a respawn).
+- `release` (`70993299432318`) — one-shot when the player releases; defaults at its natural end.
+- `parry` (`84361846884673`) — one-shot perfect-parry projection.
+
+**Held poses vs one-shots.** `playInteract`/`playHold` play their clip once then **freeze it on
+the last frame** (a `Heartbeat` watcher pins `AdjustSpeed(0)` just before the natural end so the
+non-looped track can't auto-stop). Only one held pose at a time (`currentHold`). `playQuit`/
+`playRelease`/`playParry` are fire-and-forget one-shots **not** tracked, so they blend back to
+Roblox's defaults on their own and a later `stop()` never cuts them short. `stop()` drops only
+the held pose; `restoreDefault()` stops everything (held + in-flight one-shot) to force defaults.
+Tracks are lazily loaded against the current `Animator` and the cache is dropped on respawn.
+Call sites: `ButtonMenuBehavior` (`playInteract` on `ButtonTriggerEvent`, `playQuit` on Quit);
+`ButtonInGameBehavior` (`playHold` in `setup`, `playRelease` in `fireRelease`, `playParry` on
+`PerfectParryEffectEvent`, `stop` on `GameResultEvent` as a death-path safety net);
+`EndGameButtonBehavior` (`restoreDefault` on `EndGameStartEvent` — the payout popup opening ends
+the parry projection / any still-playing release clip).
+
+### 6.14 Leaderboards & Podium (`server/services/LeaderboardService.ts`, `server/modules/LeaderboardBoard.ts`, `server/modules/PodiumDisplay.ts`, `shared/LeaderboardConfig.ts`)
+Two **global persistent** physical leaderboards + a top-3 money podium, under
+`Workspace/Environment/LeaderBoards`. 100 % server-driven — everything replicates, **no
+RemoteEvent, no client script**.
+- **Data:** two `OrderedDataStore`s — `LB_Money_v1` (value = current `Money`) and
+  `LB_Playtime_v1` (value = total seconds). They are a **ranking index only**; the source of
+  truth for playtime is the `Playtime` key on `PlayerDataService` (safe-save guarded). Money
+  ranks **current** cash, so it drops to 0 on rebirth (see §6.6, §6.9).
+- **Loop** (`REFRESH_INTERVAL` 60s, `LeaderboardService`): flush each in-server player's score
+  (accumulate playtime delta via `os.time()`, write both stores in `pcall`, spaced by
+  `WRITE_SPACING`) → read `GetSortedAsync(false, TOP_N=50)` → resolve names
+  (`GetNameFromUserIdAsync`, cached) → render. Also flushes on `PlayerRemoving`. Entire pass in
+  `pcall`: a DataStore failure leaves a **stale** display, never a crash. (A brand-new entry can
+  miss the first read right after its first write — OrderedDataStore's sorted index updates
+  async — and simply appears on the next refresh.)
+- **Boards** (`LeaderboardBoard`): each board Part has a `Display` SurfaceGui → `Rows`
+  ScrollingFrame + a hidden `RowTemplate`. The renderer clears stale clones, then clones the
+  template to `TOP_N` rows **once** (cached) and thereafter **updates text in place + hides
+  unused + sets `CanvasSize` to the used count** — so each client's scroll position survives a
+  refresh. Top 50 stored, ~15 visible, scroll for the rest (mouse wheel / touch drag, PC +
+  mobile). Money via `FormatCash`, playtime via `formatDuration`.
+- **Podium** (`PodiumDisplay`): three rigs `PodiumRig1..3` (cloned from `ServerStorage/
+  RigTemplate`) on the three pedestals (tallest = 1st). Per refresh, per slot: if the occupant
+  **changed**, `ApplyDescription(GetHumanoidDescriptionFromUserId(userId))` (the costly call,
+  **gated on change** — pattern from `CharacterService`), then re-anchor the root and **re-seat
+  the rig feet-on-pedestal from its live bounding box** (robust to the avatar rescale + the
+  template's custom pivot); update the `Nameplate` BillboardGui (name + cash); keep the loop
+  track playing — **slot 1 walks, slots 2 & 3 idle**. A transient avatar-fetch failure does not
+  record the occupant, so the next refresh retries. Empty slots (fewer than 3 ranked) hide the
+  rig (parented out). The player-only `Animate` LocalScript is stripped from the template; only
+  `HumanoidRootPart` is anchored so the joints can animate while the rig stays put.
+- **Tunables** (`shared/LeaderboardConfig.ts`): `REFRESH_INTERVAL`, `TOP_N`, `VISIBLE_ROWS`,
+  `ROW_HEIGHT`, `WRITE_SPACING`, store names, `WALK_ANIM_ID`/`IDLE_ANIM_ID`, instance names.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
@@ -353,7 +459,9 @@ parented to the `Event` ModuleScript. Direction noted per event:
 
 Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for state the
 owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
-`InSession`).
+`InSession`). The neon-pipe purchase pulse (§6.12) also uses an attribute as a broadcast
+signal — a `Pulse` counter on `NeonPipe/P{n}`, incremented server-side and watched by every
+client — instead of a RemoteEvent.
 
 ## 8. Gameplay Tuning Constants
 
@@ -374,6 +482,9 @@ owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
 | Rebirth base cost | `shared/ShopBalance.ts` | 2500 | Cash for the 1st rebirth |
 | Rebirth cost growth | `shared/ShopBalance.ts` | ×2.4 / rebirth | `cost(R)=floor(2500×2.4^R)` |
 | Rebirth mult curve | `shared/ShopBalance.ts` | `[1,2,3,3.5,4,4.5,4.75,5]` +0.25/rebirth | Permanent payout `×MultRebirth` |
+| `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
+| `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |
+| `VISIBLE_ROWS` | `shared/LeaderboardConfig.ts` | 15 | Rows visible before scrolling |
 
 ## 9. Cheats (`modules/CheatConfig.ts`)
 
