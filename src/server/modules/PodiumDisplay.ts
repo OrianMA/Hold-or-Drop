@@ -97,43 +97,19 @@ function ensureAnimation(slot: Slot): void {
 	if (!slot.track.IsPlaying) slot.track.Play();
 }
 
+// The nameplate is a BillboardGui authored in Studio on each rig's HumanoidRootPart
+// (which ApplyDescription does NOT rebuild, unlike the Head) — so it survives avatar
+// swaps and can be restyled directly in the scene. Here we only fill its text.
+// Labels are found recursively, so the BillboardGui's inner layout can be reworked
+// freely as long as a `NameLabel` and a `ValueLabel` exist somewhere inside.
 function getNameplate(slot: Slot): { name: TextLabel; value: TextLabel } | undefined {
-	const head = slot.rig.FindFirstChild("Head") as BasePart | undefined;
-	if (!head) return undefined;
-	let plate = head.FindFirstChild(Cfg.PODIUM_NAMEPLATE) as BillboardGui | undefined;
-	if (!plate) {
-		plate = new Instance("BillboardGui");
-		plate.Name = Cfg.PODIUM_NAMEPLATE;
-		plate.Size = new UDim2(0, 200, 0, 64);
-		plate.StudsOffset = new Vector3(0, 2.5, 0);
-		plate.AlwaysOnTop = true;
-		plate.Adornee = head;
-
-		const nameLabel = new Instance("TextLabel");
-		nameLabel.Name = Cfg.ROW_NAME;
-		nameLabel.Size = new UDim2(1, 0, 0.5, 0);
-		nameLabel.BackgroundTransparency = 1;
-		nameLabel.TextScaled = true;
-		nameLabel.Font = Enum.Font.GothamBold;
-		nameLabel.TextColor3 = new Color3(1, 1, 1);
-		nameLabel.Parent = plate;
-
-		const valueLabel = new Instance("TextLabel");
-		valueLabel.Name = Cfg.ROW_VALUE;
-		valueLabel.Position = new UDim2(0, 0, 0.5, 0);
-		valueLabel.Size = new UDim2(1, 0, 0.5, 0);
-		valueLabel.BackgroundTransparency = 1;
-		valueLabel.TextScaled = true;
-		valueLabel.Font = Enum.Font.GothamBold;
-		valueLabel.TextColor3 = Color3.fromRGB(255, 215, 0);
-		valueLabel.Parent = plate;
-
-		plate.Parent = head;
-	}
-	return {
-		name: plate.FindFirstChild(Cfg.ROW_NAME) as TextLabel,
-		value: plate.FindFirstChild(Cfg.ROW_VALUE) as TextLabel,
-	};
+	const root = slot.rig.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+	const plate = root?.FindFirstChild(Cfg.PODIUM_NAMEPLATE) as BillboardGui | undefined;
+	if (!plate) return undefined;
+	const name = plate.FindFirstChild(Cfg.ROW_NAME, true) as TextLabel | undefined;
+	const value = plate.FindFirstChild(Cfg.ROW_VALUE, true) as TextLabel | undefined;
+	if (!name || !value) return undefined;
+	return { name, value };
 }
 
 function show(slot: Slot): void {

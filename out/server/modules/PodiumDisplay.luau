@@ -85,41 +85,29 @@ local function ensureAnimation(slot)
 		slot.track:Play()
 	end
 end
+-- The nameplate is a BillboardGui authored in Studio on each rig's HumanoidRootPart
+-- (which ApplyDescription does NOT rebuild, unlike the Head) — so it survives avatar
+-- swaps and can be restyled directly in the scene. Here we only fill its text.
+-- Labels are found recursively, so the BillboardGui's inner layout can be reworked
+-- freely as long as a `NameLabel` and a `ValueLabel` exist somewhere inside.
 local function getNameplate(slot)
-	local head = slot.rig:FindFirstChild("Head")
-	if not head then
+	local root = slot.rig:FindFirstChild("HumanoidRootPart")
+	local _result = root
+	if _result ~= nil then
+		_result = _result:FindFirstChild(Cfg.PODIUM_NAMEPLATE)
+	end
+	local plate = _result
+	if not plate then
 		return nil
 	end
-	local plate = head:FindFirstChild(Cfg.PODIUM_NAMEPLATE)
-	if not plate then
-		plate = Instance.new("BillboardGui")
-		plate.Name = Cfg.PODIUM_NAMEPLATE
-		plate.Size = UDim2.new(0, 200, 0, 64)
-		plate.StudsOffset = Vector3.new(0, 2.5, 0)
-		plate.AlwaysOnTop = true
-		plate.Adornee = head
-		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Name = Cfg.ROW_NAME
-		nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
-		nameLabel.BackgroundTransparency = 1
-		nameLabel.TextScaled = true
-		nameLabel.Font = Enum.Font.GothamBold
-		nameLabel.TextColor3 = Color3.new(1, 1, 1)
-		nameLabel.Parent = plate
-		local valueLabel = Instance.new("TextLabel")
-		valueLabel.Name = Cfg.ROW_VALUE
-		valueLabel.Position = UDim2.new(0, 0, 0.5, 0)
-		valueLabel.Size = UDim2.new(1, 0, 0.5, 0)
-		valueLabel.BackgroundTransparency = 1
-		valueLabel.TextScaled = true
-		valueLabel.Font = Enum.Font.GothamBold
-		valueLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-		valueLabel.Parent = plate
-		plate.Parent = head
+	local name = plate:FindFirstChild(Cfg.ROW_NAME, true)
+	local value = plate:FindFirstChild(Cfg.ROW_VALUE, true)
+	if not name or not value then
+		return nil
 	end
 	return {
-		name = plate:FindFirstChild(Cfg.ROW_NAME),
-		value = plate:FindFirstChild(Cfg.ROW_VALUE),
+		name = name,
+		value = value,
 	}
 end
 local function show(slot)
