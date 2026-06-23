@@ -88,3 +88,18 @@ export function FormatCash(value: number): string {
 	if (value < 0) return `-$${FormatNumber(-value)}`;
 	return `${FormatNumber(value)}`;
 }
+
+// Duration label for the playtime leaderboard. Coarse on purpose (top unit + the
+// next one): "2j 5h", "3h 12m", "45m", "30s". Negatives / NaN clamp to "0s".
+export function formatDuration(totalSeconds: number): string {
+	if (totalSeconds !== totalSeconds) return "0s"; // NaN
+	const s = math.max(0, math.floor(totalSeconds));
+	const days = math.floor(s / 86400);
+	const hours = math.floor((s % 86400) / 3600);
+	const minutes = math.floor((s % 3600) / 60);
+	const seconds = s % 60;
+	if (days > 0) return `${days}j ${hours}h`;
+	if (hours > 0) return `${hours}h ${minutes}m`;
+	if (minutes > 0) return `${minutes}m`;
+	return `${seconds}s`;
+}
