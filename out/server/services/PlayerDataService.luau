@@ -12,9 +12,10 @@ local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"
 --
 -- NB: DataStore access requires API Services enabled in Studio:
 -- Game Settings → Security → "Enable Studio Access to API Services".
-local NUMERIC_KEYS = { "Money" }
+local NUMERIC_KEYS = { "Money", "Playtime" }
 local DEFAULT_DATA = {
 	Money = 0,
+	Playtime = 0,
 }
 -- Bump the store name (e.g. "_v2") if you ever need to reset everyone's data.
 local STORE_NAME = "PlayerData_v1"
