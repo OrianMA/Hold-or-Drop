@@ -10,6 +10,7 @@ local FormatCash = _NumberFormat.FormatCash
 local FormatNumber = _NumberFormat.FormatNumber
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
+local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
@@ -45,7 +46,6 @@ local baseFov = 70
 local spaceConn
 local activatedConn
 local parryKnockbackCamConn
-local parryAnimTrack
 -- Sons bouton — IDs centralisés dans AudioConfig, joués via playSound() (non-3D, personnel)
 local SOUND_BUTTON_EXPLODE_ID = AudioConfig.sfx.buttonExplode.id
 local SOUND_PARRY_ID = AudioConfig.sfx.parry.id
@@ -59,8 +59,6 @@ local parrySoundTemplate = (function()
 	sound.Parent = SoundService
 	return sound
 end)()
--- Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
-local ANIM_PARRY_ID = "rbxassetid://6481315203"
 -- Live multiplier label text. Keep one decimal below 1000 (e.g. "2.5") so the
 -- early game stays precise, then abbreviate larger values with k/M/B suffixes
 -- (e.g. "1.5K", "3M") so long holds don't overflow the label.
@@ -328,6 +326,8 @@ local function init()
 		CameraController.BringBackPlayerCamera(0)
 	end)
 	Events.PerfectParryEffectEvent.OnClientEvent:Connect(function()
+		-- Le hold s'arrête et l'animation de projection parry se joue.
+		ButtonAnimations.playParry()
 		-- Son d'explosion joué côté serveur (3D, entendu par tous)
 		-- Son d'épée : clone du template — asset déjà en mémoire, aucun délai de buffering
 		local parrySound = parrySoundTemplate:Clone()
@@ -397,27 +397,6 @@ local function init()
 		task.delay(1.5, function()
 			return attachment:Destroy()
 		end)
-		-- Animation de projection
-		local _humanoid = character
-		if _humanoid ~= nil then
-			_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
-		end
-		local humanoid = _humanoid
-		local _animator = humanoid
-		if _animator ~= nil then
-			_animator = _animator:FindFirstChildOfClass("Animator")
-		end
-		local animator = _animator
-		if animator then
-			--[[
-				 			const anim = new Instance("Animation");
-							anim.AnimationId = ANIM_PARRY_ID;
-							parryAnimTrack?.Stop();
-							parryAnimTrack = animator.LoadAnimation(anim);
-							parryAnimTrack.Priority = Enum.AnimationPriority.Action4;
-							parryAnimTrack.Play(); 
-			]]
-		end
 	end)
 	Players.LocalPlayer.CharacterAdded:Connect(function()
 		local camera = Workspace.CurrentCamera
@@ -428,6 +407,10 @@ local function init()
 	Events.GameResultEvent.OnClientEvent:Connect(function(exploded, cashEarned, multiplier)
 		-- The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
 		-- EndGameButtonBehavior re-enables it on EndGameStartEvent.
+		-- Safety net: stop the held pose if the game ended on death (no release/parry
+		-- fired). After a normal release or a parry the loop is already stopped, so
+		-- this is a no-op and never cuts the release/parry one-shot.
+		ButtonAnimations.stop()
 		if not exploded then
 			local wasParry = parryKnockbackCamConn ~= nil
 			local _result = parryKnockbackCamConn
@@ -438,11 +421,6 @@ local function init()
 			-- Parry : reset instantané (la caméra trackait déjà le joueur, pas besoin de tween)
 			-- Release normal : tween fluide depuis la position cinématique de jeu
 			if wasParry then
-				local _result_1 = parryAnimTrack
-				if _result_1 ~= nil then
-					_result_1:Stop()
-				end
-				parryAnimTrack = nil
 				CameraController.BringBackPlayerCamera(0)
 			else
 				CameraController.BringBackPlayerCamera()
@@ -592,6 +570,7 @@ local function setup(inGameUI)
 	isGameActive = true
 	released = false
 	MusicController:playButtonMusic()
+	ButtonAnimations.playHold()
 	previousMultiplier = STARTING_MULTIPLIER
 	multiplierLabel.TextSize = multiplierTextOriginalSize
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor
@@ -620,6 +599,7 @@ local function setup(inGameUI)
 			return nil
 		end
 		endInput()
+		ButtonAnimations.playRelease()
 		Events.ReleaseButtonEvent:FireServer()
 	end
 	activatedConn = releaseButton.Activated:Connect(fireRelease)

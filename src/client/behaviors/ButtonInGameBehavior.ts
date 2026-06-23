@@ -6,6 +6,7 @@ import { STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
 import { FormatCash, FormatNumber } from "shared/NumberFormat";
 import { AudioConfig } from "shared/AudioConfig";
 import { MusicController } from "client/audio/MusicController";
+import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import {
 	ContentProvider,
 	GuiService,
@@ -45,7 +46,6 @@ let baseFov = 70;
 let spaceConn: RBXScriptConnection | undefined;
 let activatedConn: RBXScriptConnection | undefined;
 let parryKnockbackCamConn: RBXScriptConnection | undefined;
-let parryAnimTrack: AnimationTrack | undefined;
 
 // Sons bouton — IDs centralisés dans AudioConfig, joués via playSound() (non-3D, personnel)
 const SOUND_BUTTON_EXPLODE_ID = AudioConfig.sfx.buttonExplode.id;
@@ -61,9 +61,6 @@ const parrySoundTemplate = (() => {
 	sound.Parent = SoundService;
 	return sound;
 })();
-
-// Animation perfect parry — remplace l'ID par celui récupéré depuis la toolbox
-const ANIM_PARRY_ID = "rbxassetid://6481315203";
 
 // Live multiplier label text. Keep one decimal below 1000 (e.g. "2.5") so the
 // early game stays precise, then abbreviate larger values with k/M/B suffixes
@@ -302,6 +299,9 @@ export function init(): void {
 	});
 
 	Events.PerfectParryEffectEvent.OnClientEvent.Connect(() => {
+		// Le hold s'arrête et l'animation de projection parry se joue.
+		ButtonAnimations.playParry();
+
 		// Son d'explosion joué côté serveur (3D, entendu par tous)
 		// Son d'épée : clone du template — asset déjà en mémoire, aucun délai de buffering
 		const parrySound = parrySoundTemplate.Clone();
@@ -366,18 +366,6 @@ export function init(): void {
 		emitter.Emit(50);
 
 		task.delay(1.5, () => attachment.Destroy());
-
-		// Animation de projection
-		const humanoid = character?.FindFirstChildOfClass("Humanoid");
-		const animator = humanoid?.FindFirstChildOfClass("Animator");
-		if (animator) {
-			/* 			const anim = new Instance("Animation");
-			anim.AnimationId = ANIM_PARRY_ID;
-			parryAnimTrack?.Stop();
-			parryAnimTrack = animator.LoadAnimation(anim);
-			parryAnimTrack.Priority = Enum.AnimationPriority.Action4;
-			parryAnimTrack.Play(); */
-		}
 	});
 
 	Players.LocalPlayer.CharacterAdded.Connect(() => {
@@ -388,6 +376,10 @@ export function init(): void {
 	Events.GameResultEvent.OnClientEvent.Connect((exploded: boolean, cashEarned: number, multiplier: number) => {
 		// The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
 		// EndGameButtonBehavior re-enables it on EndGameStartEvent.
+		// Safety net: stop the held pose if the game ended on death (no release/parry
+		// fired). After a normal release or a parry the loop is already stopped, so
+		// this is a no-op and never cuts the release/parry one-shot.
+		ButtonAnimations.stop();
 		if (!exploded) {
 			const wasParry = parryKnockbackCamConn !== undefined;
 			parryKnockbackCamConn?.Disconnect();
@@ -395,8 +387,6 @@ export function init(): void {
 			// Parry : reset instantané (la caméra trackait déjà le joueur, pas besoin de tween)
 			// Release normal : tween fluide depuis la position cinématique de jeu
 			if (wasParry) {
-				parryAnimTrack?.Stop();
-				parryAnimTrack = undefined;
 				CameraController.BringBackPlayerCamera(0);
 			} else {
 				CameraController.BringBackPlayerCamera();
@@ -529,6 +519,7 @@ export function setup(inGameUI: ScreenGui): void {
 	isGameActive = true;
 	released = false;
 	MusicController.playButtonMusic(); // début du hold → musique du bouton en boucle
+	ButtonAnimations.playHold(); // remplace la pose "interact" : le perso appuie et reste sur le bouton
 	previousMultiplier = STARTING_MULTIPLIER;
 	multiplierLabel.TextSize = multiplierTextOriginalSize;
 	multiplierLabel.TextColor3 = multiplierTextOriginalColor;
@@ -553,6 +544,7 @@ export function setup(inGameUI: ScreenGui): void {
 	const fireRelease = () => {
 		if (!isGameActive || released) return;
 		endInput();
+		ButtonAnimations.playRelease(); // le perso relâche le bouton
 		Events.ReleaseButtonEvent.FireServer();
 	};
 

@@ -3,6 +3,7 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
 local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
+local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Players
 -- onGameStart is called with inGameUI once the player clicks StartButton
 local function init(onGameStart)
@@ -18,6 +19,8 @@ local function init(onGameStart)
 	Events.ButtonTriggerEvent.OnClientEvent:Connect(function(cameraPosPart)
 		CameraController.SetCinematic()
 		CameraController.AnimateTo(cameraPosPart.CFrame)
+		-- Hand reaches onto the button while the menu is open.
+		ButtonAnimations.playInteract()
 		-- Menu is open → hide the persistent HUD behind it.
 		InGameUIController:disable()
 		DisconnectEvents()
@@ -32,7 +35,10 @@ local function init(onGameStart)
 			DisconnectEvents()
 			Events.QuitButtonClickedEvent:FireServer()
 			CameraController.BringBackPlayerCamera()
-			-- Cancelled the menu → restore the HUD.
+			-- Cancelled the menu → play the "quit" clip, which chains out of the
+			-- frozen "hand on button" pose and blends back to the default Roblox
+			-- animations at its end. Restore the HUD.
+			ButtonAnimations.playQuit()
 			InGameUIController:enable()
 		end)
 	end)

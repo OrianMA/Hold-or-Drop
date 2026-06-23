@@ -5,6 +5,7 @@ local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Ev
 local runEndGameAnimation = TS.import(script, script.Parent.Parent, "ui", "EndGameAnimation").runEndGameAnimation
 local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
+local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 -- Entry point for the ButtonFinishGame UI state on the client.
 -- Server fires EndGameStartEvent after the popup has been shown — we resolve
 -- the frame and hand off to the animation orchestrator. When the animation
@@ -14,6 +15,9 @@ local function init()
 		-- The finish popup is opening — bring back the persistent HUD that the
 		-- ButtonMenu hid, so the payout animation can fly cash into it.
 		InGameUIController:enable()
+		-- Payout screen is up → return the rig to the default Roblox animations
+		-- (ends the perfect-parry projection / a still-playing release clip).
+		ButtonAnimations.restoreDefault()
 		local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 		local inGameUI = playerGui:WaitForChild("InGameUI")
 		local frame = inGameUI:WaitForChild("ButtonFinishGame")

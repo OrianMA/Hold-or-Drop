@@ -1,6 +1,7 @@
 import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
 import { InGameUIController } from "client/ui/InGameUIController";
+import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import { Players } from "@rbxts/services";
 
 // onGameStart is called with inGameUI once the player clicks StartButton
@@ -20,6 +21,9 @@ export function init(onGameStart: (inGameUI: ScreenGui) => void): void {
 		CameraController.SetCinematic();
 		CameraController.AnimateTo(cameraPosPart.CFrame);
 
+		// Hand reaches onto the button while the menu is open.
+		ButtonAnimations.playInteract();
+
 		// Menu is open → hide the persistent HUD behind it.
 		InGameUIController.disable();
 
@@ -37,7 +41,10 @@ export function init(onGameStart: (inGameUI: ScreenGui) => void): void {
 			DisconnectEvents();
 			Events.QuitButtonClickedEvent.FireServer();
 			CameraController.BringBackPlayerCamera();
-			// Cancelled the menu → restore the HUD.
+			// Cancelled the menu → play the "quit" clip, which chains out of the
+			// frozen "hand on button" pose and blends back to the default Roblox
+			// animations at its end. Restore the HUD.
+			ButtonAnimations.playQuit();
 			InGameUIController.enable();
 		});
 	});
