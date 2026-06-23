@@ -7,6 +7,7 @@ import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
+import { LeaderboardService } from "./LeaderboardService";
 import { RoomService } from "server/rooms/RoomService";
 import { PopupConfig } from "server/UI/PopupConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
@@ -25,6 +26,9 @@ export const services: Array<{ init(): void }> = [
 	ShopService,
 	// Rebirth: validate + reset. Needs PlayerData (money) + PlayerProgression ready.
 	RebirthService,
+	// Global leaderboards + podium. Needs PlayerData (Money/Playtime) ready; its
+	// refresh loop is self-driven so ordering past PlayerData is not load-bearing.
+	LeaderboardService,
 	RoomService,
 	// Binds a ButtonModule per room — must run after RoomService builds them.
 	ButtonTriggerService,
