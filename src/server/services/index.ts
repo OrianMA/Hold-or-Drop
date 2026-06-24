@@ -5,6 +5,7 @@ import { UiService } from "./UiService";
 import { CharacterService } from "./CharacterService";
 import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
+import { BoostService } from "./BoostService";
 import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
 import { LeaderboardService } from "./LeaderboardService";
@@ -22,6 +23,9 @@ export const services: Array<{ init(): void }> = [
 	// Progression must init before RoomService so the BaseCash attribute exists
 	// when a room is assigned (the room also listens for later changes).
 	PlayerProgressionService,
+	// External boosts (group ×2 + money/safety game passes) → input attributes,
+	// then recompute. After Progression (needs recompute), before RoomService.
+	BoostService,
 	// Shop needs PlayerData (money) + PlayerProgression (levels) ready first.
 	ShopService,
 	// Rebirth: validate + reset. Needs PlayerData (money) + PlayerProgression ready.
