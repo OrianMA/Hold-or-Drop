@@ -54,7 +54,19 @@
       "PowerShell($c = Get-Command gh -ErrorAction SilentlyContinue; if \\($c\\) { $c.Source; gh --version } else { \"gh NOT found\" })",
       "Bash(command -v curl jq python python3)",
       "Bash(curl --version)",
-      "Bash(echo \"curl: $\\(curl --version)"
+      "Bash(echo \"curl: $\\(curl --version)",
+      "PowerShell(gh pr list --head feature/leaderboards-podium --json number,url,state,title,baseRefName 2>&1)",
+      "PowerShell(Write-Output \"=== uv / uvx ===\"; \\(Get-Command uv -ErrorAction SilentlyContinue\\).Source; \\(Get-Command uvx -ErrorAction SilentlyContinue\\).Source; Write-Output \"=== python ===\"; \\(Get-Command python -ErrorAction SilentlyContinue\\).Source; Write-Output \"=== claude CLI ===\"; \\(Get-Command claude -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(Write-Output \"=== Blender installs ===\"; Get-ChildItem \"C:\\\\Program Files\\\\Blender Foundation\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"$env:ProgramFiles\\\\Blender Foundation\" -ErrorAction SilentlyContinue | Select-Object Name; Write-Output \"=== Blender appdata config dirs ===\"; Get-ChildItem \"$env:APPDATA\\\\Blender Foundation\\\\Blender\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(Write-Output \"=== Claude Desktop config ===\"; $p = \"$env:APPDATA\\\\Claude\\\\claude_desktop_config.json\"; Write-Output \"Path: $p\"; if \\(Test-Path $p\\) { Write-Output \"EXISTS\"; Get-Content $p -Raw } else { Write-Output \"NOT FOUND\" }; Write-Output \"=== Claude Desktop installed? ===\"; Test-Path \"$env:LOCALAPPDATA\\\\AnthropicClaude\"; Test-Path \"$env:APPDATA\\\\Claude\")",
+      "WebFetch(domain:github.com)",
+      "PowerShell(Write-Output \"=== where claude ===\"; where.exe claude 2>$null; Write-Output \"=== npm global ===\"; \\(Get-Command npm -ErrorAction SilentlyContinue\\).Source; if \\(Get-Command npm -ErrorAction SilentlyContinue\\) { npm config get prefix }; Write-Output \"=== common claude locations ===\"; Test-Path \"$env:USERPROFILE\\\\.local\\\\bin\\\\claude.exe\"; Test-Path \"$env:LOCALAPPDATA\\\\Programs\\\\claude\\\\claude.exe\"; Get-ChildItem \"$env:USERPROFILE\\\\.local\\\\bin\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "WebFetch(domain:www.blender.org)",
+      "PowerShell($claude = \"$env:USERPROFILE\\\\.local\\\\bin\\\\claude.exe\"; Write-Output \"=== claude --version ===\"; & $claude --version; Write-Output \"\"; Write-Output \"=== claude mcp list \\(with connection check\\) ===\"; & $claude mcp list 2>&1)",
+      "Bash(printf 'protocol=https\\\\nhost=github.com\\\\n\\\\n')",
+      "Bash(git credential *)",
+      "mcp__Blender__get_blendfile_summary_path_info",
+      "mcp__Blender__get_objects_summary"
     ]
   }
 }
