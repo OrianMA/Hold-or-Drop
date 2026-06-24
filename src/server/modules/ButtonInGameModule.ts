@@ -105,17 +105,14 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	const room = session.room;
 	const buttonModel = room.buttonModel;
 
-	// BaseCash + Multiplier now live on the player (PlayerProgressionService),
-	// not on the button. Read once at game start — held for the whole session.
-	const baseCash = PlayerProgressionService.get(player, "BaseCash");
+	// EffectiveBaseCash already folds in every money multiplier (rebirth + money
+	// game-pass tier + community), additively. Read once — held for the session so
+	// a mid-run boost change can't alter an in-progress hold.
+	const baseCash = PlayerProgressionService.get(player, "EffectiveBaseCash");
 
 	const multiplierPerSecond = PlayerProgressionService.get(player, "Multiplier");
-	// Safety (0..0.5) scales the explosion risk down multiplicatively. Read once
-	// so mid-run shop purchases can't change the odds of an in-progress hold.
+	// Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
 	const safety = PlayerProgressionService.get(player, "AdditionalSecurity");
-	// Permanent rebirth multiplier — applied to the final payout. Read once so a
-	// mid-run rebirth can't change the value of an in-progress hold.
-	const multRebirth = PlayerProgressionService.getMultRebirth(player);
 
 	// Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
 	let currentMultiplier = STARTING_MULTIPLIER;
@@ -130,10 +127,10 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		isActive = false;
 		releaseConn.Disconnect();
 
-		const earned = math.floor(baseCash * currentMultiplier * multRebirth);
+		const earned = math.floor(baseCash * currentMultiplier);
 		Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
 		ConfettiBurst.play(buttonModel);
-		EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth);
+		EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
@@ -185,10 +182,10 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 				gracePeriodConn.Disconnect();
 
 				if (cancelledByPlayer) {
-					const earned = math.floor(baseCash * currentMultiplier * multRebirth);
+					const earned = math.floor(baseCash * currentMultiplier);
 					Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
 					ConfettiBurst.play(buttonModel);
-					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth);
+					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 				} else {
 					const character = player.Character;
 					const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
@@ -255,17 +252,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 							humanoid.JumpHeight = origJumpHeight;
 						}
 
-						const earned = math.floor(baseCash * currentMultiplier * multRebirth);
+						const earned = math.floor(baseCash * currentMultiplier);
 						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-						EndGameButtonModule.enter(
-							player,
-							"released",
-							baseCash,
-							currentMultiplier,
-							earned,
-							1,
-							multRebirth,
-						);
+						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 					} else {
 						if (hrp) hrp.Anchored = false;
 
@@ -280,7 +269,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						if (humanoid) humanoid.Health = 0;
 
 						Events.PlayerKilledEvent.FireClient(player);
-						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier * multRebirth);
+						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier);
 						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
 						EndGameButtonModule.enter(
 							player,
@@ -289,7 +278,6 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 							currentMultiplier,
 							earned,
 							LOOSE_WIN_MULTIPLIER,
-							multRebirth,
 						);
 					}
 				}

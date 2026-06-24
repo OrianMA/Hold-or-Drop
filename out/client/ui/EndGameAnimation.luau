@@ -12,9 +12,9 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 --
 -- Sequence (after the "Finish" flash + optional kill penalty):
 --   1.  MultiplierText flies into BaseCashText and disappears.
---   2a. BaseCashText counts up by the in-game multiplier (grow + red).
---   2b. If the player has rebirthed (multRebirth > 1), a gold "xN" rebirth text
---       flies into BaseCashText, which then counts up again by the rebirth multiplier.
+--   2.  BaseCashText counts up by the in-game multiplier (grow + red).
+--       EffectiveBaseCash already folds in every money multiplier, so no separate
+--       rebirth phase is needed.
 --   3.  BaseCashText stays put (showing the full total) and sprays N floating texts
 --       toward the money HUD; each arrival banks one chunk of the total.
 --   4.  After the chunks land, a short pause, then the whole BaseCashText label flies
@@ -43,23 +43,12 @@ local FLOATING_DISPERSE_TI = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.Ea
 local FLOATING_DISPERSE_MIN = 70
 local FLOATING_DISPERSE_MAX = 130
 local FLOATING_HOLD = 0.12
--- Phase 2b — rebirth multiplier floating text (only when the player has rebirthed).
-local REBIRTH_MERGE_TI = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-local REBIRTH_COUNTUP_TI = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local REBIRTH_LABEL_COLOR = Color3.new(1, 0.82, 0.2)
-local REBIRTH_LABEL_START_OFFSET = 120
-local REBIRTH_COUNTUP_SIZE_RATIO = 0.6
 -- Phase 4 — after the spray, the whole BaseCashText label flies to the HUD money.
 local FINAL_MOVE_DELAY = 0.45
 local BASE_CASH_FLY_TI = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 -- ── Formatting ────────────────────────────────────────────────────────────────
 local function formatMultiplier(value)
 	return `{tostring(math.round(value * 10) / 10)}x`
-end
--- Rebirth multiplier label — "x2", "x3.5". Prefix form distinguishes it from the
--- in-game multiplier's "{n}x".
-local function formatRebirthMultiplier(value)
-	return `x{tostring(math.round(value * 10) / 10)}`
 end
 local function formatCash(value)
 	return FormatCash(value)
@@ -181,36 +170,6 @@ local function mergeMultiplierIntoBaseCash(multiplierText, baseCashText)
 	tween.Completed:Wait()
 	multiplierText.Visible = false
 end
--- ── Phase 2b: rebirth multiplier text flies into BaseCashText (blocking) ─────────
--- Clones the floating template as a gold "xN", spawns it above BaseCashText and
--- flies it in. Blocks until it lands so the caller can run the boosting count-up.
-local function flyRebirthMultiplierIntoBaseCash(parent, multRebirth, target)
-	local template = getFloatingTemplate()
-	if not template then
-		return nil
-	end
-	local frame = template:Clone()
-	frame.Name = "EndGameRebirthMultiplier"
-	frame.AnchorPoint = Vector2.new(0.5, 0.5)
-	frame.ZIndex = 31
-	frame.Visible = true
-	local amountLabel = frame:FindFirstChild("Amount")
-	if amountLabel then
-		amountLabel.Text = formatRebirthMultiplier(multRebirth)
-		amountLabel.TextColor3 = REBIRTH_LABEL_COLOR
-	end
-	frame.Parent = parent
-	local _absolutePosition = target.AbsolutePosition
-	local _arg0 = target.AbsoluteSize / 2
-	local targetCenter = _absolutePosition + _arg0
-	frame.Position = UDim2.new(0, targetCenter.X, 0, targetCenter.Y - REBIRTH_LABEL_START_OFFSET)
-	local fly = TweenService:Create(frame, REBIRTH_MERGE_TI, {
-		Position = UDim2.new(0, targetCenter.X, 0, targetCenter.Y),
-	})
-	fly:Play()
-	fly.Completed:Wait()
-	frame:Destroy()
-end
 -- ── Phase 4: the whole BaseCashText label flies to the HUD money ─────────────────
 -- Clones BaseCashText to the ScreenGui (so the original resets cleanly), hides the
 -- original, and flies the clone onto the HUD money. Cosmetic — the chunks already
@@ -292,7 +251,7 @@ local initialMultiplierPosition
 local initialMultiplierTransparency
 -- Runs the full ButtonFinishGame animation, then calls onComplete().
 -- Safe to call from a regular task (uses task.wait internally).
-local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, multRebirth, onComplete)
+local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, onComplete)
 	local refs = resolveRefs(frame)
 	if not refs then
 		onComplete()
@@ -360,19 +319,12 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	end
 	-- ── Phase 1: MultiplierText merges into BaseCashText and disappears ───────────
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText)
-	-- ── Phase 2a: BaseCashText counts up by the in-game multiplier ───────────────────────
-	local totalEarn = effectiveBaseCash * multiplier * multRebirth
+	-- ── Phase 2: BaseCashText counts up by the in-game multiplier ─────────────────
+	-- EffectiveBaseCash already includes every money multiplier (rebirth + tier +
+	-- community), so the start number shows the boost — no separate rebirth phase.
+	local totalEarn = effectiveBaseCash * multiplier
 	local grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE
-	local afterMultiplier = effectiveBaseCash * multiplier
-	local hasRebirthBonus = multRebirth > 1
-	-- With a rebirth bonus to follow, stop the growth short so phase 2b finishes it.
-	local afterMultiplierSize = if hasRebirthBonus then effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE * REBIRTH_COUNTUP_SIZE_RATIO else grownSize
-	animateCash(baseCashText, effectiveBaseCash, afterMultiplier, effectiveBaseSize, afterMultiplierSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI)
-	-- Phase 2b: rebirth multiplier flies in and boosts BaseCashText (only if rebirthed).
-	if hasRebirthBonus then
-		flyRebirthMultiplierIntoBaseCash(screenGui, multRebirth, baseCashText)
-		animateCash(baseCashText, afterMultiplier, totalEarn, afterMultiplierSize, grownSize, BASE_CASH_TARGET_COLOR, BASE_CASH_TARGET_COLOR, REBIRTH_COUNTUP_TI)
-	end
+	animateCash(baseCashText, effectiveBaseCash, totalEarn, effectiveBaseSize, grownSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI)
 	-- ── Phase 3: spray N floating texts into the money HUD ────────────────────────
 	local moneyParent = InGameUIController:getMoneyParent()
 	local n = FLOATING_TEXT_COUNT
