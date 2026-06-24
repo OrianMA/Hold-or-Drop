@@ -7,6 +7,7 @@ local Room = TS.import(script, game:GetService("ServerScriptService"), "TS", "ro
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 local RoomSpotlights = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RoomSpotlights").RoomSpotlights
+local BoostService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "BoostService").BoostService
 -- Owns the player ↔ room mapping (the "player-only" domain).
 --
 -- At server start it scans Workspace/PlayerZones for P{n} folders (one Button
@@ -73,7 +74,7 @@ local function assign(player)
 	roomByPlayer[_player] = room
 	-- Tells this player's client which prompt to enable (RoomPromptController).
 	player:SetAttribute("AssignedRoom", room.name)
-	room:setGainCash(PlayerProgressionService:get(player, "BaseCash"))
+	room:setGainCash(PlayerProgressionService:get(player, "EffectiveBaseCash"))
 	-- Light this slot's neon pipe + spotlight in the room's colour.
 	NeonPipeColors:setOccupied(room.name)
 	RoomSpotlights:setOccupied(room.name)
@@ -90,8 +91,8 @@ local function assign(player)
 			teleportToSpawn(player.Character, spawnPart)
 		end
 	end
-	local conn = player:GetAttributeChangedSignal("BaseCash"):Connect(function()
-		room:setGainCash(PlayerProgressionService:get(player, "BaseCash"))
+	local conn = player:GetAttributeChangedSignal("EffectiveBaseCash"):Connect(function()
+		room:setGainCash(PlayerProgressionService:get(player, "EffectiveBaseCash"))
 	end)
 	local _player_1 = player
 	baseCashConns[_player_1] = conn
@@ -142,6 +143,15 @@ local RoomService = {
 			end
 			room:release()
 			table.insert(rooms, room)
+		end
+		-- Wire each room's CommunityJoinPart prompt → re-check the triggerer's group
+		-- membership (grants the community ×2 if they've since joined the group).
+		for _, room in rooms do
+			if room.communityJoinPrompt then
+				room.communityJoinPrompt.Triggered:Connect(function(player)
+					return BoostService:refreshCommunity(player)
+				end)
+			end
 		end
 		Players.PlayerAdded:Connect(function(player)
 			return assign(player)

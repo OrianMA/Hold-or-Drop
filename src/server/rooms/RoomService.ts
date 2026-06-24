@@ -3,6 +3,7 @@ import { Room } from "./Room";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { NeonPipeColors } from "server/modules/NeonPipeColors";
 import { RoomSpotlights } from "server/modules/RoomSpotlights";
+import { BoostService } from "server/services/BoostService";
 
 // Owns the player ↔ room mapping (the "player-only" domain).
 //
@@ -49,7 +50,7 @@ function assign(player: Player): void {
 	roomByPlayer.set(player, room);
 	// Tells this player's client which prompt to enable (RoomPromptController).
 	player.SetAttribute("AssignedRoom", room.name);
-	room.setGainCash(PlayerProgressionService.get(player, "BaseCash"));
+	room.setGainCash(PlayerProgressionService.get(player, "EffectiveBaseCash"));
 	// Light this slot's neon pipe + spotlight in the room's colour.
 	NeonPipeColors.setOccupied(room.name);
 	RoomSpotlights.setOccupied(room.name);
@@ -63,8 +64,8 @@ function assign(player: Player): void {
 		if (player.Character) teleportToSpawn(player.Character, spawnPart);
 	}
 
-	const conn = player.GetAttributeChangedSignal("BaseCash").Connect(() => {
-		room.setGainCash(PlayerProgressionService.get(player, "BaseCash"));
+	const conn = player.GetAttributeChangedSignal("EffectiveBaseCash").Connect(() => {
+		room.setGainCash(PlayerProgressionService.get(player, "EffectiveBaseCash"));
 	});
 	baseCashConns.set(player, conn);
 }
@@ -109,6 +110,14 @@ export const RoomService = {
 			if (!room.isValid()) continue;
 			room.release(); // clean "Empty" baseline (prompt disabled, billboard reset)
 			rooms.push(room);
+		}
+
+		// Wire each room's CommunityJoinPart prompt → re-check the triggerer's group
+		// membership (grants the community ×2 if they've since joined the group).
+		for (const room of rooms) {
+			if (room.communityJoinPrompt) {
+				room.communityJoinPrompt.Triggered.Connect((player) => BoostService.refreshCommunity(player));
+			}
 		}
 
 		Players.PlayerAdded.Connect((player) => assign(player));
