@@ -19,12 +19,15 @@ function ownsGamePass(userId: number, gamePassId: number): boolean {
 }
 
 // Highest owned money tier's multiplier (ladder — top tier wins). 1 if none.
+// Iterate high → low and return on the first owned tier: stops early and makes
+// at most one extra web call once an owned tier is found (id-0 tiers are skipped
+// by ownsGamePass without any web call).
 function resolveTierMult(userId: number): number {
-	let best = 1;
-	for (const tier of MONEY_TIERS) {
-		if (tier.mult > best && ownsGamePass(userId, tier.gamePassId)) best = tier.mult;
+	for (let i = MONEY_TIERS.size() - 1; i >= 0; i--) {
+		const tier = MONEY_TIERS[i];
+		if (ownsGamePass(userId, tier.gamePassId)) return tier.mult;
 	}
-	return best;
+	return 1;
 }
 
 function isInCommunity(player: Player): boolean {

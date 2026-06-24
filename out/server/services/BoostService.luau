@@ -26,14 +26,17 @@ local function ownsGamePass(userId, gamePassId)
 	return ok and owns == true
 end
 -- Highest owned money tier's multiplier (ladder — top tier wins). 1 if none.
+-- Iterate high → low and return on the first owned tier: stops early and makes
+-- at most one extra web call once an owned tier is found (id-0 tiers are skipped
+-- by ownsGamePass without any web call).
 local function resolveTierMult(userId)
-	local best = 1
-	for _, tier in MONEY_TIERS do
-		if tier.mult > best and ownsGamePass(userId, tier.gamePassId) then
-			best = tier.mult
+	for i = #MONEY_TIERS - 1, 0, -1 do
+		local tier = MONEY_TIERS[i + 1]
+		if ownsGamePass(userId, tier.gamePassId) then
+			return tier.mult
 		end
 	end
-	return best
+	return 1
 end
 local function isInCommunity(player)
 	local ok, result = pcall(function()
