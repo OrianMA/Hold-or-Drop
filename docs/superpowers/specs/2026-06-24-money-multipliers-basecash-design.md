@@ -38,12 +38,14 @@ additifs, cf. §1.1) → 150 affiche **450**.
   « ×N » ajoute « +(N−1) » ; total `= 1 + Σ(mᵢ−1)`. Un boost seul vaut sa valeur ; joueur
   neuf = ×1. (Ex. rebirth ×2 + communauté ×2 + palier ×4 → ×6, pas ×16.) Tout futur
   multiplicateur indépendant s'ajoute pareil.
-- **Communauté** : *groupe Roblox `963505568`* (`player:IsInGroup`), vérifié serveur.
+- **Communauté** : *groupe Roblox `963505568`* (`player:IsInGroup`), vérifié serveur ; le
+  claim se fait via une ProximityPrompt `CommunityJoinPart` dans la salle (pas de bouton shop).
 - **Animation de paiement** : *retirer la phase or « xN rebirth »* (le boost est désormais
   déjà dans la base de départ).
 - **Plafond safety cumulé** : *70 %* (shop 50 % + pass 20 %), risque plancher ×0.30.
-- **Portée shop maintenant** : *readout du multiplicateur + bouton communauté (live) +
-  boutons safety-pass et palier-suivant (inertes jusqu'aux IDs)*.
+- **Portée shop maintenant** : *readout du multiplicateur (incl. état communauté) + boutons
+  safety-pass et palier-suivant (inertes jusqu'aux IDs)*. Le claim communauté se fait via la
+  ProximityPrompt `CommunityJoinPart` (monde), pas un bouton shop.
 - **IDs game pass** : inconnus pour l'instant → mis en config à `0` = **inertes** (pattern
   « id vide = no-op », comme les anim ids). Le groupe communauté est live tout de suite.
 
@@ -145,10 +147,11 @@ resolve(player):
   les joueurs déjà connectés** à l'init (parité avec les autres services / playtests Studio).
 - **`MarketplaceService.PromptGamePassPurchaseFinished`** (purchased=true) → re-`resolve`
   le joueur concerné.
-- **Re-check communauté** : `IsInGroup` peut devenir vrai *après* la connexion (le joueur
-  rejoint le groupe en jeu). Un event léger **`RecheckBoostsEvent` (C→S)** est firé à
-  l'ouverture du shop → `resolve`. (Un seul nouvel event de jeu, cf. §8 ; conforme au
-  « minimiser les RemoteEvents ».)
+- **Re-check communauté** : `IsInGroup` peut devenir vrai *après* la connexion. Le serveur
+  écoute le `ProximityPrompt.Triggered` de la **`CommunityJoinPart`** de la salle (sibling du
+  `ButtonModel`, cf. §11) → re-`resolve` la communauté du joueur déclencheur, puis `recompute`.
+  **Aucun RemoteEvent** (le prompt est déjà côté serveur, comme le bouton principal). Câblage
+  dans `RoomService` (connaît la salle + l'occupant), libéré au release.
 - **`id == 0` = inerte** : aucun appel web, traité comme non-possédé. Tout le pipeline
   fonctionne, les boutons sont juste sans effet jusqu'à ce que les IDs soient renseignés.
 - Tous les appels web sont en `pcall` ; un échec laisse l'entrée à sa valeur par défaut et
@@ -218,8 +221,8 @@ Le formatage `×N` réutilise les helpers existants (`trimDecimals` / `FormatNum
 
 - **Modifié** `EndGameStartEvent` (S→C) : **retire `multRebirth`** de la charge utile →
   `(baseCash, multiplier, lossMultiplier)` où `baseCash = EffectiveBaseCash`.
-- **Nouveau** `RecheckBoostsEvent` (C→S, sans argument) : firé à l'ouverture du shop pour
-  re-vérifier l'appartenance au groupe (et l'ownership). Validé/limité côté serveur.
+- **Aucun nouvel event** : la communauté se re-vérifie via la ProximityPrompt
+  `CommunityJoinPart` (serveur, §5), les game pass via `PromptGamePassPurchaseFinished`.
 
 Le reste passe par **attributs répliqués** (pas d'event de réponse) : le shop et le HUD se
 rafraîchissent depuis `MoneyMult` / `EffectiveBaseCash` / `InCommunity` / `MoneyTierMult` /
@@ -246,8 +249,9 @@ Portée actée : **readout + communauté (live) + boutons inertes**.
 - **Readout multiplicateur** : le joueur voit **chaque multiplicateur indépendant** (rebirth
   ×N, communauté ×2, palier ×N) **et le total additif** `×MoneyMult`. Lecture pure depuis les
   attributs répliqués (`MultRebirth`, `InCommunity`, `MoneyTierMult`, `MoneyMult`).
-- **Bouton communauté** : si `InCommunity == false` → bouton « Rejoindre pour ×2 » qui ouvre
-  la page du groupe et fire `RecheckBoostsEvent` ; si `true` → état « obtenu ×2 ».
+- **État communauté** (readout, pas de bouton d'achat) : le shop **affiche** l'état (×2
+  obtenu / non obtenu). Le **claim se fait dans le monde** via la ProximityPrompt
+  `CommunityJoinPart` de la salle (§5, §11).
 - **Bouton safety pass** : câbler le `RobuxButton` existant de la cellule `DSafety` →
   `PromptGamePassPurchase(SAFETY_PASS.gamePassId)` (inerte si id 0).
 - **Bouton palier suivant** : un upsell montrant `nextMoneyTier(MoneyTierMult)` (×suivant) →
@@ -261,6 +265,12 @@ Le `.rbxl` n'est pas versionné → les instances GUI se créent dans Studio.
 
 - **Billboard du bouton** : *aucune* modif structurelle — `GainText` reçoit déjà la valeur
   ; elle vaudra désormais `EffectiveBaseCash` (changement 100 % serveur).
+- **`CommunityJoinPart`** : `Workspace.PlayerZones.P{n}/CommunityJoinPart` (Part + enfant
+  `ProximityPrompt`), sibling du `ButtonModel`. **Présente seulement dans P1** aujourd'hui →
+  **à dupliquer dans P2…P10**. Résolue optionnellement dans `Room.ts` (comme le spawn marker /
+  owner display) ; `RoomService` connecte son `Triggered` à `BoostService` sur assign. Régler
+  `Anchored=true` / `CanCollide=false` (détail Studio). Texte du prompt à renseigner
+  (ex. « Rejoindre la communauté (×2) »).
 - **Shop** (`StarterGui.InGameUI.ShopMenu`) : le `Body` est un `UIGridLayout` 4 cellules
   (`AButtonMoney`/`BX5ButtonMoney`/`CMultiplier`/`DSafety`, chacune avec `BuyButton` +
   `RobuxButton` inexploité). À ajouter : un **strip readout** du multiplicateur (Header ou
@@ -307,14 +317,15 @@ niveaux restent inchangés (`PlayerProgression_v2`).
 2. Paiement = `floor(EffectiveBaseCash × currentMultiplier)` (win/parry/grace) et
    `floor(EffectiveBaseCash × LOOSE_WIN_MULTIPLIER × currentMultiplier)` (mort) — **plus
    aucun `multRebirth`** dans `ButtonInGameModule`.
-3. Communauté : membre du groupe `963505568` ⇒ `CommunityMult = 2`, sinon `1`, vérifié
-   serveur ; re-checké à l'ouverture du shop.
+3. Communauté : membre du groupe `963505568` ⇒ contribution communauté `+1` (bonus additif),
+   sinon `0`, vérifié serveur ; re-check via la ProximityPrompt `CommunityJoinPart`.
 4. Palier argent : `MoneyTierMult` = mult du palier le plus haut possédé (×1 si aucun) ;
    `gamePassId 0` ⇒ inerte (aucun effet, aucun crash).
 5. Safety pass : `AdditionalSecurity = min(safetyShop + 0.20, 0.70)` quand possédé.
 6. Animation de fin : part de `EffectiveBaseCash`, compte uniquement le multiplicateur de
    manche, **sans** phase or rebirth ; affiche exactement le montant crédité.
-7. `EndGameStartEvent` ne transporte plus `multRebirth` ; `RecheckBoostsEvent` (C→S) existe.
+7. `EndGameStartEvent` ne transporte plus `multRebirth` ; **aucun nouveau RemoteEvent** (re-check
+   communauté via ProximityPrompt `CommunityJoinPart`, game pass via `PromptGamePassPurchaseFinished`).
 8. Aucune migration DataStore ; saves existants inchangés ; boosts résolus à la session.
 9. Shop : readout du multiplicateur + bouton communauté (live) + boutons safety/palier
    (inertes jusqu'aux IDs), rafraîchis depuis les attributs.
