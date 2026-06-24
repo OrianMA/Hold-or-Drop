@@ -27,13 +27,17 @@ Plus un **game pass safety** distinct : **+20 %** de réduction de risque, ajout
 `AdditionalSecurity` du shop.
 
 **Comportement cible (exemple)** : Base brut 100, rebirth ×2 → le bouton affiche **200**.
-Le joueur monte son Base à 150 → **300**. S'il a en plus la communauté ×2 → MoneyMult ×4 →
-150 affiche **600**.
+Le joueur monte son Base à 150 → **300**. S'il a en plus la communauté ×2 → total ×3 (bonus
+additifs, cf. §1.1) → 150 affiche **450**.
 
 ### 1.1 Décisions actées (brainstorming)
 
 - **Combinaison des 10 game pass argent** : *paliers, le plus haut gagne* (×2,×4,…,×1024 ;
   on possède le palier le plus élevé acheté ; un palier supérieur remplace). Max ×1024.
+- **Combinaison des facteurs** (rebirth + palier + communauté) : *bonus additifs* — chaque
+  « ×N » ajoute « +(N−1) » ; total `= 1 + Σ(mᵢ−1)`. Un boost seul vaut sa valeur ; joueur
+  neuf = ×1. (Ex. rebirth ×2 + communauté ×2 + palier ×4 → ×6, pas ×16.) Tout futur
+  multiplicateur indépendant s'ajoute pareil.
 - **Communauté** : *groupe Roblox `963505568`* (`player:IsInGroup`), vérifié serveur.
 - **Animation de paiement** : *retirer la phase or « xN rebirth »* (le boost est désormais
   déjà dans la base de départ).
@@ -46,7 +50,9 @@ Le joueur monte son Base à 150 → **300**. S'il a en plus la communauté ×2 �
 ## 2. Modèle & formules
 
 ```
-MoneyMult         = MultRebirth × MoneyTierMult × CommunityMult
+// Bonus additifs : chaque « ×N » contribue « +(N-1) ». MultRebirth (≥1) porte la base 1.
+MoneyMult         = MultRebirth + (InCommunity ? COMMUNITY.mult-1 : 0) + (MoneyTierMult-1)
+                  = 1 + (MultRebirth-1) + communityBonus + tierBonus
 EffectiveBaseCash = floor( BaseCash_brut × MoneyMult )
 
 paiement (win/parry/grace) = floor( EffectiveBaseCash × currentMultiplier )
@@ -83,7 +89,7 @@ On garde le pattern « entrées → valeurs dérivées mirrorées en attributs �
 - `HasSafetyPass : boolean` (défaut `false`)
 
 **Dérivés (écrits par `PlayerProgressionService.recompute`, §4) :**
-- `MoneyMult : number` — produit des 3 facteurs (affichage shop + lisibilité)
+- `MoneyMult : number` — total **additif** des facteurs (affichage shop + lisibilité)
 - `EffectiveBaseCash : number` — `floor(BaseCash × MoneyMult)`
 - `AdditionalSecurity : number` — inclut désormais le safety pass (plafonné)
 
@@ -99,8 +105,8 @@ recompute(player):
     rawBase      = STATS.BaseCash.valueFor(BaseCashLevel)
     multRebirth  = rebirthMult(Rebirths)                       // déjà mirroré
     tierMult     = attr("MoneyTierMult") ?? 1
-    communityM   = communityMult(attr("InCommunity"))          // helper ShopConfig
-    moneyMult    = multRebirth * tierMult * communityM
+    inCommunity  = attr("InCommunity") == true
+    moneyMult    = moneyMult(multRebirth, tierMult, inCommunity)   // helper ShopConfig (additif)
     set("MoneyMult", moneyMult)
     set("EffectiveBaseCash", floor(rawBase * moneyMult))
 
@@ -184,7 +190,9 @@ SAFETY_TOTAL_CAP = 0.70    // plafond cumulé shop (0.50) + pass (0.20)
 
 ### 6.2 `shared/ShopConfig.ts` (helpers purs, partagés client/serveur)
 
-- `communityMult(inCommunity: boolean): number` → `inCommunity ? COMMUNITY.mult : 1`
+- `moneyMult(multRebirth, moneyTierMult, inCommunity): number` — **total additif** :
+  `multRebirth + (inCommunity ? COMMUNITY.mult - 1 : 0) + (moneyTierMult - 1)`. Tout futur
+  multiplicateur indépendant s'ajoute pareil (`+ (mult - 1)`).
 - `effectiveSafety(shopSafety: number, hasPass: boolean): number`
   → `min(shopSafety + (hasPass ? SAFETY_PASS.add : 0), SAFETY_TOTAL_CAP)`
 - `nextMoneyTier(currentMult: number): { mult, gamePassId } | undefined`
@@ -235,8 +243,9 @@ rafraîchissent depuis `MoneyMult` / `EffectiveBaseCash` / `InCommunity` / `Mone
 
 Portée actée : **readout + communauté (live) + boutons inertes**.
 
-- **Readout multiplicateur** : afficher `×Total` (= `MoneyMult`) avec le détail
-  rebirth/palier/communauté. Lecture pure depuis les attributs répliqués.
+- **Readout multiplicateur** : le joueur voit **chaque multiplicateur indépendant** (rebirth
+  ×N, communauté ×2, palier ×N) **et le total additif** `×MoneyMult`. Lecture pure depuis les
+  attributs répliqués (`MultRebirth`, `InCommunity`, `MoneyTierMult`, `MoneyMult`).
 - **Bouton communauté** : si `InCommunity == false` → bouton « Rejoindre pour ×2 » qui ouvre
   la page du groupe et fire `RecheckBoostsEvent` ; si `true` → état « obtenu ×2 ».
 - **Bouton safety pass** : câbler le `RobuxButton` existant de la cellule `DSafety` →
@@ -278,8 +287,8 @@ niveaux restent inchangés (`PlayerProgression_v2`).
   retenté au prochain `resolve`.
 - **Palier** : `max` des paliers possédés (un palier supérieur « remplace » naturellement).
 - **Plafond safety** : `min(…, 0.70)` (risque ne tombe jamais à 0).
-- **Lisibilité** : `EffectiveBaseCash` peut devenir grand (×1024 × communauté × rebirth) →
-  s'appuyer sur `FormatCash`/`FormatNumber`.
+- **Lisibilité** : `EffectiveBaseCash` peut devenir grand (palier jusqu'à ×1024, + rebirth +
+  communauté en additif) → s'appuyer sur `FormatCash`/`FormatNumber`.
 
 ## 14. Hors scope (revient « un peu plus tard »)
 
@@ -292,8 +301,9 @@ niveaux restent inchangés (`PlayerProgression_v2`).
 
 ## 15. Critères d'acceptation
 
-1. Le bouton (billboard) et le HUD affichent `EffectiveBaseCash = floor(BaseCash ×
-   MultRebirth × MoneyTierMult × CommunityMult)`, mis à jour quand un facteur change.
+1. Le bouton (billboard) et le HUD affichent `EffectiveBaseCash = floor(BaseCash × MoneyMult)`
+   avec `MoneyMult = MultRebirth + (communauté ? COMMUNITY.mult−1 : 0) + (MoneyTierMult−1)`
+   (bonus additifs), mis à jour quand un facteur change.
 2. Paiement = `floor(EffectiveBaseCash × currentMultiplier)` (win/parry/grace) et
    `floor(EffectiveBaseCash × LOOSE_WIN_MULTIPLIER × currentMultiplier)` (mort) — **plus
    aucun `multRebirth`** dans `ButtonInGameModule`.
