@@ -68,7 +68,7 @@ local function init()
 		local inCommunity = player:GetAttribute("InCommunity") == true
 		local total = num("MoneyMult", 1)
 		local community = if inCommunity then "×2" else "×1"
-		readout.Text = `Money {fmtMult(total)}  (Rebirth {fmtMult(rebirth)} · Communauté {community} · Palier {fmtMult(tier)})`
+		readout.Text = `Money {fmtMult(total)} (Rebirth {fmtMult(rebirth)} · Communauté {community} · Palier {fmtMult(tier)})`
 	end
 	player:GetAttributeChangedSignal("MoneyMult"):Connect(refresh)
 	player:GetAttributeChangedSignal("MultRebirth"):Connect(refresh)

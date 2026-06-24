@@ -76,7 +76,7 @@ export function init(): void {
 		const inCommunity = player.GetAttribute("InCommunity") === true;
 		const total = num("MoneyMult", 1);
 		const community = inCommunity ? "×2" : "×1";
-		readout.Text = `Money ${fmtMult(total)}  (Rebirth ${fmtMult(rebirth)} · Communauté ${community} · Palier ${fmtMult(tier)})`;
+		readout.Text = `Money ${fmtMult(total)} (Rebirth ${fmtMult(rebirth)} · Communauté ${community} · Palier ${fmtMult(tier)})`;
 	}
 
 	player.GetAttributeChangedSignal("MoneyMult").Connect(refresh);

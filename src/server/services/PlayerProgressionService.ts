@@ -170,7 +170,7 @@ export const PlayerProgressionService = {
 		});
 	},
 
-	// Reads a derived value (BaseCash / Multiplier / AdditionalSecurity).
+	// Reads a derived value (BaseCash / Multiplier / AdditionalSecurity / EffectiveBaseCash / MoneyMult).
 	get(player: Player, key: ProgressionKey): number {
 		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_VALUES[key];
 	},

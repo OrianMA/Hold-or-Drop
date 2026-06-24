@@ -10,7 +10,7 @@ import { BoostService } from "server/services/BoostService";
 // At server start it scans Workspace/PlayerZones for P{n} folders (one Button
 // model each) and turns each into a Room. Players are assigned the first free
 // room in order on join and released on leave. The billboard of an occupied
-// room mirrors the occupant's BaseCash; empty rooms read "Empty".
+// room mirrors the occupant's EffectiveBaseCash; empty rooms read "Empty".
 //
 // The actual button gameplay (ButtonModule) consults getRooms()/owns() — this
 // service never touches the hold/risk loop.

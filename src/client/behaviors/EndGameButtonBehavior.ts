@@ -12,7 +12,11 @@ import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 export function init(): void {
 	Events.EndGameStartEvent.OnClientEvent.Connect(
 		(baseCash: number, multiplier: number, lossMultiplier: number) => {
+			// The finish popup is opening — bring back the persistent HUD that the
+			// ButtonMenu hid, so the payout animation can fly cash into it.
 			InGameUIController.enable();
+			// Payout screen is up → return the rig to the default Roblox animations
+			// (ends the perfect-parry projection / a still-playing release clip).
 			ButtonAnimations.restoreDefault();
 
 			const playerGui = Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui;
@@ -22,6 +26,7 @@ export function init(): void {
 			task.spawn(() => {
 				runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, () => {
 					Events.EndGameFinishedEvent.FireServer();
+					// Run fully over → ease the BGM back in (also covered by respawn on death).
 					MusicController.resumeBgm();
 				});
 			});
