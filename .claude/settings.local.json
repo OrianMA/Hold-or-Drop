@@ -50,7 +50,11 @@
       "Bash(echo \"EXIT=$?\")",
       "PowerShell($gh = Get-Command gh -ErrorAction SilentlyContinue; if \\($gh\\) { \"GH_PATH=\" + $gh.Source } else { $p = \"$env:ProgramFiles\\\\GitHub CLI\\\\gh.exe\"; if \\(Test-Path $p\\) { \"GH_AT=$p\" } else { \"GH_NOT_FOUND\" } })",
       "mcp__Roblox_Studio__script_read",
-      "mcp__Roblox_Studio__multi_edit"
+      "mcp__Roblox_Studio__multi_edit",
+      "PowerShell($c = Get-Command gh -ErrorAction SilentlyContinue; if \\($c\\) { $c.Source; gh --version } else { \"gh NOT found\" })",
+      "Bash(command -v curl jq python python3)",
+      "Bash(curl --version)",
+      "Bash(echo \"curl: $\\(curl --version)"
     ]
   }
 }

@@ -16,6 +16,7 @@ local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMe
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
+local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
 -- references each behavior caches at startup — leaving ButtonMenu and the rest
@@ -38,3 +39,4 @@ initRebirthMenu()
 initRebirthController()
 MusicController:init()
 initAudioVisualizer()
+initNeonPipePulse()

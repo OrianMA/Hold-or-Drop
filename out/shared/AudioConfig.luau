@@ -26,6 +26,10 @@ local AudioConfig = {
 			id = "rbxassetid://119580857539801",
 			volume = 1,
 		},
+		buttonUpgrade = {
+			id = "",
+			volume = 0.6,
+		},
 	},
 }
 return {

@@ -2,6 +2,7 @@ import { Players, Workspace } from "@rbxts/services";
 import { Room } from "./Room";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { NeonPipeColors } from "server/modules/NeonPipeColors";
+import { RoomSpotlights } from "server/modules/RoomSpotlights";
 
 // Owns the player ↔ room mapping (the "player-only" domain).
 //
@@ -49,8 +50,9 @@ function assign(player: Player): void {
 	// Tells this player's client which prompt to enable (RoomPromptController).
 	player.SetAttribute("AssignedRoom", room.name);
 	room.setGainCash(PlayerProgressionService.get(player, "BaseCash"));
-	// Light this slot's neon pipe in the room's colour.
+	// Light this slot's neon pipe + spotlight in the room's colour.
 	NeonPipeColors.setOccupied(room.name);
+	RoomSpotlights.setOccupied(room.name);
 
 	// Teleport the player onto their room's spawn part on every (re)spawn, and move
 	// an already-spawned character now (service init with players already in-game).
@@ -85,14 +87,17 @@ function release(player: Player): void {
 	room.release();
 	roomByPlayer.delete(player);
 	player.SetAttribute("AssignedRoom", "");
-	// Slot freed — grey its neon pipe again.
+	// Slot freed — grey its neon pipe + turn the spotlight off.
 	NeonPipeColors.setEmpty(room.name);
+	RoomSpotlights.setEmpty(room.name);
 }
 
 export const RoomService = {
 	init(): void {
-		// Grey every neon pipe first — empty baseline before any assignment below.
+		// Grey every neon pipe + turn every spotlight off — empty baseline before
+		// any assignment below.
 		NeonPipeColors.init();
+		RoomSpotlights.init();
 
 		const zones = Workspace.WaitForChild(PLAYER_ZONES);
 

@@ -1,4 +1,5 @@
 import { Workspace } from "@rbxts/services";
+import { EMPTY_COLOR, ROOM_COLORS } from "server/modules/RoomColors";
 
 // Colours the Workspace/Environment/NeonPipe/P{n} pipes to match the player
 // holding that room slot. The room name (P1..P5) maps 1:1 to a NeonPipe/P{n}
@@ -7,21 +8,13 @@ import { Workspace } from "@rbxts/services";
 // Driven by RoomService: setOccupied(room.name) on assign, setEmpty(room.name)
 // on release. init() greys every pipe — the empty / server-start baseline.
 
-// --- Tunable colours (edit here) --------------------------------------------
-const EMPTY_COLOR = Color3.fromRGB(120, 120, 120); // grey — slot has no player
-
-// Room/folder name → pipe colour. Add/rename entries to match PlayerZones.
-const ROOM_COLORS = new Map<string, Color3>([
-	["P1", Color3.fromRGB(0, 255, 242)], // blue
-	["P2", Color3.fromRGB(255, 15, 15)], // red
-	["P3", Color3.fromRGB(255, 250, 0)], // yellow
-	["P4", Color3.fromRGB(15, 255, 56)], // green
-	["P5", Color3.fromRGB(181, 23, 255)], // purple
-]);
-// ----------------------------------------------------------------------------
+// Colours are slot-keyed and shared with the room spotlights — see RoomColors.
 
 const ENVIRONMENT = "Environment";
 const NEON_PIPE = "NeonPipe";
+// Incremented on each successful purchase for a slot; the client (NeonPipePulse)
+// watches this attribute to run the travelling-segment animation.
+const PULSE_ATTR = "Pulse";
 
 // Walk each P{n} folder once and cache its parts — colour changes are frequent
 // (every assign/release) but the part set never changes at runtime.
@@ -69,5 +62,16 @@ export const NeonPipeColors = {
 	// Slot freed — back to grey.
 	setEmpty(roomName: string): void {
 		paint(roomName, EMPTY_COLOR);
+	},
+
+	// Fire a one-shot "purchase" pulse on this slot's pipe. The server only bumps a
+	// counter attribute on the NeonPipe/P{n} folder; the actual travelling segment
+	// (shop → button) is animated 100% client-side by client/ui/NeonPipePulse — no
+	// colour replication, no RemoteEvent.
+	pulse(roomName: string): void {
+		const folder = neonPipeFolder()?.FindFirstChild(roomName);
+		if (!folder) return;
+		const current = (folder.GetAttribute(PULSE_ATTR) as number | undefined) ?? 0;
+		folder.SetAttribute(PULSE_ATTR, current + 1);
 	},
 };

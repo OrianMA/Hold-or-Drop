@@ -1,25 +1,21 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Workspace = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Workspace
+local _RoomColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RoomColors")
+local EMPTY_COLOR = _RoomColors.EMPTY_COLOR
+local ROOM_COLORS = _RoomColors.ROOM_COLORS
 -- Colours the Workspace/Environment/NeonPipe/P{n} pipes to match the player
 -- holding that room slot. The room name (P1..P5) maps 1:1 to a NeonPipe/P{n}
 -- folder, so the colour is chosen by slot, not by join order.
 --
 -- Driven by RoomService: setOccupied(room.name) on assign, setEmpty(room.name)
 -- on release. init() greys every pipe — the empty / server-start baseline.
--- --- Tunable colours (edit here) --------------------------------------------
-local EMPTY_COLOR = Color3.fromRGB(120, 120, 120)
--- Room/folder name → pipe colour. Add/rename entries to match PlayerZones.
-local ROOM_COLORS = {
-	P1 = Color3.fromRGB(0, 255, 242),
-	P2 = Color3.fromRGB(255, 15, 15),
-	P3 = Color3.fromRGB(255, 250, 0),
-	P4 = Color3.fromRGB(15, 255, 56),
-	P5 = Color3.fromRGB(181, 23, 255),
-}
--- ----------------------------------------------------------------------------
+-- Colours are slot-keyed and shared with the room spotlights — see RoomColors.
 local ENVIRONMENT = "Environment"
 local NEON_PIPE = "NeonPipe"
+-- Incremented on each successful purchase for a slot; the client (NeonPipePulse)
+-- watches this attribute to run the travelling-segment animation.
+local PULSE_ATTR = "Pulse"
 -- Walk each P{n} folder once and cache its parts — colour changes are frequent
 -- (every assign/release) but the part set never changes at runtime.
 local partsByRoom = {}
@@ -80,6 +76,22 @@ local NeonPipeColors = {
 	end,
 	setEmpty = function(self, roomName)
 		paint(roomName, EMPTY_COLOR)
+	end,
+	pulse = function(self, roomName)
+		local _folder = neonPipeFolder()
+		if _folder ~= nil then
+			_folder = _folder:FindFirstChild(roomName)
+		end
+		local folder = _folder
+		if not folder then
+			return nil
+		end
+		local _condition = (folder:GetAttribute(PULSE_ATTR))
+		if _condition == nil then
+			_condition = 0
+		end
+		local current = _condition
+		folder:SetAttribute(PULSE_ATTR, current + 1)
 	end,
 }
 return {

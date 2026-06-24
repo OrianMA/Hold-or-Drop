@@ -11,9 +11,12 @@ local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 -- La BGM ducke vite au début d'un hold puis revient lentement une fois le run terminé.
 local BGM_FADE_OUT = 0.4
 local BGM_RESUME = 3
--- BGM via la nouvelle API audio : AudioPlayer -> AudioDeviceOutput (audible) et
--- AudioPlayer -> AudioAnalyzer (analyse spectre pour le visualiser de lobby).
+-- BGM via la nouvelle API audio : AudioPlayer -> AudioFader -> AudioDeviceOutput (audible)
+-- et AudioPlayer -> AudioAnalyzer (analyse spectre, tap AVANT le fader). Le duck agit sur
+-- le fader, pas sur le player : la branche audible se coupe mais le spectre reste complet,
+-- donc le visualiser continue de tourner pendant le run.
 local bgmPlayer
+local bgmFader
 local bgmAnalyzer
 local bgmIndex = 0
 local bgmFadeTween
@@ -37,17 +40,18 @@ local function createWire(source, target, parent)
 	wire.TargetName = "Input"
 	wire.Parent = parent
 end
--- Fait fondre le volume de la BGM vers une cible. Annule tout fade en cours pour
--- qu'un hold -> release rapide ne laisse pas deux tweens se battre sur Volume.
+-- Fait fondre le volume audible de la BGM vers une cible (sur le fader, multiplicateur
+-- 1 = plein / 0 = muet). Annule tout fade en cours pour qu'un hold -> release rapide ne
+-- laisse pas deux tweens se battre sur Volume. Le spectre n'est pas affecté (tap avant le fader).
 local function fadeBgm(targetVolume, duration)
-	if not bgmPlayer then
+	if not bgmFader then
 		return nil
 	end
 	local _result = bgmFadeTween
 	if _result ~= nil then
 		_result:Cancel()
 	end
-	bgmFadeTween = TweenService:Create(bgmPlayer, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	bgmFadeTween = TweenService:Create(bgmFader, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Volume = targetVolume,
 	})
 	bgmFadeTween:Play()
@@ -58,7 +62,7 @@ local function resumeBgm()
 		return nil
 	end
 	bgmDucked = false
-	fadeBgm(AudioConfig.bgm.volume, BGM_RESUME)
+	fadeBgm(1, BGM_RESUME)
 end
 local function playBgmTrack(index)
 	if not bgmPlayer then
@@ -92,13 +96,21 @@ local MusicController = {
 			local output = Instance.new("AudioDeviceOutput")
 			output.Player = Players.LocalPlayer
 			output.Parent = player
+			-- Fader sur la branche audible uniquement : le duck s'applique ici.
+			local fader = Instance.new("AudioFader")
+			fader.Name = "BGMFader"
+			fader.Parent = player
 			local analyzer = Instance.new("AudioAnalyzer")
 			analyzer.SpectrumEnabled = true
 			analyzer.WindowSize = Enum.AudioWindowSize.Medium
 			analyzer.Parent = player
-			createWire(player, output, player)
+			-- Audible : player -> fader -> output (le fader ducke sans toucher le spectre).
+			createWire(player, fader, player)
+			createWire(fader, output, player)
+			-- Analyse : tap direct sur le player (avant le fader) -> spectre constant.
 			createWire(player, analyzer, player)
 			bgmPlayer = player
+			bgmFader = fader
 			bgmAnalyzer = analyzer
 			if #playlist > 1 then
 				player.Ended:Connect(function()

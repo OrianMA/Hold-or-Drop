@@ -138,11 +138,19 @@ once a server event fires.
   prompt **disabled** and publishes `AssignedRoom` / `InSession` attributes per player.
   `RoomPromptController` (client) enables only the local player's prompt — client-side
   writes don't replicate. Server still validates ownership on `Triggered`.
+- **Slot colours** (`modules/RoomColors.ts`): the single source of truth for the per-slot
+  palette (P1 blue, P2 red, P3 yellow, P4 green, P5 purple; empty = grey), shared by the
+  neon pipes and the spotlights below so the two never drift — **edit here to retune**.
 - **Neon pipe colour** (`modules/NeonPipeColors.ts`): each room slot has a matching
   `Workspace/Environment/NeonPipe/P{n}` folder of Neon parts. `RoomService` greys every
   pipe at init (empty baseline), tints a slot's pipe its colour on `assign`, and greys it
-  again on `release`. Colours are slot-keyed constants at the top of the module
-  (P1 blue, P2 red, P3 yellow, P4 green, P5 purple; empty = grey) — edit there to retune.
+  again on `release`.
+- **Room spotlight** (`modules/RoomSpotlights.ts`): each room holds a
+  `Workspace/PlayerZones/P{n}/SpotLight` lamp — a Neon `LightSource` lens wrapping a
+  `SurfaceLight` cone. Mirroring the neon pipe, `RoomService` turns every lamp **off** at
+  init, lights it in the slot colour (lens + `SurfaceLight`, `Enabled=true`) on `assign`,
+  and switches it off (grey lens, `SurfaceLight` disabled — no projected light) on
+  `release`. The housing parts are left untouched.
 - **Owner display** (optional `OwnerDisplay` model in the room folder):
   - `NamePart/.../NameText` — server writes `"Base of {PlayerName}"` on assign and clears
     it on release; the SurfaceGui replicates so everyone sees the occupant's name.
@@ -421,9 +429,13 @@ RemoteEvent, no client script**.
 - **Podium** (`PodiumDisplay`): three rigs `PodiumRig1..3` (cloned from `ServerStorage/
   RigTemplate`) on the three pedestals (tallest = 1st). Per refresh, per slot: if the occupant
   **changed**, `ApplyDescription(GetHumanoidDescriptionFromUserId(userId))` (the costly call,
-  **gated on change** — pattern from `CharacterService`), then re-anchor the root and **re-seat
-  the rig feet-on-pedestal from its live bounding box** (robust to the avatar rescale + the
-  template's custom pivot); update the `Nameplate` BillboardGui (name + cash); keep the loop
+  **gated on change** — pattern from `CharacterService`) with the player's description **scale
+  fields overridden by the template's Humanoid scale** (`BodyHeightScale` etc., captured at
+  build) so the rig keeps the **editor-authored size**, then re-anchor the root and **re-seat
+  the rig feet-on-pedestal from its live bounding box** (robust to the rescale + the template's
+  custom pivot); fill the `Nameplate` BillboardGui (**Studio-authored on each rig's
+  `HumanoidRootPart`** — survives `ApplyDescription`, so it is restyled in-scene; the renderer
+  only writes `NameLabel`/`ValueLabel`) with name + cash; keep the loop
   track playing — **slot 1 walks, slots 2 & 3 idle**. A transient avatar-fetch failure does not
   record the occupant, so the next refresh retries. Empty slots (fewer than 3 ranked) hide the
   rig (parented out). The player-only `Animate` LocalScript is stripped from the template; only

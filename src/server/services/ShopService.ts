@@ -2,6 +2,7 @@ import { Events } from "shared/Event";
 import { ITEMS, ShopItemId, isAtCap, priceForItem } from "shared/ShopConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { PlayerDataService } from "./PlayerDataService";
+import { NeonPipeColors } from "server/modules/NeonPipeColors";
 
 // Authoritative shop purchases. The client pre-checks affordability for instant
 // feedback, but every purchase is fully re-validated here — never trust the
@@ -31,6 +32,10 @@ function handlePurchase(player: Player, itemId: unknown): void {
 
 	PlayerDataService.add(player, "Money", -price);
 	PlayerProgressionService.addLevel(player, item.stat, item.quantity);
+
+	// Réaction visuelle : un segment file dans les tubes néon du joueur (shop → bouton).
+	const roomName = player.GetAttribute("AssignedRoom");
+	if (typeIs(roomName, "string") && roomName !== "") NeonPipeColors.pulse(roomName);
 }
 
 export const ShopService = {

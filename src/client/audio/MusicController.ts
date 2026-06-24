@@ -8,9 +8,12 @@ import { AudioConfig } from "shared/AudioConfig";
 const BGM_FADE_OUT = 0.4;
 const BGM_RESUME = 3;
 
-// BGM via la nouvelle API audio : AudioPlayer -> AudioDeviceOutput (audible) et
-// AudioPlayer -> AudioAnalyzer (analyse spectre pour le visualiser de lobby).
+// BGM via la nouvelle API audio : AudioPlayer -> AudioFader -> AudioDeviceOutput (audible)
+// et AudioPlayer -> AudioAnalyzer (analyse spectre, tap AVANT le fader). Le duck agit sur
+// le fader, pas sur le player : la branche audible se coupe mais le spectre reste complet,
+// donc le visualiser continue de tourner pendant le run.
 let bgmPlayer: AudioPlayer | undefined;
+let bgmFader: AudioFader | undefined;
 let bgmAnalyzer: AudioAnalyzer | undefined;
 let bgmIndex = 0;
 let bgmFadeTween: Tween | undefined;
@@ -38,13 +41,14 @@ function createWire(source: Instance, target: Instance, parent: Instance): void 
 	wire.Parent = parent;
 }
 
-// Fait fondre le volume de la BGM vers une cible. Annule tout fade en cours pour
-// qu'un hold -> release rapide ne laisse pas deux tweens se battre sur Volume.
+// Fait fondre le volume audible de la BGM vers une cible (sur le fader, multiplicateur
+// 1 = plein / 0 = muet). Annule tout fade en cours pour qu'un hold -> release rapide ne
+// laisse pas deux tweens se battre sur Volume. Le spectre n'est pas affecté (tap avant le fader).
 function fadeBgm(targetVolume: number, duration: number): void {
-	if (!bgmPlayer) return;
+	if (!bgmFader) return;
 	bgmFadeTween?.Cancel();
 	bgmFadeTween = TweenService.Create(
-		bgmPlayer,
+		bgmFader,
 		new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ Volume: targetVolume },
 	);
@@ -55,7 +59,7 @@ function fadeBgm(targetVolume: number, duration: number): void {
 function resumeBgm(): void {
 	if (!bgmDucked) return;
 	bgmDucked = false;
-	fadeBgm(AudioConfig.bgm.volume, BGM_RESUME);
+	fadeBgm(1, BGM_RESUME);
 }
 
 function playBgmTrack(index: number): void {
@@ -87,15 +91,24 @@ export const MusicController = {
 			output.Player = Players.LocalPlayer;
 			output.Parent = player;
 
+			// Fader sur la branche audible uniquement : le duck s'applique ici.
+			const fader = new Instance("AudioFader");
+			fader.Name = "BGMFader";
+			fader.Parent = player;
+
 			const analyzer = new Instance("AudioAnalyzer");
 			analyzer.SpectrumEnabled = true;
 			analyzer.WindowSize = Enum.AudioWindowSize.Medium;
 			analyzer.Parent = player;
 
-			createWire(player, output, player);
+			// Audible : player -> fader -> output (le fader ducke sans toucher le spectre).
+			createWire(player, fader, player);
+			createWire(fader, output, player);
+			// Analyse : tap direct sur le player (avant le fader) -> spectre constant.
 			createWire(player, analyzer, player);
 
 			bgmPlayer = player;
+			bgmFader = fader;
 			bgmAnalyzer = analyzer;
 
 			if (playlist.size() > 1) {

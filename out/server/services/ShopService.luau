@@ -7,6 +7,7 @@ local isAtCap = _ShopConfig.isAtCap
 local priceForItem = _ShopConfig.priceForItem
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
+local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 -- Authoritative shop purchases. The client pre-checks affordability for instant
 -- feedback, but every purchase is fully re-validated here — never trust the
 -- client. Cash only; Robux buttons are not wired yet.
@@ -36,6 +37,11 @@ local function handlePurchase(player, itemId)
 	end
 	PlayerDataService:add(player, "Money", -price)
 	PlayerProgressionService:addLevel(player, item.stat, item.quantity)
+	-- Réaction visuelle : un segment file dans les tubes néon du joueur (shop → bouton).
+	local roomName = player:GetAttribute("AssignedRoom")
+	if type(roomName) == "string" and roomName ~= "" then
+		NeonPipeColors:pulse(roomName)
+	end
 end
 local ShopService = {
 	init = function(self)
