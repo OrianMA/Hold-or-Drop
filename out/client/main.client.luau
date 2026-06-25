@@ -10,12 +10,14 @@ local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").Mone
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
+local initCommunityJoin = TS.import(script, script.Parent, "rooms", "CommunityJoinController").init
 local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
 local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
+local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
@@ -34,6 +36,7 @@ MoneyDisplay:init()
 initInformationText()
 initRoomPrompts()
 initOwnerIndicator()
+initCommunityJoin()
 initButtonMenu(setupButtonInGame)
 initShopMenu()
 initShopItems()
@@ -41,6 +44,7 @@ initBoostShop()
 initRebirthMenu()
 initRebirthController()
 initHudProgression()
+initCostTextRotator()
 MusicController:init()
 initAudioVisualizer()
 initNeonPipePulse()
