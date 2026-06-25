@@ -32,6 +32,17 @@ let currentTarget = 0;
 let initialized = false;
 let activeTween: Tween | undefined;
 
+// Other HUD elements (e.g. the rebirth progression bar) can mirror the *displayed*
+// money so they animate in perfect lockstep with this counter — including the
+// cosmetic count-up driven by `addVisual` during the payout. Each subscriber is
+// called on every render step, and once immediately on subscribe with the current
+// value.
+const listeners: Array<(value: number) => void> = [];
+
+function notify(value: number): void {
+	for (const fn of listeners) fn(value);
+}
+
 function findLabel(): TextLabel | undefined {
 	const moneyParent = InGameUIController.getMoneyParent();
 	if (!moneyParent) return undefined;
@@ -99,6 +110,7 @@ export const MoneyDisplay = {
 		proxy.Changed.Connect((v) => {
 			displayValue = v;
 			render(v);
+			notify(v);
 		});
 
 		refresh();
@@ -118,5 +130,13 @@ export const MoneyDisplay = {
 	// server credit lands.
 	addVisual(amount: number): void {
 		tweenTo(currentTarget + amount);
+	},
+
+	// Subscribe to the displayed money value (animated). Fires on every render step
+	// and once immediately with the current value. Used by the HUD progression bar
+	// so it counts up in sync with this money counter.
+	subscribe(fn: (value: number) => void): void {
+		listeners.push(fn);
+		fn(displayValue);
 	},
 };

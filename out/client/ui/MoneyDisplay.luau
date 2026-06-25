@@ -31,6 +31,17 @@ local displayValue = 0
 local currentTarget = 0
 local initialized = false
 local activeTween
+-- Other HUD elements (e.g. the rebirth progression bar) can mirror the *displayed*
+-- money so they animate in perfect lockstep with this counter — including the
+-- cosmetic count-up driven by `addVisual` during the payout. Each subscriber is
+-- called on every render step, and once immediately on subscribe with the current
+-- value.
+local listeners = {}
+local function notify(value)
+	for _, fn in listeners do
+		fn(value)
+	end
+end
 local function findLabel()
 	local moneyParent = InGameUIController:getMoneyParent()
 	if not moneyParent then
@@ -109,6 +120,7 @@ local MoneyDisplay = {
 		proxy.Changed:Connect(function(v)
 			displayValue = v
 			render(v)
+			notify(v)
 		end)
 		refresh()
 		player:GetAttributeChangedSignal(ATTRIBUTE):Connect(refresh)
@@ -122,6 +134,11 @@ local MoneyDisplay = {
 	end,
 	addVisual = function(self, amount)
 		tweenTo(currentTarget + amount)
+	end,
+	subscribe = function(self, fn)
+		local _fn = fn
+		table.insert(listeners, _fn)
+		fn(displayValue)
 	end,
 }
 return {
