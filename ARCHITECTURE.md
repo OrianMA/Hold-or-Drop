@@ -283,6 +283,9 @@ server credits `Money` and hides the popup.
   `BringBackPlayerCamera` (return to character + reset to Custom).
 - `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
   popups inside the `InGameUI` ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
+- `CostTextRotator` (`ui/CostTextRotator.ts`): cosmetic — a single looping
+  `TweenService` tween wobbles `HUD/BottomList/MultiplierBuyButton/CostMovingtext`
+  between +10° and −10° (Sine in/out, reversing, `RepeatCount -1`) to draw the eye.
 - `HudProgressionController` (`behaviors/HudProgressionController.ts`): drives the HUD
   rebirth-progress bar `HUD/BottomList/ProgressionBar` (`CurrentProgressionFrame` fill +
   `BackgroundFrame/MoneyNeededText`). Shows the same data as the Rebirth menu bar (§6.9),
