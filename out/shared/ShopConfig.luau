@@ -3,10 +3,14 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
 local BASE_CASH = _ShopBalance.BASE_CASH
+local COMMUNITY = _ShopBalance.COMMUNITY
+local MONEY_TIERS = _ShopBalance.MONEY_TIERS
 local MULTIPLIER = _ShopBalance.MULTIPLIER
 local PRICE_GROWTH = _ShopBalance.PRICE_GROWTH
 local REBIRTH = _ShopBalance.REBIRTH
 local SAFETY = _ShopBalance.SAFETY
+local SAFETY_PASS = _ShopBalance.SAFETY_PASS
+local SAFETY_TOTAL_CAP = _ShopBalance.SAFETY_TOTAL_CAP
 -- ── Shop — structure + formulas ───────────────────────────────────────────────
 -- Pure logic, no side effects. Imported by both the server (purchase authority)
 -- and the client (display). Levels are the persisted source of truth
@@ -144,12 +148,41 @@ local function rebirthMult(rebirths)
 	end
 	return multTable[lastIndex + 1] + (r - lastIndex) * REBIRTH.multTail
 end
+-- ── Money multipliers — additive bonus model (pure, shared client/server) ──────
+-- ADDITIVE: each "×N" factor contributes "+(N-1)", so a lone factor keeps its
+-- labelled value and a brand-new player stays ×1. MultRebirth (≥1) carries the
+-- base 1. Any future independent multiplier adds its own (mult-1) the same way.
+--   moneyMult = MultRebirth + (inCommunity ? COMMUNITY.mult-1 : 0) + (moneyTierMult-1)
+local function moneyMult(multRebirth, moneyTierMult, inCommunity)
+	local communityBonus = if inCommunity then COMMUNITY.mult - 1 else 0
+	local tierBonus = moneyTierMult - 1
+	return multRebirth + communityBonus + tierBonus
+end
+-- Effective safety used by the risk loop: shop Safety + the safety game pass,
+-- capped (SAFETY_TOTAL_CAP) so the risk can never reach 0.
+local function effectiveSafety(shopSafety, hasSafetyPass)
+	local total = shopSafety + (if hasSafetyPass then SAFETY_PASS.add else 0)
+	return math.min(total, SAFETY_TOTAL_CAP)
+end
+-- The next money tier strictly above `currentMult` (for the shop upsell), or
+-- undefined if already at the top. Tiers are a ladder — the highest owned wins.
+local function nextMoneyTier(currentMult)
+	for _, tier in MONEY_TIERS do
+		if tier.mult > currentMult then
+			return tier
+		end
+	end
+	return nil
+end
 return {
 	priceForLevel = priceForLevel,
 	priceForItem = priceForItem,
 	isAtCap = isAtCap,
 	rebirthCost = rebirthCost,
 	rebirthMult = rebirthMult,
+	moneyMult = moneyMult,
+	effectiveSafety = effectiveSafety,
+	nextMoneyTier = nextMoneyTier,
 	STATS = STATS,
 	ITEMS = ITEMS,
 	ITEM_ORDER = ITEM_ORDER,

@@ -1,5 +1,15 @@
 import { FormatNumber } from "./NumberFormat";
-import { BASE_CASH, MULTIPLIER, PRICE_GROWTH, REBIRTH, SAFETY } from "./ShopBalance";
+import {
+	BASE_CASH,
+	COMMUNITY,
+	MONEY_TIERS,
+	MULTIPLIER,
+	PRICE_GROWTH,
+	REBIRTH,
+	SAFETY,
+	SAFETY_PASS,
+	SAFETY_TOTAL_CAP,
+} from "./ShopBalance";
 
 // ── Shop — structure + formulas ───────────────────────────────────────────────
 // Pure logic, no side effects. Imported by both the server (purchase authority)
@@ -120,4 +130,31 @@ export function rebirthMult(rebirths: number): number {
 	const lastIndex = multTable.size() - 1;
 	if (r <= lastIndex) return multTable[r];
 	return multTable[lastIndex] + (r - lastIndex) * REBIRTH.multTail;
+}
+
+// ── Money multipliers — additive bonus model (pure, shared client/server) ──────
+// ADDITIVE: each "×N" factor contributes "+(N-1)", so a lone factor keeps its
+// labelled value and a brand-new player stays ×1. MultRebirth (≥1) carries the
+// base 1. Any future independent multiplier adds its own (mult-1) the same way.
+//   moneyMult = MultRebirth + (inCommunity ? COMMUNITY.mult-1 : 0) + (moneyTierMult-1)
+export function moneyMult(multRebirth: number, moneyTierMult: number, inCommunity: boolean): number {
+	const communityBonus = inCommunity ? COMMUNITY.mult - 1 : 0;
+	const tierBonus = moneyTierMult - 1;
+	return multRebirth + communityBonus + tierBonus;
+}
+
+// Effective safety used by the risk loop: shop Safety + the safety game pass,
+// capped (SAFETY_TOTAL_CAP) so the risk can never reach 0.
+export function effectiveSafety(shopSafety: number, hasSafetyPass: boolean): number {
+	const total = shopSafety + (hasSafetyPass ? SAFETY_PASS.add : 0);
+	return math.min(total, SAFETY_TOTAL_CAP);
+}
+
+// The next money tier strictly above `currentMult` (for the shop upsell), or
+// undefined if already at the top. Tiers are a ladder — the highest owned wins.
+export function nextMoneyTier(currentMult: number): { mult: number; gamePassId: number } | undefined {
+	for (const tier of MONEY_TIERS) {
+		if (tier.mult > currentMult) return tier;
+	}
+	return undefined;
 }

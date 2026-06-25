@@ -7,6 +7,8 @@ local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"
 local _ShopConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig")
 local STATS = _ShopConfig.STATS
 local rebirthMult = _ShopConfig.rebirthMult
+local moneyMult = _ShopConfig.moneyMult
+local effectiveSafety = _ShopConfig.effectiveSafety
 -- Per-player progression. The LEVELS are the persisted source of truth; the
 -- effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
 -- the levels via shared/ShopConfig and mirrored to attributes so the owning
@@ -23,12 +25,22 @@ local STAT_LIST = { "BaseCash", "Multiplier", "Safety" }
 -- is derived from it like the stat values are derived from their levels.
 local REBIRTHS_KEY = "Rebirths"
 local MULT_REBIRTH_ATTR = "MultRebirth"
+-- Boost input attributes (written by BoostService; defaulted here so deriveValues
+-- is safe before BoostService resolves). game.ts reads the derived attrs below.
+local IN_COMMUNITY_ATTR = "InCommunity"
+local MONEY_TIER_MULT_ATTR = "MoneyTierMult"
+local HAS_SAFETY_PASS_ATTR = "HasSafetyPass"
+-- Derived, replicated for the game loop / billboard / shop readout.
+local MONEY_MULT_ATTR = "MoneyMult"
+local EFFECTIVE_BASE_CASH_ATTR = "EffectiveBaseCash"
 -- Value attributes the rest of the game reads (names unchanged from before).
 -- Fallback values if a value attribute is somehow missing (matches level 0).
 local DEFAULT_VALUES = {
 	BaseCash = 100,
 	Multiplier = 0.1,
 	AdditionalSecurity = 0,
+	EffectiveBaseCash = 100,
+	MoneyMult = 1,
 }
 -- Schema changed from values → levels, so the store name is bumped to _v2.
 local STORE_NAME = "PlayerProgression_v2"
@@ -48,6 +60,7 @@ local function defaultLevels()
 	return levels
 end
 -- Sets both the level attribute and the derived value attribute for every stat.
+local deriveValues
 local function applyLevels(player, levels)
 	for _, stat in STAT_LIST do
 		local cfg = STATS[stat]
@@ -66,6 +79,42 @@ local function applyLevels(player, levels)
 	local rebirths = _condition
 	player:SetAttribute(REBIRTHS_KEY, rebirths)
 	player:SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(rebirths))
+	deriveValues(player)
+end
+-- Folds the boost inputs into the replicated derived values. Additive money
+-- multiplier (shared/ShopConfig.moneyMult) → EffectiveBaseCash; safety pass →
+-- AdditionalSecurity. Reads level/rebirth/input attributes already set on the
+-- player. Called after every state change (load, purchase, rebirth, boost
+-- resolve) so the billboard / game loop / shop read one source of truth.
+function deriveValues(player)
+	local _condition = (player:GetAttribute(STATS.BaseCash.levelAttribute))
+	if _condition == nil then
+		_condition = 0
+	end
+	local baseCashLevel = _condition
+	local rawBase = STATS.BaseCash.valueFor(baseCashLevel)
+	local _condition_1 = (player:GetAttribute(MULT_REBIRTH_ATTR))
+	if _condition_1 == nil then
+		_condition_1 = rebirthMult(0)
+	end
+	local multRebirth = _condition_1
+	local _condition_2 = (player:GetAttribute(MONEY_TIER_MULT_ATTR))
+	if _condition_2 == nil then
+		_condition_2 = 1
+	end
+	local tierMult = _condition_2
+	local inCommunity = player:GetAttribute(IN_COMMUNITY_ATTR) == true
+	local mMult = moneyMult(multRebirth, tierMult, inCommunity)
+	player:SetAttribute(MONEY_MULT_ATTR, mMult)
+	player:SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult))
+	local _condition_3 = (player:GetAttribute(STATS.Safety.levelAttribute))
+	if _condition_3 == nil then
+		_condition_3 = 0
+	end
+	local safetyLevel = _condition_3
+	local rawSafety = STATS.Safety.valueFor(safetyLevel)
+	local hasPass = player:GetAttribute(HAS_SAFETY_PASS_ATTR) == true
+	player:SetAttribute(STATS.Safety.valueAttribute, effectiveSafety(rawSafety, hasPass))
 end
 local function loadLevels(player)
 	if RESET_DATA_CHEAT then
@@ -184,6 +233,7 @@ local PlayerProgressionService = {
 		nextLevel = math.max(0, math.floor(nextLevel))
 		player:SetAttribute(cfg.levelAttribute, nextLevel)
 		player:SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel))
+		deriveValues(player)
 	end,
 	getRebirths = function(self, player)
 		local _condition = (player:GetAttribute(REBIRTHS_KEY))
@@ -208,6 +258,10 @@ local PlayerProgressionService = {
 		local nextRebirths = self:getRebirths(player) + 1
 		player:SetAttribute(REBIRTHS_KEY, nextRebirths)
 		player:SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths))
+		deriveValues(player)
+	end,
+	recompute = function(self, player)
+		deriveValues(player)
 	end,
 }
 return {

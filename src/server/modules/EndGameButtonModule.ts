@@ -40,7 +40,6 @@ export const EndGameButtonModule = {
 		multiplier: number,
 		earned: number,
 		lossMultiplier: number,
-		multRebirth: number,
 	): void {
 		ButtonSessionService.cleanup(player);
 		UiService.HideCurrent(player);
@@ -61,7 +60,7 @@ export const EndGameButtonModule = {
 			}
 
 			UiService.Show(player, PopupType.ButtonFinishGame);
-			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier, lossMultiplier, multRebirth);
+			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier, lossMultiplier);
 		});
 	},
 

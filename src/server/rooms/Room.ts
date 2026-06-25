@@ -27,6 +27,7 @@ const OWNER_DISPLAY = "OwnerDisplay";
 const NAME_PART = "NamePart";
 const NAME_TEXT_LABEL = "NameText";
 const OWNER_INDICATOR_PART = "OwnerIndicatorPart";
+const COMMUNITY_JOIN_PART = "CommunityJoinPart";
 
 export class Room {
 	readonly name: string;
@@ -37,6 +38,7 @@ export class Room {
 	readonly playerPosPart!: BasePart;
 	readonly cameraPosPart!: BasePart;
 	readonly billboardGui: BillboardGui | undefined;
+	readonly communityJoinPrompt: ProximityPrompt | undefined;
 	// The room's spawn marker — the occupant is teleported here on every spawn.
 	// A plain Part is fine (it's not used as a real SpawnLocation). Optional.
 	readonly spawnPart: BasePart | undefined;
@@ -125,6 +127,13 @@ export class Room {
 			const billboard = indicatorPart?.FindFirstChildOfClass("BillboardGui");
 			if (billboard) billboard.Enabled = false;
 		}
+
+		// Optional "join the community for ×2" prompt — a CommunityJoinPart sibling
+		// of the ButtonModel, holding a ProximityPrompt. RoomService wires its
+		// Triggered to BoostService (re-checks the triggerer's group membership).
+		const communityJoinPart = folder.FindFirstChild(COMMUNITY_JOIN_PART);
+		const joinPrompt = communityJoinPart?.FindFirstChildOfClass("ProximityPrompt");
+		if (joinPrompt) this.communityJoinPrompt = joinPrompt;
 	}
 
 	private invalidate(reason: string): void {

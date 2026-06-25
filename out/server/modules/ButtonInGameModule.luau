@@ -100,16 +100,13 @@ end
 local function startButtonGame(player, session)
 	local room = session.room
 	local buttonModel = room.buttonModel
-	-- BaseCash + Multiplier now live on the player (PlayerProgressionService),
-	-- not on the button. Read once at game start — held for the whole session.
-	local baseCash = PlayerProgressionService:get(player, "BaseCash")
+	-- EffectiveBaseCash already folds in every money multiplier (rebirth + money
+	-- game-pass tier + community), additively. Read once — held for the session so
+	-- a mid-run boost change can't alter an in-progress hold.
+	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash")
 	local multiplierPerSecond = PlayerProgressionService:get(player, "Multiplier")
-	-- Safety (0..0.5) scales the explosion risk down multiplicatively. Read once
-	-- so mid-run shop purchases can't change the odds of an in-progress hold.
+	-- Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
 	local safety = PlayerProgressionService:get(player, "AdditionalSecurity")
-	-- Permanent rebirth multiplier — applied to the final payout. Read once so a
-	-- mid-run rebirth can't change the value of an in-progress hold.
-	local multRebirth = PlayerProgressionService:getMultRebirth(player)
 	-- Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
 	local currentMultiplier = STARTING_MULTIPLIER
 	local isActive = true
@@ -123,10 +120,10 @@ local function startButtonGame(player, session)
 		end
 		isActive = false
 		releaseConn:Disconnect()
-		local earned = math.floor(baseCash * currentMultiplier * multRebirth)
+		local earned = math.floor(baseCash * currentMultiplier)
 		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 		ConfettiBurst:play(buttonModel)
-		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth)
+		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
 	-- Increment plat : chaque seconde, currentMultiplier += multiplierPerSecond
@@ -173,10 +170,10 @@ local function startButtonGame(player, session)
 				task.wait(0.2)
 				gracePeriodConn:Disconnect()
 				if cancelledByPlayer then
-					local earned = math.floor(baseCash * currentMultiplier * multRebirth)
+					local earned = math.floor(baseCash * currentMultiplier)
 					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 					ConfettiBurst:play(buttonModel)
-					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth)
+					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 				else
 					local character = player.Character
 					local _result = character
@@ -268,9 +265,9 @@ local function startButtonGame(player, session)
 							humanoid.JumpPower = origJumpPower
 							humanoid.JumpHeight = origJumpHeight
 						end
-						local earned = math.floor(baseCash * currentMultiplier * multRebirth)
+						local earned = math.floor(baseCash * currentMultiplier)
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth)
+						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 					else
 						if hrp then
 							hrp.Anchored = false
@@ -289,9 +286,9 @@ local function startButtonGame(player, session)
 							humanoid.Health = 0
 						end
 						Events.PlayerKilledEvent:FireClient(player)
-						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier * multRebirth)
+						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)
 						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER, multRebirth)
+						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER)
 					end
 				end
 				return nil

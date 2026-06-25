@@ -1,6 +1,6 @@
 import { DataStoreService, Players } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
-import { ShopStat, STATS, rebirthMult } from "shared/ShopConfig";
+import { ShopStat, STATS, rebirthMult, moneyMult, effectiveSafety } from "shared/ShopConfig";
 
 // Per-player progression. The LEVELS are the persisted source of truth; the
 // effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
@@ -21,14 +21,25 @@ const STAT_LIST: readonly ShopStat[] = ["BaseCash", "Multiplier", "Safety"];
 const REBIRTHS_KEY = "Rebirths";
 const MULT_REBIRTH_ATTR = "MultRebirth";
 
+// Boost input attributes (written by BoostService; defaulted here so deriveValues
+// is safe before BoostService resolves). game.ts reads the derived attrs below.
+const IN_COMMUNITY_ATTR = "InCommunity";
+const MONEY_TIER_MULT_ATTR = "MoneyTierMult";
+const HAS_SAFETY_PASS_ATTR = "HasSafetyPass";
+// Derived, replicated for the game loop / billboard / shop readout.
+const MONEY_MULT_ATTR = "MoneyMult";
+const EFFECTIVE_BASE_CASH_ATTR = "EffectiveBaseCash";
+
 // Value attributes the rest of the game reads (names unchanged from before).
-export type ProgressionKey = "BaseCash" | "Multiplier" | "AdditionalSecurity";
+export type ProgressionKey = "BaseCash" | "Multiplier" | "AdditionalSecurity" | "EffectiveBaseCash" | "MoneyMult";
 
 // Fallback values if a value attribute is somehow missing (matches level 0).
 const DEFAULT_VALUES: { readonly [K in ProgressionKey]: number } = {
 	BaseCash: 100,
 	Multiplier: 0.1,
 	AdditionalSecurity: 0,
+	EffectiveBaseCash: 100,
+	MoneyMult: 1,
 };
 
 type LevelData = { [levelAttribute: string]: number };
@@ -63,6 +74,29 @@ function applyLevels(player: Player, levels: LevelData): void {
 	const rebirths = levels[REBIRTHS_KEY] ?? 0;
 	player.SetAttribute(REBIRTHS_KEY, rebirths);
 	player.SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(rebirths));
+	deriveValues(player);
+}
+
+// Folds the boost inputs into the replicated derived values. Additive money
+// multiplier (shared/ShopConfig.moneyMult) → EffectiveBaseCash; safety pass →
+// AdditionalSecurity. Reads level/rebirth/input attributes already set on the
+// player. Called after every state change (load, purchase, rebirth, boost
+// resolve) so the billboard / game loop / shop read one source of truth.
+function deriveValues(player: Player): void {
+	const baseCashLevel = (player.GetAttribute(STATS.BaseCash.levelAttribute) as number | undefined) ?? 0;
+	const rawBase = STATS.BaseCash.valueFor(baseCashLevel);
+	const multRebirth = (player.GetAttribute(MULT_REBIRTH_ATTR) as number | undefined) ?? rebirthMult(0);
+	const tierMult = (player.GetAttribute(MONEY_TIER_MULT_ATTR) as number | undefined) ?? 1;
+	const inCommunity = player.GetAttribute(IN_COMMUNITY_ATTR) === true;
+
+	const mMult = moneyMult(multRebirth, tierMult, inCommunity);
+	player.SetAttribute(MONEY_MULT_ATTR, mMult);
+	player.SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult));
+
+	const safetyLevel = (player.GetAttribute(STATS.Safety.levelAttribute) as number | undefined) ?? 0;
+	const rawSafety = STATS.Safety.valueFor(safetyLevel);
+	const hasPass = player.GetAttribute(HAS_SAFETY_PASS_ATTR) === true;
+	player.SetAttribute(STATS.Safety.valueAttribute, effectiveSafety(rawSafety, hasPass));
 }
 
 function loadLevels(player: Player): LevelData | undefined {
@@ -136,7 +170,7 @@ export const PlayerProgressionService = {
 		});
 	},
 
-	// Reads a derived value (BaseCash / Multiplier / AdditionalSecurity).
+	// Reads a derived value (BaseCash / Multiplier / AdditionalSecurity / EffectiveBaseCash / MoneyMult).
 	get(player: Player, key: ProgressionKey): number {
 		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_VALUES[key];
 	},
@@ -155,6 +189,7 @@ export const PlayerProgressionService = {
 		nextLevel = math.max(0, math.floor(nextLevel));
 		player.SetAttribute(cfg.levelAttribute, nextLevel);
 		player.SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel));
+		deriveValues(player);
 	},
 
 	// Reads the persisted rebirth count.
@@ -178,5 +213,13 @@ export const PlayerProgressionService = {
 		const nextRebirths = this.getRebirths(player) + 1;
 		player.SetAttribute(REBIRTHS_KEY, nextRebirths);
 		player.SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths));
+		deriveValues(player);
+	},
+
+	// Re-derives MoneyMult / EffectiveBaseCash / AdditionalSecurity from the
+	// current level + rebirth + boost-input attributes. Called by BoostService
+	// after it writes the input attributes (group / game-pass ownership).
+	recompute(player: Player): void {
+		deriveValues(player);
 	},
 };

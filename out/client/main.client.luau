@@ -12,8 +12,10 @@ local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptCon
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
 local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
+local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
+local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
@@ -35,8 +37,10 @@ initOwnerIndicator()
 initButtonMenu(setupButtonInGame)
 initShopMenu()
 initShopItems()
+initBoostShop()
 initRebirthMenu()
 initRebirthController()
+initHudProgression()
 MusicController:init()
 initAudioVisualizer()
 initNeonPipePulse()

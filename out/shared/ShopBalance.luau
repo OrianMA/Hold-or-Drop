@@ -51,10 +51,64 @@ local REBIRTH = {
 	multTable = { 1, 2, 3, 3.5, 4, 4.5, 4.75, 5 },
 	multTail = 0.25,
 }
+-- ── Money multipliers (3 independent additive factors) ────────────────────────
+-- Folded into BaseCash via shared/ShopConfig.moneyMult (additive bonus model:
+-- each "×N" adds +(N-1)). Game-pass IDs are 0 until authored on the Roblox
+-- dashboard — an id of 0 is INERT (treated as not owned, no web call).
+-- Community ×2 — membership of the experience's Roblox group, claimed via the
+-- CommunityJoinPart ProximityPrompt in each room.
+local COMMUNITY = {
+	groupId = 963505568,
+	mult = 2,
+}
+-- Money game-pass ladder — the HIGHEST owned tier wins (not stacked). Each value
+-- is the TOTAL multiplier of that tier (×2 … ×1024).
+local MONEY_TIERS = { {
+	mult = 2,
+	gamePassId = 0,
+}, {
+	mult = 4,
+	gamePassId = 0,
+}, {
+	mult = 8,
+	gamePassId = 0,
+}, {
+	mult = 16,
+	gamePassId = 0,
+}, {
+	mult = 32,
+	gamePassId = 0,
+}, {
+	mult = 64,
+	gamePassId = 0,
+}, {
+	mult = 128,
+	gamePassId = 0,
+}, {
+	mult = 256,
+	gamePassId = 0,
+}, {
+	mult = 512,
+	gamePassId = 0,
+}, {
+	mult = 1024,
+	gamePassId = 0,
+} }
+-- Safety game pass — flat risk reduction added on top of the shop Safety.
+local SAFETY_PASS = {
+	add = 0.2,
+	gamePassId = 0,
+}
+-- Cumulative safety cap: shop (0.50) + pass (0.20). Keeps risk floored at ×0.30.
+local SAFETY_TOTAL_CAP = 0.7
 return {
 	PRICE_GROWTH = PRICE_GROWTH,
 	BASE_CASH = BASE_CASH,
 	MULTIPLIER = MULTIPLIER,
 	SAFETY = SAFETY,
 	REBIRTH = REBIRTH,
+	COMMUNITY = COMMUNITY,
+	MONEY_TIERS = MONEY_TIERS,
+	SAFETY_PASS = SAFETY_PASS,
+	SAFETY_TOTAL_CAP = SAFETY_TOTAL_CAP,
 }
