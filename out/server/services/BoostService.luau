@@ -93,7 +93,7 @@ local BoostService = {
 		if isIn and not wasIn then
 			Events.InformationTextEvent:FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR)
 		elseif not isIn then
-			Events.InformationTextEvent:FireClient(player, "Rejoins notre communauté Roblox pour x2 argent !", HINT_COLOR)
+			Events.InformationTextEvent:FireClient(player, "Rejoins la communauté Grorian's Studio pour x2 argent !", HINT_COLOR)
 		end
 	end,
 }

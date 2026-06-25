@@ -50,7 +50,7 @@ src/
 │   ├── services/
 │   │   ├── index.ts         # Service registry + boot ORDER (critical)
 │   │   ├── RoomService… (rooms/) PlayerDataService, PlayerProgressionService,
-│   │   ├── ShopService, ButtonTriggerService, ButtonSessionService, CharacterService, UiService
+│   │   ├── ShopService, MoneyProductService, ButtonTriggerService, ButtonSessionService, CharacterService, UiService
 │   ├── rooms/
 │   │   ├── Room.ts          # One room wrapper (parts, ownership, billboard)
 │   │   └── RoomService.ts   # player ↔ room assignment
@@ -69,7 +69,7 @@ src/
 ├── client/                  # StarterPlayerScripts — visuals, input, camera
 │   ├── main.client.ts       # Entry: wires up all client behaviors
 │   ├── behaviors/           # ButtonMenu / ButtonInGame / EndGameButton / Shop behaviors
-│   │   └── ShopBehavior (open/close) + ShopItemsController (the 4 upgrade buttons)
+│   │   └── ShopBehavior (open/close), ShopItemsController (4 upgrade buttons), ShopMoneyBuyBehavior (Robux money popup)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
 │   ├── audio/MusicController.ts  # BGM playlist + button-hold music
 │   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, etc.)
@@ -80,6 +80,7 @@ src/
     ├── AudioConfig.ts       # All sound asset IDs/volumes (music + SFX)
     ├── ShopBalance.ts       # Shop economy numbers (THE rebalancing file)
     ├── ShopConfig.ts        # Shop items + price/value formulas (logic, reads ShopBalance)
+    ├── MoneyProducts.ts     # 9 Robux "buy money" dev products (productId ↔ amount)
     ├── PopupType.ts         # Popup enum (shared contract)
     ├── NumberFormat.ts      # FormatCash helper
     └── CameraController.ts  # Scriptable camera helper (client-only at runtime)
@@ -103,23 +104,25 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 
 1. `UiService.init(PopupConfig)` — register popup classes
 2. `PlayerDataService` — load/persist `Money`
-3. `PlayerProgressionService` — load/persist the progression **levels** + `Rebirths`, derive
+3. `MoneyProductService` — set `MarketplaceService.ProcessReceipt`; credit `Money` for the 9
+   Robux "buy money" developer products (needs PlayerData ready — see §6.15)
+4. `PlayerProgressionService` — load/persist the progression **levels** + `Rebirths`, derive
    `BaseCash`, `Multiplier`, `AdditionalSecurity`, `MultRebirth` (must run before RoomService
    so the `BaseCash` attribute exists at room assignment)
-4. `BoostService` — resolve group + game-pass ownership into input attributes (`InCommunity`,
+5. `BoostService` — resolve group + game-pass ownership into input attributes (`InCommunity`,
    `MoneyTierMult`, `HasSafetyPass`), then call `PlayerProgressionService.recompute` to
    fold them into `MoneyMult` / `EffectiveBaseCash` / `AdditionalSecurity`; needs
    Progression's `recompute`, runs before `RoomService`
-5. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
-6. `RebirthService` — handle `RebirthEvent`: validate `Money ≥ rebirthCost(Rebirths)`, reset
+6. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
+7. `RebirthService` — handle `RebirthEvent`: validate `Money ≥ rebirthCost(Rebirths)`, reset
    `Money` + stat levels, increment `Rebirths` (needs PlayerData + PlayerProgression ready)
-7. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
+8. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
    self-driven 60s refresh loop (needs PlayerData ready — reads `Money`/`Playtime`)
-8. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-9. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-10. `CharacterService` — normalize character scale on spawn
-11. `EndGameButtonModule.init()` — wire the payout-finished handshake
-12. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+9. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+10. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+11. `CharacterService` — normalize character scale on spawn
+12. `EndGameButtonModule.init()` — wire the payout-finished handshake
+13. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -137,21 +140,29 @@ once a server event fires.
   `BaseCash`) onto the billboard.
 - **Community join prompt:** an optional `CommunityJoinPart` sibling of `ButtonModel` carries
   a `ProximityPrompt` **and a `BillboardGui`** ("Rejoindre la communauté (×2 argent)"), both
-  globally `Enabled` in Studio so every player sees them. `RoomService` wires the prompt's
-  `Triggered` signal to `BoostService.refreshCommunity(player)`, which re-checks group
-  `963505568` membership server-side, updates `InCommunity`, calls
+  globally `Enabled` in Studio (no per-player server toggle; the client narrows visibility).
+  `RoomService` wires the prompt's `Triggered` signal to `BoostService.refreshCommunity(player)`,
+  which re-checks group `963505568` membership server-side, updates `InCommunity`, calls
   `PlayerProgressionService.recompute` (the ×2 is folded into `MoneyMult` — see §6.6) and
   flashes feedback via `InformationTextEvent` — a green "Communauté rejointe — x2 argent !"
-  the moment membership is first detected, or a blue hint to join otherwise.
+  the moment membership is first detected, or a blue hint naming the community otherwise.
   **`CommunityJoinController` (client, `rooms/CommunityJoinController.ts`)** mirrors the
-  replicated `InCommunity` attribute and hides BOTH the prompt and the billboard for members
-  (client-local `Enabled` writes, same per-player trick as `RoomPromptController`) — handled
-  on spawn for already-members and on the post-trigger re-check for fresh joiners.
+  replicated `InCommunity` **and `AssignedRoom`** attributes (client-local `Enabled` writes,
+  same per-player trick as `RoomPromptController`/`OwnerIndicatorController`):
+  - The `CommunityJoinPart` is shown **only on the player's own room** — every other room's
+    prompt **and** billboard are disabled, so you only ever see the join cue at your own button.
+  - On the owned room the prompt is enabled **only while the player is not a member**; once they
+    join it is disabled and the billboard's `TextLabel` flips from its Studio CTA ("X2 Money")
+    to the claimed badge **"x2 réclamé"** (the billboard stays visible rather than being hidden).
+  - Re-evaluated on spawn, on room (re)assignment, and on the post-trigger membership re-check.
   > Roblox provides **no native "join group/community" panel API**: `SocialService`/`GuiService`
-  > expose no `PromptGroupJoin`, and `GuiService:OpenBrowserWindow` is capability-locked to
-  > CoreScripts (`RobloxScript`). So the prompt cannot pop a join dialog — it re-checks
-  > membership and gives HUD feedback; the player joins via Roblox's own community UI and the
-  > ×2 + hide apply automatically (on the next trigger or next session).
+  > expose no `PromptGroupJoin`/`PromptCommunityJoin`/`OpenGroupJoinFrame` (verified against the
+  > live Studio — all absent; only `SocialService:PromptGameInvite` exists, which invites friends
+  > to the *game*), and `GuiService:OpenBrowserWindow` is capability-locked to CoreScripts
+  > (`RobloxScript`). So the prompt cannot pop a join dialog — it re-checks membership and gives
+  > HUD feedback. The experience is **owned by the community** (`CreatorType=Group`,
+  > `CreatorId=963505568`), so it surfaces natively in Roblox's own community UI; the player joins
+  > there and the ×2 + the prompt/billboard update apply automatically (next trigger or session).
 - **Spawning:** each room folder may hold a spawn marker — a plain `Part` named one of
   `SPAWN_PART_NAMES` (`RespawnLocation`/`SpawnLocation`/`SpawnPart`, resolved in `Room.ts`).
   On assign, `RoomService` connects `player.CharacterAdded` to teleport the occupant onto
@@ -506,6 +517,25 @@ RemoteEvent, no client script**.
 - **Tunables** (`shared/LeaderboardConfig.ts`): `REFRESH_INTERVAL`, `TOP_N`, `VISIBLE_ROWS`,
   `ROW_HEIGHT`, `WRITE_SPACING`, store names, `WALK_ANIM_ID`/`IDLE_ANIM_ID`, instance names.
 
+### 6.15 Money developer products (`shared/MoneyProducts.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`)
+Robux "buy money" packs sold from the **`InGameUI/ShopMoneyBuy`** popup — separate from the
+upgrade `ShopMenu` (§6.8). Nine packs, opened from the HUD's `MoneyParent/PlusButton/TextButton`.
+- **`MoneyProducts` (shared)** — the single source of truth: an **ordered** list of the 9
+  `{ productId, amount }` pairs. Index *i* maps to `Body/MoneyElement{i+1}`; `amount` mirrors each
+  element's `ValueText` (250 → 100M). The Robux price is set per product on the Roblox dashboard
+  (the `CostText` label is display-only). `amountForProduct(id)` is the server-side lookup.
+- **`ShopMoneyBuyBehavior` (client)** — open/close + purchase prompts (mirrors `ShopBehavior`):
+  starts the popup hidden; `PlusButton/TextButton` opens it (hides the HUD via
+  `InGameUIController.disable`), `Header/CloseButtonFrame/CloseButton` closes it (restores the HUD);
+  each `MoneyElement{n}/Button` fires `MarketplaceService:PromptProductPurchase(player, productId)`.
+- **`MoneyProductService` (server)** — owns the game's single `MarketplaceService.ProcessReceipt`
+  (route any future developer products through it). On a receipt it credits the mapped `amount`
+  via `PlayerDataService.add(player, "Money", …)` and returns `PurchaseGranted`; returns
+  `NotProcessedYet` (Roblox retries) when the buyer isn't in-game or their data is still loading
+  (Money attribute unset), so a grant is never lost nor written over a fresh load. The grant is a
+  synchronous attribute write immediately followed by the return — no double-grant window, so no
+  DataStore receipt log is needed.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -536,7 +566,9 @@ Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for stat
 owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
 `InSession`). The neon-pipe purchase pulse (§6.12) also uses an attribute as a broadcast
 signal — a `Pulse` counter on `NeonPipe/P{n}`, incremented server-side and watched by every
-client — instead of a RemoteEvent.
+client — instead of a RemoteEvent. Robux purchases also use **no** RemoteEvent: game-pass
+upsells go through `MarketplaceService:PromptGamePassPurchase` (§6.8), and the money developer
+products through `PromptProductPurchase` + `ProcessReceipt` (§6.15).
 
 ## 8. Gameplay Tuning Constants
 

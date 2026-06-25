@@ -3,37 +3,64 @@ import { Players, Workspace } from "@rbxts/services";
 // Per-player visibility for the "join the community for ×2" prompts.
 //
 // Every room folder has a CommunityJoinPart holding a ProximityPrompt + a
-// BillboardGui, both globally Enabled in Studio (so every player sees them by
-// default). Once a player is a member of the community group, the ×2 money boost is
-// already applied server-side (BoostService → InCommunity attribute) and there's no
-// reason to keep nagging them — so this controller hides BOTH the prompt and the
-// billboard for members.
+// BillboardGui, both globally Enabled in Studio (no per-player server toggle).
+// This controller narrows that down on each client, off two replicated player
+// attributes — exactly like RoomPromptController / OwnerIndicatorController, and
+// since client-side Enabled writes don't replicate, each player only affects
+// their own view:
 //
-// InCommunity is resolved server-side and replicates as a player attribute: at join
-// (BoostService.resolve, so an already-member is handled on spawn) and again when the
-// player triggers the prompt (RoomService → BoostService.refreshCommunity). This
-// controller just mirrors it. Enabled is a global property and client-side writes
-// don't replicate (same trick as RoomPromptController), so hiding here only affects
-// the local member — non-members still see the prompts.
+//   • AssignedRoom — the P{n} folder this player owns. The CommunityJoinPart is
+//     shown ONLY on the owned room; every other room's prompt + billboard are
+//     disabled (no point nagging a player at someone else's button).
+//   • InCommunity  — true once the player is a member of the community group, so
+//     the ×2 is already applied server-side (BoostService). On the owned room we
+//     then DISABLE the prompt (nothing left to join) and flip the billboard text
+//     to the "claimed" badge instead of hiding it.
+//
+// Roblox exposes no in-experience "join group/community" API, so the prompt can't
+// open a join dialog — it just re-checks membership server-side (RoomService →
+// BoostService.refreshCommunity) and the player joins via Roblox's own UI.
 
 const PLAYER_ZONES = "PlayerZones";
 const COMMUNITY_JOIN_PART = "CommunityJoinPart";
 const IN_COMMUNITY_ATTR = "InCommunity";
+const ASSIGNED_ROOM_ATTR = "AssignedRoom";
+// Billboard text once the player is a member (reward already granted).
+const CLAIMED_TEXT = "x2 réclamé";
+
+interface JoinEntry {
+	roomName: string;
+	prompt?: ProximityPrompt;
+	billboard?: BillboardGui;
+	label?: TextLabel;
+	// The Studio-authored CTA text, captured once so we can restore it (the
+	// "claimed" swap is reversible and we don't hardcode the join wording here).
+	defaultText: string;
+}
 
 export function init(): void {
 	const player = Players.LocalPlayer;
 
-	const prompts: ProximityPrompt[] = [];
-	const billboards: BillboardGui[] = [];
+	const entries: JoinEntry[] = [];
 
 	const evaluate = (): void => {
+		const assigned = (player.GetAttribute(ASSIGNED_ROOM_ATTR) as string | undefined) ?? "";
 		const member = player.GetAttribute(IN_COMMUNITY_ATTR) === true;
-		for (const prompt of prompts) prompt.Enabled = !member;
-		for (const billboard of billboards) billboard.Enabled = !member;
+
+		for (const entry of entries) {
+			const own = entry.roomName === assigned;
+			// Prompt: only on our own room, and only while we still need to join.
+			if (entry.prompt) entry.prompt.Enabled = own && !member;
+			// Billboard: only on our own room — hidden on every other room.
+			if (entry.billboard) entry.billboard.Enabled = own;
+			// Text: claimed badge once we're a member, else the authored CTA.
+			if (entry.label) entry.label.Text = member ? CLAIMED_TEXT : entry.defaultText;
+		}
 	};
 
-	// Server-driven — re-render whenever membership changes (e.g. the player joins
-	// the group then triggers the prompt and the server re-checks).
+	// Server-driven — re-render whenever ownership or membership changes (e.g. the
+	// player joins the group then triggers the prompt and the server re-checks).
+	player.GetAttributeChangedSignal(ASSIGNED_ROOM_ATTR).Connect(evaluate);
 	player.GetAttributeChangedSignal(IN_COMMUNITY_ATTR).Connect(evaluate);
 
 	// Discovery runs off the main thread (WaitForChild may yield while the zones
@@ -50,8 +77,14 @@ export function init(): void {
 			if (!part) return; // not every room necessarily has one
 			const prompt = part.FindFirstChildOfClass("ProximityPrompt");
 			const billboard = part.FindFirstChildOfClass("BillboardGui");
-			if (prompt) prompts.push(prompt);
-			if (billboard) billboards.push(billboard);
+			const label = billboard?.FindFirstChildOfClass("TextLabel");
+			entries.push({
+				roomName: folder.Name,
+				prompt,
+				billboard,
+				label,
+				defaultText: label ? label.Text : "",
+			});
 		};
 
 		for (const folder of zones.GetChildren()) register(folder);

@@ -13,6 +13,7 @@ local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndic
 local initCommunityJoin = TS.import(script, script.Parent, "rooms", "CommunityJoinController").init
 local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
+local initShopMoneyBuy = TS.import(script, script.Parent, "behaviors", "ShopMoneyBuyBehavior").init
 local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
@@ -39,6 +40,7 @@ initCommunityJoin()
 initButtonMenu(setupButtonInGame)
 initShopMenu()
 initShopItems()
+initShopMoneyBuy()
 initBoostShop()
 initRebirthMenu()
 initRebirthController()

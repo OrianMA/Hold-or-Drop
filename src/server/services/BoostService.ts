@@ -93,7 +93,7 @@ export const BoostService = {
 		} else if (!isIn) {
 			Events.InformationTextEvent.FireClient(
 				player,
-				"Rejoins notre communauté Roblox pour x2 argent !",
+				"Rejoins la communauté Grorian's Studio pour x2 argent !",
 				HINT_COLOR,
 			);
 		}
