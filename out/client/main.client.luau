@@ -10,6 +10,7 @@ local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").Mone
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
+local initCommunityJoin = TS.import(script, script.Parent, "rooms", "CommunityJoinController").init
 local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
 local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
@@ -34,6 +35,7 @@ MoneyDisplay:init()
 initInformationText()
 initRoomPrompts()
 initOwnerIndicator()
+initCommunityJoin()
 initButtonMenu(setupButtonInGame)
 initShopMenu()
 initShopItems()

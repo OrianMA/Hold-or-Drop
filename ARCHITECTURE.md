@@ -136,9 +136,18 @@ once a server event fires.
   releases it on leave, and mirrors the occupant's live **`EffectiveBaseCash`** (not raw
   `BaseCash`) onto the billboard.
 - **Community join prompt:** an optional `CommunityJoinPart` sibling of `ButtonModel` carries
-  a `ProximityPrompt`. `RoomService` wires its `Triggered` signal to
-  `BoostService.refreshCommunity(player)`, which re-checks group `963505568` membership
-  server-side and updates `InCommunity`, then calls `PlayerProgressionService.recompute`.
+  a `ProximityPrompt` **and a `BillboardGui`** ("Rejoindre la communauté (×2 argent)"), both
+  globally `Enabled` in Studio so every player sees them. `RoomService` wires the prompt's
+  `Triggered` signal to `BoostService.refreshCommunity(player)`, which re-checks group
+  `963505568` membership server-side and updates `InCommunity`, then calls
+  `PlayerProgressionService.recompute` (the ×2 is folded into `MoneyMult` — see §6.6).
+  **`CommunityJoinController` (client, `rooms/CommunityJoinController.ts`)** mirrors the
+  replicated `InCommunity` attribute and hides BOTH the prompt and the billboard for members
+  (client-local `Enabled` writes, same per-player trick as `RoomPromptController`) — handled
+  on spawn for already-members and on the post-trigger re-check for fresh joiners.
+  > Roblox provides **no native "join group/community" panel API** (`SocialService`/`GuiService`
+  > expose no `PromptGroupJoin`), so the prompt cannot pop a join dialog; it serves as a
+  > "claim your ×2 after joining" re-check.
 - **Spawning:** each room folder may hold a spawn marker — a plain `Part` named one of
   `SPAWN_PART_NAMES` (`RespawnLocation`/`SpawnLocation`/`SpawnPart`, resolved in `Room.ts`).
   On assign, `RoomService` connects `player.CharacterAdded` to teleport the occupant onto
