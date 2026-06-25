@@ -66,7 +66,14 @@
       "Bash(printf 'protocol=https\\\\nhost=github.com\\\\n\\\\n')",
       "Bash(git credential *)",
       "mcp__Blender__get_blendfile_summary_path_info",
-      "mcp__Blender__get_objects_summary"
+      "mcp__Blender__get_objects_summary",
+      "mcp__mcp-registry__search_mcp_registry",
+      "mcp__mcp-registry__list_connectors",
+      "mcp__c49c3e6c-5901-4075-8129-47d4ec2358db__notion-search",
+      "mcp__c49c3e6c-5901-4075-8129-47d4ec2358db__notion-fetch",
+      "Bash(bash C:/Users/Grorian/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.2/skills/subagent-driven-development/scripts/review-package 15e05bc bd81269)",
+      "Bash(echo \"build EXIT=$?\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Grorian\\\\Documents\\\\GitHub\\\\Hold-or-Drop\\\\.git\\\\sdd\" 2>&1; echo done)"
     ]
   }
 }
