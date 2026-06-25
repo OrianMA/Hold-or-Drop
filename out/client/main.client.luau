@@ -15,6 +15,7 @@ local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsCo
 local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
+local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
@@ -39,6 +40,7 @@ initShopItems()
 initBoostShop()
 initRebirthMenu()
 initRebirthController()
+initHudProgression()
 MusicController:init()
 initAudioVisualizer()
 initNeonPipePulse()
