@@ -274,6 +274,13 @@ server credits `Money` and hides the popup.
   `BringBackPlayerCamera` (return to character + reset to Custom).
 - `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
   popups inside the `InGameUI` ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
+- `HudProgressionController` (`behaviors/HudProgressionController.ts`): drives the HUD
+  rebirth-progress bar `HUD/BottomList/ProgressionBar` (`CurrentProgressionFrame` fill +
+  `BackgroundFrame/MoneyNeededText`). Shows the same data as the Rebirth menu bar (§6.9),
+  `Money / rebirthCost(Rebirths)`, but the fill and number **count up smoothly** via a
+  tweened `NumberValue` proxy (same pattern as `MoneyDisplay`): one proxy drives both so
+  they stay in sync. First load snaps; a rebirth (cost jump + money reset) snaps; mid-flight
+  earnings cancel and restart from the current visual value.
 - **Persistent GUI:** `InGameUI.ResetOnSpawn = false` is set directly on the ScreenGui in
   Studio so it survives death/respawn. `main.client.ts` additionally sets
   `StarterGui.ResetPlayerGuiOnSpawn = false` as a player-wide safety net. Client behaviors
