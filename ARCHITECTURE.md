@@ -139,15 +139,19 @@ once a server event fires.
   a `ProximityPrompt` **and a `BillboardGui`** ("Rejoindre la communauté (×2 argent)"), both
   globally `Enabled` in Studio so every player sees them. `RoomService` wires the prompt's
   `Triggered` signal to `BoostService.refreshCommunity(player)`, which re-checks group
-  `963505568` membership server-side and updates `InCommunity`, then calls
-  `PlayerProgressionService.recompute` (the ×2 is folded into `MoneyMult` — see §6.6).
+  `963505568` membership server-side, updates `InCommunity`, calls
+  `PlayerProgressionService.recompute` (the ×2 is folded into `MoneyMult` — see §6.6) and
+  flashes feedback via `InformationTextEvent` — a green "Communauté rejointe — x2 argent !"
+  the moment membership is first detected, or a blue hint to join otherwise.
   **`CommunityJoinController` (client, `rooms/CommunityJoinController.ts`)** mirrors the
   replicated `InCommunity` attribute and hides BOTH the prompt and the billboard for members
   (client-local `Enabled` writes, same per-player trick as `RoomPromptController`) — handled
   on spawn for already-members and on the post-trigger re-check for fresh joiners.
-  > Roblox provides **no native "join group/community" panel API** (`SocialService`/`GuiService`
-  > expose no `PromptGroupJoin`), so the prompt cannot pop a join dialog; it serves as a
-  > "claim your ×2 after joining" re-check.
+  > Roblox provides **no native "join group/community" panel API**: `SocialService`/`GuiService`
+  > expose no `PromptGroupJoin`, and `GuiService:OpenBrowserWindow` is capability-locked to
+  > CoreScripts (`RobloxScript`). So the prompt cannot pop a join dialog — it re-checks
+  > membership and gives HUD feedback; the player joins via Roblox's own community UI and the
+  > ×2 + hide apply automatically (on the next trigger or next session).
 - **Spawning:** each room folder may hold a spawn marker — a plain `Part` named one of
   `SPAWN_PART_NAMES` (`RespawnLocation`/`SpawnLocation`/`SpawnPart`, resolved in `Room.ts`).
   On assign, `RoomService` connects `player.CharacterAdded` to teleport the occupant onto
