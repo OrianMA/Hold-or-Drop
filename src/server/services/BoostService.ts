@@ -1,6 +1,11 @@
 import { MarketplaceService, Players } from "@rbxts/services";
 import { COMMUNITY, MONEY_TIERS, SAFETY_PASS } from "shared/ShopBalance";
+import { Events } from "shared/Event";
 import { PlayerProgressionService } from "./PlayerProgressionService";
+
+// HUD flash colours for the community-join feedback (see refreshCommunity).
+const JOINED_COLOR = new Color3(0.4, 1, 0.45);
+const HINT_COLOR = new Color3(0.6, 0.8, 1);
 
 // Owns detection of EXTERNAL boosts — Roblox group membership + game-pass
 // ownership — and writes the input attributes PlayerProgressionService folds into
@@ -68,10 +73,29 @@ export const BoostService = {
 		});
 	},
 
-	// Re-check ONLY community membership (the player joined the group then
-	// triggered the CommunityJoinPart prompt). Called by RoomService. Yields.
+	// Re-check ONLY community membership (the player triggered the CommunityJoinPart
+	// prompt). Called by RoomService. Yields.
+	//
+	// Roblox exposes no in-experience "join group/community" panel API
+	// (SocialService/GuiService have no PromptGroupJoin; OpenBrowserWindow is
+	// capability-locked to CoreScripts), so this prompt re-checks membership and
+	// flashes feedback: a confirmation when the player has just joined (boost
+	// unlocked + CommunityJoinController hides the prompt/billboard), or a hint to
+	// join otherwise.
 	refreshCommunity(player: Player): void {
-		player.SetAttribute(IN_COMMUNITY_ATTR, isInCommunity(player));
+		const wasIn = player.GetAttribute(IN_COMMUNITY_ATTR) === true;
+		const isIn = isInCommunity(player);
+		player.SetAttribute(IN_COMMUNITY_ATTR, isIn);
 		PlayerProgressionService.recompute(player);
+
+		if (isIn && !wasIn) {
+			Events.InformationTextEvent.FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR);
+		} else if (!isIn) {
+			Events.InformationTextEvent.FireClient(
+				player,
+				"Rejoins la communauté Grorian's Studio pour x2 argent !",
+				HINT_COLOR,
+			);
+		}
 	},
 };

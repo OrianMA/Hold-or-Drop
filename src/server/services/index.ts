@@ -4,6 +4,7 @@ import { ButtonSessionService } from "./ButtonSessionService";
 import { UiService } from "./UiService";
 import { CharacterService } from "./CharacterService";
 import { PlayerDataService } from "./PlayerDataService";
+import { MoneyProductService } from "./MoneyProductService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { BoostService } from "./BoostService";
 import { ShopService } from "./ShopService";
@@ -20,6 +21,9 @@ export const services: Array<{ init(): void }> = [
 		},
 	},
 	PlayerDataService,
+	// Robux "buy money" developer products — sets MarketplaceService.ProcessReceipt.
+	// Needs PlayerData ready (credits Money on receipt).
+	MoneyProductService,
 	// Progression must init before RoomService so the BaseCash attribute exists
 	// when a room is assigned (the room also listens for later changes).
 	PlayerProgressionService,

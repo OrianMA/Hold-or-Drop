@@ -7,7 +7,11 @@ local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS
 local COMMUNITY = _ShopBalance.COMMUNITY
 local MONEY_TIERS = _ShopBalance.MONEY_TIERS
 local SAFETY_PASS = _ShopBalance.SAFETY_PASS
+local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+-- HUD flash colours for the community-join feedback (see refreshCommunity).
+local JOINED_COLOR = Color3.new(0.4, 1, 0.45)
+local HINT_COLOR = Color3.new(0.6, 0.8, 1)
 -- Owns detection of EXTERNAL boosts — Roblox group membership + game-pass
 -- ownership — and writes the input attributes PlayerProgressionService folds into
 -- the money multiplier / effective base cash. Web calls (IsInGroup,
@@ -82,8 +86,15 @@ local BoostService = {
 		end)
 	end,
 	refreshCommunity = function(self, player)
-		player:SetAttribute(IN_COMMUNITY_ATTR, isInCommunity(player))
+		local wasIn = player:GetAttribute(IN_COMMUNITY_ATTR) == true
+		local isIn = isInCommunity(player)
+		player:SetAttribute(IN_COMMUNITY_ATTR, isIn)
 		PlayerProgressionService:recompute(player)
+		if isIn and not wasIn then
+			Events.InformationTextEvent:FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR)
+		elseif not isIn then
+			Events.InformationTextEvent:FireClient(player, "Rejoins la communauté Grorian's Studio pour x2 argent !", HINT_COLOR)
+		end
 	end,
 }
 return {
