@@ -14,9 +14,9 @@ local ANGLE = 10
 local TWEEN_INFO = TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local function init()
 	local player = Players.LocalPlayer
-	local label = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI"):WaitForChild("HUD"):WaitForChild("BottomList"):WaitForChild("MultiplierBuyButton"):WaitForChild("CostMovingtext")
-	label.Rotation = ANGLE
-	TweenService:Create(label, TWEEN_INFO, {
+	local costFrame = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI"):WaitForChild("HUD"):WaitForChild("BottomList"):WaitForChild("MultiplierBuyButton"):WaitForChild("BuyMultiplierPassFrame"):WaitForChild("CostMovingText")
+	costFrame.Rotation = ANGLE
+	TweenService:Create(costFrame, TWEEN_INFO, {
 		Rotation = -ANGLE,
 	}):Play()
 end

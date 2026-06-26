@@ -65,34 +65,34 @@ local COMMUNITY = {
 -- is the TOTAL multiplier of that tier (×2 … ×1024).
 local MONEY_TIERS = { {
 	mult = 2,
-	gamePassId = 0,
+	gamePassId = 1891624935,
 }, {
 	mult = 4,
-	gamePassId = 0,
+	gamePassId = 1893448867,
 }, {
 	mult = 8,
-	gamePassId = 0,
+	gamePassId = 1889872933,
 }, {
 	mult = 16,
-	gamePassId = 0,
+	gamePassId = 1893904460,
 }, {
 	mult = 32,
-	gamePassId = 0,
+	gamePassId = 1889866920,
 }, {
 	mult = 64,
-	gamePassId = 0,
+	gamePassId = 1891528981,
 }, {
 	mult = 128,
-	gamePassId = 0,
+	gamePassId = 1890406985,
 }, {
 	mult = 256,
-	gamePassId = 0,
+	gamePassId = 1890424956,
 }, {
 	mult = 512,
-	gamePassId = 0,
+	gamePassId = 1893634520,
 }, {
 	mult = 1024,
-	gamePassId = 0,
+	gamePassId = 1890592911,
 } }
 -- Safety game pass — flat risk reduction added on top of the shop Safety.
 local SAFETY_PASS = {

@@ -1,38 +1,52 @@
 import { MarketplaceService, Players } from "@rbxts/services";
 import { COMMUNITY, MONEY_TIERS, SAFETY_PASS } from "shared/ShopBalance";
 import { Events } from "shared/Event";
+import { simulateGamePasses, simulatedOwnedPassIds } from "server/modules/CheatConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 
 // HUD flash colours for the community-join feedback (see refreshCommunity).
 const JOINED_COLOR = new Color3(0.4, 1, 0.45);
 const HINT_COLOR = new Color3(0.6, 0.8, 1);
 
-// Owns detection of EXTERNAL boosts — Roblox group membership + game-pass
-// ownership — and writes the input attributes PlayerProgressionService folds into
-// the money multiplier / effective base cash. Web calls (IsInGroup,
-// UserOwnsGamePassAsync) yield and can fail, so each is pcall-guarded. A game-pass
-// id of 0 is INERT (no web call, treated not-owned) until a real id is configured.
+// Owns detection of EXTERNAL boosts — Roblox group membership + game-pass ownership —
+// and writes the input attributes PlayerProgressionService folds into the money
+// multiplier / effective base cash.
+//
+// Game-pass ownership is tracked as a per-player SET of owned pass ids:
+//   • seeded once on join (real UserOwnsGamePassAsync, or the CheatConfig simulation);
+//   • updated DIRECTLY from PromptGamePassPurchaseFinished using the purchased id.
+// We deliberately DO NOT re-query UserOwnsGamePassAsync after a purchase: that call
+// caches per session (and a Studio test purchase never grants real ownership), so a
+// re-query returns the pre-purchase value and the boost would never apply. Trusting
+// the event's id is correct in production AND testable in Studio.
 
 const IN_COMMUNITY_ATTR = "InCommunity";
 const MONEY_TIER_MULT_ATTR = "MoneyTierMult";
 const HAS_SAFETY_PASS_ATTR = "HasSafetyPass";
 
-function ownsGamePass(userId: number, gamePassId: number): boolean {
-	if (gamePassId <= 0) return false; // inert until a real id is set
-	const [ok, owns] = pcall(() => MarketplaceService.UserOwnsGamePassAsync(userId, gamePassId));
-	return ok && owns === true;
+// Per-player set of owned game-pass ids — the session source of truth.
+const ownedPasses = new Map<Player, Set<number>>();
+
+function getOwned(player: Player): Set<number> {
+	let set = ownedPasses.get(player);
+	if (!set) {
+		set = new Set<number>();
+		ownedPasses.set(player, set);
+	}
+	return set;
 }
 
-// Highest owned money tier's multiplier (ladder — top tier wins). 1 if none.
-// Iterate high → low and return on the first owned tier: stops early and makes
-// at most one extra web call once an owned tier is found (id-0 tiers are skipped
-// by ownsGamePass without any web call).
-function resolveTierMult(userId: number): number {
-	for (let i = MONEY_TIERS.size() - 1; i >= 0; i--) {
-		const tier = MONEY_TIERS[i];
-		if (ownsGamePass(userId, tier.gamePassId)) return tier.mult;
-	}
-	return 1;
+// Every real game-pass id the game cares about (id 0 = inert, skipped).
+function configuredPassIds(): number[] {
+	const ids: number[] = [];
+	for (const tier of MONEY_TIERS) if (tier.gamePassId > 0) ids.push(tier.gamePassId);
+	if (SAFETY_PASS.gamePassId > 0) ids.push(SAFETY_PASS.gamePassId);
+	return ids;
+}
+
+function realOwns(userId: number, gamePassId: number): boolean {
+	const [ok, owns] = pcall(() => MarketplaceService.UserOwnsGamePassAsync(userId, gamePassId));
+	return ok && owns === true;
 }
 
 function isInCommunity(player: Player): boolean {
@@ -40,8 +54,22 @@ function isInCommunity(player: Player): boolean {
 	return ok && result === true;
 }
 
+// Re-derive the boost attributes from the player's owned-pass set (highest money
+// tier wins; safety pass flat add), then fold them into the money multiplier.
+function recount(player: Player): void {
+	const set = getOwned(player);
+
+	let tierMult = 1;
+	for (const tier of MONEY_TIERS) {
+		if (tier.gamePassId > 0 && set.has(tier.gamePassId)) tierMult = math.max(tierMult, tier.mult);
+	}
+	player.SetAttribute(MONEY_TIER_MULT_ATTR, tierMult);
+	player.SetAttribute(HAS_SAFETY_PASS_ATTR, SAFETY_PASS.gamePassId > 0 && set.has(SAFETY_PASS.gamePassId));
+	PlayerProgressionService.recompute(player);
+}
+
 // Synchronous defaults so the attributes exist immediately on join (before the
-// async web calls return) — keeps deriveValues + the client shop readout sane.
+// async resolve returns) — keeps deriveValues + the client readouts sane.
 function setDefaults(player: Player): void {
 	player.SetAttribute(IN_COMMUNITY_ATTR, false);
 	player.SetAttribute(MONEY_TIER_MULT_ATTR, 1);
@@ -49,13 +77,21 @@ function setDefaults(player: Player): void {
 	PlayerProgressionService.recompute(player);
 }
 
-// Full resolve — group + all game passes. Yields (web calls); run in task.spawn.
+// Full resolve — group membership + game-pass ownership. Yields (web calls); run
+// in task.spawn. Seeds the owned-pass set once for the session.
 function resolve(player: Player): void {
-	const userId = player.UserId;
 	player.SetAttribute(IN_COMMUNITY_ATTR, isInCommunity(player));
-	player.SetAttribute(MONEY_TIER_MULT_ATTR, resolveTierMult(userId));
-	player.SetAttribute(HAS_SAFETY_PASS_ATTR, ownsGamePass(userId, SAFETY_PASS.gamePassId));
-	PlayerProgressionService.recompute(player);
+
+	const set = getOwned(player);
+	set.clear();
+	if (simulateGamePasses) {
+		// TEST MODE — ignore real Roblox ownership, use the configured simulation.
+		for (const id of simulatedOwnedPassIds) set.add(id);
+	} else {
+		const userId = player.UserId;
+		for (const id of configuredPassIds()) if (realOwns(userId, id)) set.add(id);
+	}
+	recount(player);
 }
 
 export const BoostService = {
@@ -67,9 +103,15 @@ export const BoostService = {
 		Players.PlayerAdded.Connect(onAdded);
 		for (const player of Players.GetPlayers()) onAdded(player);
 
-		// A successful game-pass purchase → re-resolve that player's ownership.
-		MarketplaceService.PromptGamePassPurchaseFinished.Connect((player, _gamePassId, purchased) => {
-			if (purchased) task.spawn(() => resolve(player));
+		Players.PlayerRemoving.Connect((player) => ownedPasses.delete(player));
+
+		// A successful purchase → record the purchased id DIRECTLY and recompute.
+		// The event is the only reliable "just bought" signal (see the file header on
+		// why we must NOT re-query UserOwnsGamePassAsync here).
+		MarketplaceService.PromptGamePassPurchaseFinished.Connect((player, gamePassId, purchased) => {
+			if (!purchased) return;
+			getOwned(player).add(gamePassId);
+			recount(player);
 		});
 	},
 
@@ -97,5 +139,25 @@ export const BoostService = {
 				HINT_COLOR,
 			);
 		}
+	},
+
+	// ── Dev / test helpers (Studio command bar or execute_luau, Server context) ───
+	// Simulate ownership changes for a player and apply them immediately — exactly as
+	// a real purchase would (same recount path). Use to test the boost/HUD/shop
+	// updates when you can't change real ownership (you already own every pass).
+	//   local Boost = require(game.ServerScriptService.TS.services.BoostService).BoostService
+	//   Boost:devReset(plr)            -- own nothing
+	//   Boost:devOwn(plr, 1891624935)  -- simulate buying MONEY x2
+	devOwn(player: Player, gamePassId: number): void {
+		getOwned(player).add(gamePassId);
+		recount(player);
+	},
+	devDisown(player: Player, gamePassId: number): void {
+		getOwned(player).delete(gamePassId);
+		recount(player);
+	},
+	devReset(player: Player): void {
+		getOwned(player).clear();
+		recount(player);
 	},
 };

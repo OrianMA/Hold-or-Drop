@@ -14,13 +14,14 @@ const TWEEN_INFO = new TweenInfo(0.8, Enum.EasingStyle.Sine, Enum.EasingDirectio
 export function init(): void {
 	const player = Players.LocalPlayer;
 
-	const label = (player.WaitForChild("PlayerGui") as PlayerGui)
+	const costFrame = (player.WaitForChild("PlayerGui") as PlayerGui)
 		.WaitForChild("InGameUI")
 		.WaitForChild("HUD")
 		.WaitForChild("BottomList")
 		.WaitForChild("MultiplierBuyButton")
-		.WaitForChild("CostMovingtext") as TextLabel;
+		.WaitForChild("BuyMultiplierPassFrame")
+		.WaitForChild("CostMovingText") as GuiObject;
 
-	label.Rotation = ANGLE;
-	TweenService.Create(label, TWEEN_INFO, { Rotation: -ANGLE }).Play();
+	costFrame.Rotation = ANGLE;
+	TweenService.Create(costFrame, TWEEN_INFO, { Rotation: -ANGLE }).Play();
 }

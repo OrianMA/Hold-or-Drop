@@ -276,10 +276,18 @@ server credits `Money` and hides the popup.
   - `InCommunity` — `true` if the player is a member of group `963505568`; re-checked
     server-side via `BoostService.refreshCommunity` when the player uses `CommunityJoinPart`.
   - `MoneyTierMult` — the multiplier of the highest money-tier game-pass the player owns
-    (table `MONEY_TIERS` in `shared/ShopBalance.ts`; id 0 = inert); defaults to 1.
+    (table `MONEY_TIERS` in `shared/ShopBalance.ts` — ids configured ×2…×1024); defaults to 1.
   - `HasSafetyPass` — `true` if the player owns the safety game-pass (id 0 = inert).
   After writing these attributes `BoostService` calls `PlayerProgressionService.recompute`
   so `MoneyMult` / `EffectiveBaseCash` / `AdditionalSecurity` update immediately.
+  - **Game-pass ownership is a per-player SET** of owned ids, seeded once on join (real
+    `UserOwnsGamePassAsync`, or the `CheatConfig` simulation — §9) and updated **directly**
+    from `PromptGamePassPurchaseFinished` using the purchased id (then `recount` → `recompute`).
+    It must **not** re-query `UserOwnsGamePassAsync` after a purchase: that call caches per
+    session (and a Studio test purchase never grants real ownership), so re-querying returns
+    the pre-purchase value and the boost would silently never apply. `devOwn` / `devDisown` /
+    `devReset` (server — callable from the command bar / `execute_luau`) mutate the set via the
+    same `recount` path for testing.
 - `rebirth(player)` (the only rebirth mutation) resets the 3 stat levels to 0 and increments
   `Rebirths`, re-deriving every value. It does **not** touch `Money` — `RebirthService` zeroes
   that via `PlayerDataService` so each service owns its own store.
@@ -348,11 +356,20 @@ server credits `Money` and hides the popup.
   and its breakdown (rebirth factor, community bonus, money-tier bonus) so the player can see
   each factor at a glance.
 - **`BoostShopController` (client)**: drives the two wired `RobuxButton` purchase prompts:
-  - `AButtonMoney` → money-tier upsell (highest unowned `MONEY_TIERS` tier; id 0 = inert,
-    button hidden).
+  - `AButtonMoney` → money-tier upsell (next unowned `MONEY_TIERS` tier — the ladder now
+    carries real game-pass ids ×2…×1024; an id of 0 would still be inert/hidden).
   - `DSafety` → safety game-pass upsell (id 0 = inert, button hidden).
   Both buttons are wired via `MarketplaceService:PromptGamePassPurchase`; ownership is
   re-resolved by `BoostService` on `PromptGamePassPurchaseFinished`.
+- **`MultiplierPassController` (client)** — the HUD "buy multiplier pass" button
+  (`HUD/BottomList/MultiplierBuyButton`), separate from the shop. Offers the next unowned
+  `MONEY_TIERS` pass via `nextMoneyTier(MoneyTierMult)`: writes
+  `BuyMultiplierPassFrame/RewardText` = `"{mult}x Money"` and `…/CostMovingText/CCCostText`
+  = the pass's **raw** Robux price (`GetProductInfo`, cached per id, no K/M formatting); its
+  sibling `TextButton` prompts `PromptGamePassPurchase`. Refreshes on `MoneyTierMult` change
+  (a purchase advances it to the next pass); once every tier is owned the whole button is
+  hidden (`Visible = false`). `CostTextRotator` (`ui/CostTextRotator.ts`) gives the
+  `CostMovingText` frame a constant cosmetic wobble.
 ### 6.9 Rebirth (`server/services/RebirthService.ts`, `client/behaviors/RebirthMenuBehavior.ts`, `client/behaviors/RebirthMenuController.ts`)
 A permanent money multiplier earned by resetting everything. It lives in its **own panel**
 (`InGameUI/RebirthMenu`), **independent of the shop** — opened from the HUD button
@@ -592,7 +609,7 @@ products through `PromptProductPurchase` + `ProcessReceipt` (§6.15).
 | `SAFETY_PASS` | `shared/ShopBalance.ts` | +0.20 | Additional safety from the safety game-pass |
 | `SAFETY_TOTAL_CAP` | `shared/ShopBalance.ts` | 0.70 | Hard cap on `AdditionalSecurity` (shop 0.50 + pass 0.20) |
 | `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to `MoneyMult` |
-| `MONEY_TIERS` | `shared/ShopBalance.ts` | ×2…×1024, highest owned wins | Game-pass money-tier multipliers; id 0 = inert |
+| `MONEY_TIERS` | `shared/ShopBalance.ts` | ×2…×1024, highest owned wins | Game-pass money-tier multipliers (ids configured; sold via shop upsell + HUD MultiplierBuyButton) |
 | Rebirth base cost | `shared/ShopBalance.ts` | 2500 | Cash for the 1st rebirth |
 | Rebirth cost growth | `shared/ShopBalance.ts` | ×2.4 / rebirth | `cost(R)=floor(2500×2.4^R)` |
 | Rebirth mult curve | `shared/ShopBalance.ts` | `[1,2,3,3.5,4,4.5,4.75,5]` +0.25/rebirth | `MultRebirth` factor fed into the additive `MoneyMult` (see §6.6) |
@@ -604,8 +621,10 @@ products through `PromptProductPurchase` + `ProcessReceipt` (§6.15).
 
 Dev-only flags — **must be `false`/disabled before publishing**:
 - `invincible` — button never explodes.
-- `resetData` — wipe persisted data on join (fresh default profile each time). **Currently
-  `true`** — disable before shipping.
+- `resetData` — wipe persisted data on join (fresh default profile each time).
+- `simulateGamePasses` + `simulatedOwnedPassIds` — when on, `BoostService` ignores real
+  game-pass ownership and treats only the listed ids as owned (empty = own nothing), so the
+  buy flow can be tested from a not-owned state even on an account that owns every pass (§6.6).
 
 ## 10. Conventions (see also `CLAUDE.md`)
 
