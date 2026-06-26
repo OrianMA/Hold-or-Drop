@@ -20,6 +20,11 @@ const player = Players.LocalPlayer;
 const PROGRESS_GRADIENT = "UIGradientProgress";
 const FINISH_GRADIENT = "UiGradientFinish";
 
+// Smallest X-scale the fill is allowed to render at. Below this the sliver is too thin
+// to read (rounded corners/stroke collapse), so the fill is hidden entirely until
+// progress reaches it. At/above it, the fill never renders thinner than this.
+const MIN_VISIBLE_PROGRESS = 0.013;
+
 function getRebirths(): number {
 	return (player.GetAttribute("Rebirths") as number | undefined) ?? 0;
 }
@@ -44,8 +49,16 @@ export function init(): void {
 	function render(money: number): void {
 		lastMoney = money;
 		const progress = math.clamp(money / cost, 0, 1);
-		fill.Size = new UDim2(progress, 0, 1, 0);
 		moneyNeededText.Text = `${FormatNumber(math.floor(money))} / ${FormatNumber(cost)}`;
+
+		// Below the minimum displayable percentage, hide the fill rather than show an
+		// unreadable sliver. At/above it, show the fill clamped to that minimum width.
+		if (progress < MIN_VISIBLE_PROGRESS) {
+			fill.Visible = false;
+			return;
+		}
+		fill.Visible = true;
+		fill.Size = new UDim2(math.max(progress, MIN_VISIBLE_PROGRESS), 0, 1, 0);
 
 		// Full bar → "finish" gradient, otherwise the "progress" gradient.
 		const full = progress >= 1;
