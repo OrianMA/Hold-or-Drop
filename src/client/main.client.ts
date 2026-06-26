@@ -19,6 +19,7 @@ import { init as initRebirthController } from "./behaviors/RebirthMenuController
 import { init as initHudProgression } from "./behaviors/HudProgressionController";
 import { init as initCostTextRotator } from "./ui/CostTextRotator";
 import { MusicController } from "./audio/MusicController";
+import { init as initUiClickSound } from "./audio/UiClickSound";
 import { init as initAudioVisualizer } from "./ui/AudioVisualizer";
 import { init as initNeonPipePulse } from "./ui/NeonPipePulse";
 
@@ -52,5 +53,6 @@ initRebirthController();
 initHudProgression();
 initCostTextRotator();
 MusicController.init();
+initUiClickSound();
 initAudioVisualizer();
 initNeonPipePulse();

@@ -1,5 +1,6 @@
-import { Players, TweenService } from "@rbxts/services";
+import { Players, SoundService, TweenService } from "@rbxts/services";
 import { InGameUIController } from "client/ui/InGameUIController";
+import { AudioConfig } from "shared/AudioConfig";
 import { FormatCash } from "shared/NumberFormat";
 
 // Renders the local player's Money attribute into a TextLabel named "MoneyText"
@@ -19,6 +20,24 @@ import { FormatCash } from "shared/NumberFormat";
 
 const ATTRIBUTE = "Money";
 const LABEL_NAME = "MoneyText";
+
+// Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual). Template
+// préchargé en SoundService pour éviter un fetch CDN au premier gain.
+const moneyGainTemplate = (() => {
+	const sound = new Instance("Sound");
+	sound.Name = "MoneyGainTemplate";
+	sound.SoundId = AudioConfig.sfx.moneyGain.id;
+	sound.Volume = AudioConfig.sfx.moneyGain.volume;
+	sound.Parent = SoundService;
+	return sound;
+})();
+
+function playMoneyGain(): void {
+	const sound = moneyGainTemplate.Clone();
+	sound.Parent = SoundService;
+	sound.Play();
+	sound.Ended.Connect(() => sound.Destroy());
+}
 
 // Duration of the "count-up" animation. Quad-Out feels punchier than Linear.
 const TWEEN_INFO = new TweenInfo(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
@@ -129,6 +148,7 @@ export const MoneyDisplay = {
 	// real Money attribute remains authoritative; refresh() reconciles when the
 	// server credit lands.
 	addVisual(amount: number): void {
+		if (amount > 0) playMoneyGain(); // son au moment exact du gain (chaque dépôt)
 		tweenTo(currentTarget + amount);
 	},
 

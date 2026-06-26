@@ -401,13 +401,23 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   never trusts the client. After rebirth `MultRebirth` grows, which feeds into `MoneyMult` and
   therefore `EffectiveBaseCash` (re-derived by `PlayerProgressionService.recompute` — see §6.6).
 
-### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`)
+### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`, `client/audio/UiClickSound.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
   the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion`,
-  client `buttonExplode` / `parry` / `buttonUpgrade`). SFX still play from their existing call
-  sites (`ButtonInGameBehavior` client-side, `ButtonInGameModule` server-side, `NeonPipePulse`
-  for `buttonUpgrade` — see §6.12) — only the asset definitions are centralised here, so
+  client `buttonExplode` / `parry` / `buttonUpgrade` / `moneyGain` / `uiClick`). SFX still play
+  from their existing call sites (`ButtonInGameBehavior` client-side, `ButtonInGameModule`
+  server-side, `NeonPipePulse` for `buttonUpgrade` — see §6.12, `MoneyDisplay` for `moneyGain`,
+  `UiClickSound` for `uiClick`) — only the asset definitions are centralised here, so
   re-pointing a sound is a one-line edit.
+- **`moneyGain`** (2D, client) plays the instant money is banked in the HUD:
+  `MoneyDisplay.addVisual` clones a preloaded template on every positive deposit, so during the
+  end-game payout it fires once per landing chunk (§6.4 / EndGameAnimation) — synced to the
+  count-up, no offset.
+- **`UiClickSound` (client, `audio/UiClickSound.ts`)** centralises the `uiClick` button sound:
+  on init it hooks every `GuiButton` descendant of `PlayerGui` — those present at start **and**
+  any added later (`DescendantAdded`) — connecting `Activated` to a 2D clone of a preloaded
+  template (`hooked` set guards against double-binding). Any new button authored in Studio gets
+  the click sound automatically, with no per-button wiring.
 - **Music is client presentation** (see §4). `MusicController` (client) owns two things,
   parented to `SoundService`:
   - **BGM**: a looping playlist played through the **new audio API** so a spectrum can be read

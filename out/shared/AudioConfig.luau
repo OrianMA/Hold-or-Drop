@@ -27,8 +27,16 @@ local AudioConfig = {
 			volume = 1,
 		},
 		buttonUpgrade = {
-			id = "",
+			id = "rbxassetid://90808623060870",
+			volume = 0.5,
+		},
+		moneyGain = {
+			id = "rbxassetid://120891770644830",
 			volume = 0.6,
+		},
+		uiClick = {
+			id = "rbxassetid://72264591133889",
+			volume = 0.5,
 		},
 	},
 }

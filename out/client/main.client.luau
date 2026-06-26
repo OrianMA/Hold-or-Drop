@@ -23,6 +23,7 @@ local initRebirthController = TS.import(script, script.Parent, "behaviors", "Reb
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
+local initUiClickSound = TS.import(script, script.Parent, "audio", "UiClickSound").init
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
@@ -54,5 +55,6 @@ initRebirthController()
 initHudProgression()
 initCostTextRotator()
 MusicController:init()
+initUiClickSound()
 initAudioVisualizer()
 initNeonPipePulse()

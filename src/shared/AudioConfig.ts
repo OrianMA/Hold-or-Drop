@@ -23,6 +23,8 @@ export const AudioConfig = {
 		explosion: { id: "rbxassetid://139771888058836", volume: 0.8 }, // server, 3D
 		buttonExplode: { id: "rbxassetid://133384716023284", volume: 1 }, // client
 		parry: { id: "rbxassetid://119580857539801", volume: 1 }, // client
-		buttonUpgrade: { id: "", volume: 0.6 }, // client, 3D — petit son électrique à l'arrivée du pulse néon au bouton. ⚠️ coller l'asset ID
+		buttonUpgrade: { id: "rbxassetid://90808623060870", volume: 0.5 }, // client, 3D — son électrique à l'arrivée du pulse néon au bouton (NeonPipePulse)
+		moneyGain: { id: "rbxassetid://120891770644830", volume: 0.6 }, // client, 2D — joué à chaque dépôt d'argent dans le HUD (MoneyDisplay.addVisual)
+		uiClick: { id: "rbxassetid://72264591133889", volume: 0.5 }, // client, 2D — clic sur n'importe quel bouton de l'UI (UiClickSound)
 	},
 } as const;
