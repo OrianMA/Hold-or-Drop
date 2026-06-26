@@ -561,6 +561,16 @@ upgrade `ShopMenu` (§6.8). Nine packs, opened from the HUD's `MoneyParent/PlusB
   synchronous attribute write immediately followed by the return — no double-grant window, so no
   DataStore receipt log is needed.
 
+### 6.16 Community mascot idle (`client/rooms/CommunityMascotController.ts`)
+Cosmetic hover for the community mascot — each room's
+`PlayerZones/P{n}/CommunityJoinPart/GrorianStudioMascot` MeshPart gently floats up and
+down. 100 % client / presentation, no server logic. Discovery is streaming-aware
+(`WaitForChild`/`ChildAdded` down `PlayerZones → P{n} → CommunityJoinPart → GrorianStudioMascot`,
+re-registering on stream-in) like the other room controllers. The mascot is anchored, so a
+single looping `TweenService` Position tween (`FLOAT_HEIGHT` 1 stud, `FLOAT_DURATION` 2 s, Sine
+in/out, reversing, `RepeatCount -1`) renders cleanly client-side; a small random phase keeps the
+rooms from bobbing in lockstep.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
