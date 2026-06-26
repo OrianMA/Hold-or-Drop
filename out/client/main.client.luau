@@ -11,6 +11,7 @@ local initInformationText = TS.import(script, script.Parent, "ui", "InformationT
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
 local initCommunityJoin = TS.import(script, script.Parent, "rooms", "CommunityJoinController").init
+local initCommunityMascot = TS.import(script, script.Parent, "rooms", "CommunityMascotController").init
 local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
 local initShopMoneyBuy = TS.import(script, script.Parent, "behaviors", "ShopMoneyBuyBehavior").init
@@ -39,6 +40,7 @@ initInformationText()
 initRoomPrompts()
 initOwnerIndicator()
 initCommunityJoin()
+initCommunityMascot()
 initButtonMenu(setupButtonInGame)
 initShopMenu()
 initShopItems()
