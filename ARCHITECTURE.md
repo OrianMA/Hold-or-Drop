@@ -351,25 +351,31 @@ server credits `Money` and hides the popup.
   - Curves: BaseCash `floor(100 * 1.2^level)`, Multiplier `0.1 * 1.18^level` (uncapped),
     Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 500. Value
     growth stays **below** the ×1.5 `PRICE_GROWTH` so ROI decelerates (no runaway).
-- **`ShopService` (server)** owns the only mutation path. On `ShopPurchaseEvent` it validates
+- **`ShopService` (server)** owns the **cash** mutation path. On `ShopPurchaseEvent` it validates
   the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
   + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
   pre-check is UX-only; the server never trusts it. On success it also fires the neon-pipe
-  purchase pulse for the buyer's room (`NeonPipeColors.pulse`, see §6.12).
-- **`ShopItemsController` (client)** binds the four frames, renders current→next stat
+  purchase pulse for the buyer's room (`NeonPipeColors.pulse`, see §6.12). The **Robux** path
+  (level dev products on the RobuxButtons) is the other mutation path — handled by
+  `MoneyProductService.ProcessReceipt`, see §6.15.
+- **`ShopItemsController` (client)** binds the four frames. For each it renders current→next stat
   (`BoostLyout/CurrentStatText` → `NextStatText`) and the cash price (`BuyButton/TextLabel`),
-  greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`.
-  It refreshes purely from replicated attributes (`Money` + the three level attributes) — no
-  server→client response event.
+  greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`. It
+  **also wires each frame's `RobuxButton`** to the matching level dev product
+  (`shared/LevelProducts.ts`, resolved by the frame's stat): sets the gain label
+  (`GainQuantityText` = `"+{levels} niv."`) + the Robux price (`RobuxQuantityText` via cached
+  `GetProductInfo`) and prompts `MarketplaceService:PromptProductPurchase` on click. The Safety
+  RobuxButton is **refused at the cap** — no prompt, just an `InformationText` "Niveau maximum
+  atteint" (and the button greys with `MAX`). It refreshes purely from replicated attributes
+  (`Money` + the three level attributes) — no server→client response event.
 - **Multiplier readout** (`ShopMenu/Header/MultiplierText`): displays the current `MoneyMult`
   and its breakdown (rebirth factor, community bonus, money-tier bonus) so the player can see
   each factor at a glance.
-- **`BoostShopController` (client)**: drives the two wired `RobuxButton` purchase prompts:
-  - `AButtonMoney` → money-tier upsell (next unowned `MONEY_TIERS` tier — the ladder now
-    carries real game-pass ids ×2…×1024; an id of 0 would still be inert/hidden).
-  - `DSafety` → safety game-pass upsell (id 0 = inert, button hidden).
-  Both buttons are wired via `MarketplaceService:PromptGamePassPurchase`; ownership is
-  re-resolved by `BoostService` on `PromptGamePassPurchaseFinished`.
+- **`BoostShopController` (client)**: now **read-only** — it just drives the multiplier readout
+  above (refreshing on `MoneyMult` / `MultRebirth` / `MoneyTierMult` / `InCommunity`). The shop
+  RobuxButtons it used to wire (`AButtonMoney` money-tier upsell, `DSafety` safety pass) were
+  repurposed for the level dev products (see `ShopItemsController` above); the money-tier
+  game-pass upsell now lives only on the HUD `MultiplierBuyButton` (`MultiplierPassController`).
 - **`MultiplierPassController` (client)** — the HUD "buy multiplier pass" button
   (`HUD/BottomList/MultiplierBuyButton`), separate from the shop. Offers the next unowned
   `MONEY_TIERS` pass via `nextMoneyTier(MoneyTierMult)`: writes
@@ -556,34 +562,53 @@ RemoteEvent, no client script**.
 - **Tunables** (`shared/LeaderboardConfig.ts`): `REFRESH_INTERVAL`, `TOP_N`, `VISIBLE_ROWS`,
   `ROW_HEIGHT`, `WRITE_SPACING`, store names, `WALK_ANIM_ID`/`IDLE_ANIM_ID`, instance names.
 
-### 6.15 Money developer products (`shared/MoneyProducts.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`)
-Robux "buy money" packs sold from the **`InGameUI/ShopMoneyBuy`** popup — separate from the
-upgrade `ShopMenu` (§6.8). Nine packs, opened from the HUD's `MoneyParent/PlusButton/TextButton`.
-- **`MoneyProducts` (shared)** — the single source of truth: an **ordered** list of the 9
-  `{ productId, amount }` pairs. Index *i* maps to `Body/MoneyElement{i+1}`; `amount` mirrors each
-  element's `ValueText` (250 → 100M). The Robux price is set per product on the Roblox dashboard
-  (the `CostText` label is display-only). `amountForProduct(id)` is the server-side lookup.
-- **`ShopMoneyBuyBehavior` (client)** — open/close + purchase prompts (mirrors `ShopBehavior`):
-  starts the popup hidden; `PlusButton/TextButton` opens it (hides the HUD via
+### 6.15 Developer products (`shared/MoneyProducts.ts`, `shared/LevelProducts.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`, `client/behaviors/ShopItemsController.ts`)
+Two families of Robux developer products, both routed through one `ProcessReceipt`:
+- **Money packs** — Robux "buy money" packs sold from the **`InGameUI/ShopMoneyBuy`** popup
+  (separate from the upgrade `ShopMenu`, §6.8). Nine packs, opened from the HUD's
+  `MoneyParent/PlusButton/TextButton`.
+- **Progression products** — 3 products sold on the upgrade `ShopMenu` **RobuxButtons** (§6.8):
+  BaseCash +10 levels (on both the +1 and +5 frames), Multiplier +10 levels, Safety +1 level.
+
+- **`MoneyProducts` (shared)** — single source of truth for the money packs: an **ordered** list
+  of the 9 `{ productId, amount }` pairs. Index *i* maps to `Body/MoneyElement{i+1}`; `amount`
+  mirrors each element's `ValueText` (250 → 100M). The Robux price is set per product on the
+  Roblox dashboard (the `CostText` label is display-only). `amountForProduct(id)` is the
+  server-side lookup.
+- **`LevelProducts` (shared)** — single source of truth for the progression products: a list of
+  `{ productId, stat, levels }`. `levelGrantForProduct(id)` is the server-side lookup;
+  `levelProductForStat(stat)` the client-side one (so both BaseCash frames resolve to the same
+  product via their shared stat). Robux price is configured per product on the dashboard.
+- **`ShopMoneyBuyBehavior` (client)** — open/close + purchase prompts for the money popup (mirrors
+  `ShopBehavior`): starts the popup hidden; `PlusButton/TextButton` opens it (hides the HUD via
   `InGameUIController.disable`), `Header/CloseButtonFrame/CloseButton` closes it (restores the HUD);
   each `MoneyElement{n}/Button` fires `MarketplaceService:PromptProductPurchase(player, productId)`.
+  The progression products are prompted by `ShopItemsController` instead (§6.8).
 - **`MoneyProductService` (server)** — owns the game's single `MarketplaceService.ProcessReceipt`
-  (route any future developer products through it). On a receipt it credits the mapped `amount`
-  via `PlayerDataService.add(player, "Money", …)` and returns `PurchaseGranted`; returns
-  `NotProcessedYet` (Roblox retries) when the buyer isn't in-game or their data is still loading
-  (Money attribute unset), so a grant is never lost nor written over a fresh load. The grant is a
-  synchronous attribute write immediately followed by the return — no double-grant window, so no
-  DataStore receipt log is needed.
+  (route any future developer products through it). On a receipt it looks the product up in **both**
+  families: a money pack credits the mapped `amount` via `PlayerDataService.add(player, "Money", …)`;
+  a progression product adds `levels` to its stat via `PlayerProgressionService.addLevel` (the
+  `addLevel` clamp handles the Safety cap — a max-level buy still grants but the client prevents
+  prompting at the cap). Either path returns `PurchaseGranted`; it returns `NotProcessedYet` (Roblox
+  retries) when the buyer isn't in-game or their data is still loading (the relevant attribute —
+  `Money` for packs, the stat's level for progression — is unset), so a grant is never lost nor
+  written over a fresh load. The grant is a synchronous attribute write immediately followed by the
+  return — no double-grant window, so no DataStore receipt log is needed.
 
 ### 6.16 Community mascot idle (`client/rooms/CommunityMascotController.ts`)
-Cosmetic hover for the community mascot — each room's
-`PlayerZones/P{n}/CommunityJoinPart/GrorianStudioMascot` MeshPart gently floats up and
-down. 100 % client / presentation, no server logic. Discovery is streaming-aware
-(`WaitForChild`/`ChildAdded` down `PlayerZones → P{n} → CommunityJoinPart → GrorianStudioMascot`,
-re-registering on stream-in) like the other room controllers. The mascot is anchored, so a
-single looping `TweenService` Position tween (`FLOAT_HEIGHT` 1 stud, `FLOAT_DURATION` 2 s, Sine
-in/out, reversing, `RepeatCount -1`) renders cleanly client-side; a small random phase keeps the
-rooms from bobbing in lockstep.
+Cosmetic hover **and** per-player visibility for the community mascot — the
+`GrorianStudioMascot` MeshPart sits **directly in each room folder**
+(`PlayerZones/P{n}/GrorianStudioMascot`, a sibling of `CommunityJoinPart`). 100 % client /
+presentation, no server logic. Discovery is streaming-aware (`WaitForChild`/`ChildAdded` down
+`PlayerZones → P{n} → GrorianStudioMascot`, re-registering on stream-in) like the other room
+controllers. The mascot is anchored, so a single looping `TweenService` Position tween
+(`FLOAT_HEIGHT` 1 stud, `FLOAT_DURATION` 2 s, Sine in/out, reversing, `RepeatCount -1`) renders
+cleanly client-side; a small random phase keeps the rooms from bobbing in lockstep.
+- **Per-room visibility:** like the `CommunityJoinPart` elements (§6.1 / `CommunityJoinController`),
+  the mascot is shown **only on the player's own room** — every other room's mascot is made fully
+  transparent (`Transparency = 1`, the Studio default captured per entry so it's reversible). Driven
+  by the replicated `AssignedRoom` attribute (client-local write, re-applied on room (re)assignment
+  and on each stream-in).
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
@@ -617,8 +642,9 @@ owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
 `InSession`). The neon-pipe purchase pulse (§6.12) also uses an attribute as a broadcast
 signal — a `Pulse` counter on `NeonPipe/P{n}`, incremented server-side and watched by every
 client — instead of a RemoteEvent. Robux purchases also use **no** RemoteEvent: game-pass
-upsells go through `MarketplaceService:PromptGamePassPurchase` (§6.8), and the money developer
-products through `PromptProductPurchase` + `ProcessReceipt` (§6.15).
+upsells go through `MarketplaceService:PromptGamePassPurchase` (§6.8), and the developer
+products (money packs + progression products) through `PromptProductPurchase` + `ProcessReceipt`
+(§6.15).
 
 ## 8. Gameplay Tuning Constants
 

@@ -1,20 +1,25 @@
-import { TweenService, Workspace } from "@rbxts/services";
+import { Players, TweenService, Workspace } from "@rbxts/services";
 
-// Cosmetic idle animation for the community mascot: every room's
-// CommunityJoinPart holds a GrorianStudioMascot MeshPart that should gently float
-// up and down. 100 % client / presentation — no server logic, like the other
-// per-room visual controllers.
+// Community mascot, per room. The GrorianStudioMascot MeshPart sits directly in
+// each room folder (PlayerZones/P{n}/GrorianStudioMascot) and does two things,
+// 100 % client / presentation — no server logic:
+//
+//   • Idle float — a gentle up/down hover (looping Position tween). The MeshPart is
+//     anchored in Studio, so a local tween renders cleanly without fighting physics.
+//   • Per-player visibility — shown ONLY on the player's own room; on every other
+//     room it is made fully transparent. Exactly the same rule the CommunityJoinPart
+//     elements follow (see CommunityJoinController), driven by the replicated
+//     AssignedRoom attribute. Client-local writes don't replicate, so each player
+//     only affects their own view.
 //
 // StreamingEnabled is ON, so a mascot can stream IN at any time (a fresh instance)
 // and OUT again. We therefore discover via WaitForChild / ChildAdded down the
-// PlayerZones → P{n} → CommunityJoinPart → GrorianStudioMascot chain — never a
-// one-shot FindFirstChild at boot — and (re)start the float each time a mascot
-// appears. The MeshPart is anchored in Studio, so a local Position tween renders
-// cleanly without fighting physics (client-only, never replicated).
+// PlayerZones → P{n} → GrorianStudioMascot chain — never a one-shot FindFirstChild
+// at boot — (re)start the float and (re)apply visibility each time a mascot appears.
 
 const PLAYER_ZONES = "PlayerZones";
-const COMMUNITY_JOIN_PART = "CommunityJoinPart";
 const MASCOT_NAME = "GrorianStudioMascot";
+const ASSIGNED_ROOM_ATTR = "AssignedRoom";
 
 // How far (studs) the mascot rises from its resting position, and how long one
 // rise (or fall) takes. Slow + smooth = a gentle hover.
@@ -29,6 +34,13 @@ const floatInfo = new TweenInfo(
 	true, // reverse (rise then fall, back to the base position)
 );
 
+interface MascotEntry {
+	roomName: string;
+	mascot: BasePart;
+	// The mascot's Studio transparency, captured so hiding other rooms is reversible.
+	defaultTransparency: number;
+}
+
 // Start a looping float on one anchored mascot from its current resting position.
 function startFloat(mascot: BasePart): void {
 	const basePosition = mascot.Position;
@@ -42,25 +54,49 @@ function startFloat(mascot: BasePart): void {
 	});
 }
 
-// Watch one CommunityJoinPart for its mascot (present now or streamed in later).
-function watchJoinPart(joinPart: Instance): void {
-	const existing = joinPart.FindFirstChild(MASCOT_NAME);
-	if (existing && existing.IsA("BasePart")) startFloat(existing);
-	joinPart.ChildAdded.Connect((child) => {
-		if (child.Name === MASCOT_NAME && child.IsA("BasePart")) startFloat(child);
-	});
-}
-
-// Watch one room folder for its CommunityJoinPart (present now or streamed in later).
-function watchFolder(folder: Instance): void {
-	const existing = folder.FindFirstChild(COMMUNITY_JOIN_PART);
-	if (existing) watchJoinPart(existing);
-	folder.ChildAdded.Connect((child) => {
-		if (child.Name === COMMUNITY_JOIN_PART) watchJoinPart(child);
-	});
-}
-
 export function init(): void {
+	const player = Players.LocalPlayer;
+
+	// Keyed by room name so a mascot that streams out then back in (a fresh
+	// instance) simply replaces the stale entry.
+	const entries = new Map<string, MascotEntry>();
+
+	// Visible only on our own room — fully transparent on every other.
+	const applyVisibility = (entry: MascotEntry): void => {
+		if (entry.mascot.Parent === undefined) return; // streamed out — skip
+		const assigned = (player.GetAttribute(ASSIGNED_ROOM_ATTR) as string | undefined) ?? "";
+		const own = entry.roomName === assigned;
+		entry.mascot.Transparency = own ? entry.defaultTransparency : 1;
+	};
+
+	const evaluate = (): void => {
+		for (const [, entry] of entries) applyVisibility(entry);
+	};
+
+	// Register (or refresh) a room's mascot: start its float and apply visibility now.
+	const registerMascot = (roomName: string, mascot: BasePart): void => {
+		const entry: MascotEntry = {
+			roomName,
+			mascot,
+			defaultTransparency: mascot.Transparency,
+		};
+		entries.set(roomName, entry);
+		applyVisibility(entry);
+		startFloat(mascot);
+	};
+
+	// Watch one room folder for its mascot (present now or streamed in later).
+	const watchFolder = (folder: Instance): void => {
+		const existing = folder.FindFirstChild(MASCOT_NAME);
+		if (existing && existing.IsA("BasePart")) registerMascot(folder.Name, existing);
+		folder.ChildAdded.Connect((child) => {
+			if (child.Name === MASCOT_NAME && child.IsA("BasePart")) registerMascot(folder.Name, child);
+		});
+	};
+
+	// Server-driven — re-render whenever ownership changes (room (re)assignment).
+	player.GetAttributeChangedSignal(ASSIGNED_ROOM_ATTR).Connect(evaluate);
+
 	// Discovery runs off the main thread (WaitForChild may yield while the zones
 	// stream / replicate in).
 	task.spawn(() => {
