@@ -315,7 +315,10 @@ server credits `Money` and hides the popup.
   `Money / rebirthCost(Rebirths)`, but the fill and number **count up smoothly** via a
   tweened `NumberValue` proxy (same pattern as `MoneyDisplay`): one proxy drives both so
   they stay in sync. First load snaps; a rebirth (cost jump + money reset) snaps; mid-flight
-  earnings cancel and restart from the current visual value.
+  earnings cancel and restart from the current visual value. The fill only renders once
+  progress reaches a minimum displayable X-scale (`MIN_VISIBLE_PROGRESS` = 0.013); below that
+  the `CurrentProgressionFrame` is hidden (`Visible = false`) instead of showing an unreadable
+  sliver, and at/above it the fill is clamped to that minimum width.
 - **Persistent GUI:** `InGameUI.ResetOnSpawn = false` is set directly on the ScreenGui in
   Studio so it survives death/respawn. `main.client.ts` additionally sets
   `StarterGui.ResetPlayerGuiOnSpawn = false` as a player-wide safety net. Client behaviors
