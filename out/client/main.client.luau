@@ -16,6 +16,7 @@ local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsCo
 local initShopMoneyBuy = TS.import(script, script.Parent, "behaviors", "ShopMoneyBuyBehavior").init
 local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
 local initMultiplierPass = TS.import(script, script.Parent, "behaviors", "MultiplierPassController").init
+local initMoneyBoost = TS.import(script, script.Parent, "behaviors", "MoneyBoostController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
@@ -45,6 +46,7 @@ initShopItems()
 initShopMoneyBuy()
 initBoostShop()
 initMultiplierPass()
+initMoneyBoost()
 initRebirthMenu()
 initRebirthController()
 initHudProgression()

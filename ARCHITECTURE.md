@@ -316,6 +316,11 @@ server credits `Money` and hides the popup.
   tweened `NumberValue` proxy (same pattern as `MoneyDisplay`): one proxy drives both so
   they stay in sync. First load snaps; a rebirth (cost jump + money reset) snaps; mid-flight
   earnings cancel and restart from the current visual value.
+- `MoneyBoostController` (`behaviors/MoneyBoostController.ts`): drives the readout
+  `HUD/BottomList/ProgressionBar/MoneyBoostText` off the replicated `MoneyTierMult` attribute
+  (the highest owned money-tier game-pass multiplier, resolved by `BoostService` — see §6.6).
+  `MoneyTierMult > 1` → `"{mult}x money boost"`, visible; `MoneyTierMult == 1` (no money-tier
+  pass owned) → hidden. Refreshes on the attribute change; client-side display only.
 - **Persistent GUI:** `InGameUI.ResetOnSpawn = false` is set directly on the ScreenGui in
   Studio so it survives death/respawn. `main.client.ts` additionally sets
   `StarterGui.ResetPlayerGuiOnSpawn = false` as a player-wide safety net. Client behaviors
