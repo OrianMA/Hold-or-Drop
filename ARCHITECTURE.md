@@ -319,6 +319,12 @@ server credits `Money` and hides the popup.
   progress reaches a minimum displayable X-scale (`MIN_VISIBLE_PROGRESS` = 0.013); below that
   the `CurrentProgressionFrame` is hidden (`Visible = false`) instead of showing an unreadable
   sliver, and at/above it the fill is clamped to that minimum width.
+  earnings cancel and restart from the current visual value.
+- `MoneyBoostController` (`behaviors/MoneyBoostController.ts`): drives the readout
+  `HUD/BottomList/ProgressionBar/MoneyBoostText` off the replicated `MoneyTierMult` attribute
+  (the highest owned money-tier game-pass multiplier, resolved by `BoostService` — see §6.6).
+  `MoneyTierMult > 1` → `"{mult}x money boost"`, visible; `MoneyTierMult == 1` (no money-tier
+  pass owned) → hidden. Refreshes on the attribute change; client-side display only.
 - **Persistent GUI:** `InGameUI.ResetOnSpawn = false` is set directly on the ScreenGui in
   Studio so it survives death/respawn. `main.client.ts` additionally sets
   `StarterGui.ResetPlayerGuiOnSpawn = false` as a player-wide safety net. Client behaviors
@@ -558,6 +564,16 @@ upgrade `ShopMenu` (§6.8). Nine packs, opened from the HUD's `MoneyParent/PlusB
   (Money attribute unset), so a grant is never lost nor written over a fresh load. The grant is a
   synchronous attribute write immediately followed by the return — no double-grant window, so no
   DataStore receipt log is needed.
+
+### 6.16 Community mascot idle (`client/rooms/CommunityMascotController.ts`)
+Cosmetic hover for the community mascot — each room's
+`PlayerZones/P{n}/CommunityJoinPart/GrorianStudioMascot` MeshPart gently floats up and
+down. 100 % client / presentation, no server logic. Discovery is streaming-aware
+(`WaitForChild`/`ChildAdded` down `PlayerZones → P{n} → CommunityJoinPart → GrorianStudioMascot`,
+re-registering on stream-in) like the other room controllers. The mascot is anchored, so a
+single looping `TweenService` Position tween (`FLOAT_HEIGHT` 1 stud, `FLOAT_DURATION` 2 s, Sine
+in/out, reversing, `RepeatCount -1`) renders cleanly client-side; a small random phase keeps the
+rooms from bobbing in lockstep.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
