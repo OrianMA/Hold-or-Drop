@@ -1,6 +1,7 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local GroupService = _services.GroupService
 local MarketplaceService = _services.MarketplaceService
 local Players = _services.Players
 local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
@@ -63,11 +64,23 @@ local function realOwns(userId, gamePassId)
 	end)
 	return ok and owns == true
 end
+-- Membership check. We use GetGroupsAsync (a web fetch) rather than
+-- Player:IsInGroup because IsInGroup is cached for the whole session and would
+-- never reflect a join made mid-session via the native PromptJoinAsync card —
+-- GetGroupsAsync returns fresh data, so the ×2 can land the moment they join.
+-- The scan runs inside the pcall so the array stays typed (the pcall result
+-- itself collapses to unknown).
 local function isInCommunity(player)
-	local ok, result = pcall(function()
-		return player:IsInGroup(COMMUNITY.groupId)
+	local ok, member = pcall(function()
+		local groups = GroupService:GetGroupsAsync(player.UserId)
+		for _, group in groups do
+			if group.Id == COMMUNITY.groupId then
+				return true
+			end
+		end
+		return false
 	end)
-	return ok and result == true
+	return ok and member == true
 end
 -- Re-derive the boost attributes from the player's owned-pass set (highest money
 -- tier wins; safety pass flat add), then fold them into the money multiplier.
@@ -123,7 +136,8 @@ local function resolve(player)
 	end
 	recount(player)
 end
-local BoostService = {
+local BoostService
+BoostService = {
 	init = function(self)
 		local onAdded = function(player)
 			setDefaults(player)
@@ -154,6 +168,13 @@ local BoostService = {
 			local _gamePassId = gamePassId
 			_exp[_gamePassId] = true
 			recount(player)
+		end)
+		-- The client opened the native community-join card (GroupService:PromptJoinAsync)
+		-- and it returned Joined/AlreadyMember. Re-verify server-side and grant the ×2.
+		Events.CommunityJoinedEvent.OnServerEvent:Connect(function(player)
+			task.spawn(function()
+				return BoostService:refreshCommunity(player)
+			end)
 		end)
 	end,
 	refreshCommunity = function(self, player)

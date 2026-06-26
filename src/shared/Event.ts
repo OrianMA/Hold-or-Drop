@@ -38,4 +38,10 @@ export namespace Events {
 	// Server validates Money >= rebirthCost(Rebirths), resets cash + the 3 stat
 	// levels, increments Rebirths and re-derives MultRebirth.
 	export const RebirthEvent = DefineEvent("RebirthEvent", script);
+
+	// Community — client → server (no args). Fired after the client's native
+	// GroupService:PromptJoinAsync returns Joined/AlreadyMember (the player
+	// triggered the CommunityJoinPart). The server re-checks membership (fresh,
+	// via GetGroupsAsync) and grants the ×2 — it never trusts the event blindly.
+	export const CommunityJoinedEvent = DefineEvent("CommunityJoinedEvent", script);
 }

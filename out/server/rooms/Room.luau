@@ -27,7 +27,6 @@ local OWNER_DISPLAY = "OwnerDisplay"
 local NAME_PART = "NamePart"
 local NAME_TEXT_LABEL = "NameText"
 local OWNER_INDICATOR_PART = "OwnerIndicatorPart"
-local COMMUNITY_JOIN_PART = "CommunityJoinPart"
 local Room
 do
 	Room = setmetatable({}, {
@@ -134,18 +133,6 @@ do
 			if billboard then
 				billboard.Enabled = false
 			end
-		end
-		-- Optional "join the community for ×2" prompt — a CommunityJoinPart sibling
-		-- of the ButtonModel, holding a ProximityPrompt. RoomService wires its
-		-- Triggered to BoostService (re-checks the triggerer's group membership).
-		local communityJoinPart = folder:FindFirstChild(COMMUNITY_JOIN_PART)
-		local _joinPrompt = communityJoinPart
-		if _joinPrompt ~= nil then
-			_joinPrompt = _joinPrompt:FindFirstChildOfClass("ProximityPrompt")
-		end
-		local joinPrompt = _joinPrompt
-		if joinPrompt then
-			self.communityJoinPrompt = joinPrompt
 		end
 	end
 	function Room:invalidate(reason)

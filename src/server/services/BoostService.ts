@@ -1,4 +1,4 @@
-import { MarketplaceService, Players } from "@rbxts/services";
+import { GroupService, MarketplaceService, Players } from "@rbxts/services";
 import { COMMUNITY, MONEY_TIERS, SAFETY_PASS } from "shared/ShopBalance";
 import { Events } from "shared/Event";
 import { simulateGamePasses, simulatedOwnedPassIds } from "server/modules/CheatConfig";
@@ -49,9 +49,19 @@ function realOwns(userId: number, gamePassId: number): boolean {
 	return ok && owns === true;
 }
 
+// Membership check. We use GetGroupsAsync (a web fetch) rather than
+// Player:IsInGroup because IsInGroup is cached for the whole session and would
+// never reflect a join made mid-session via the native PromptJoinAsync card —
+// GetGroupsAsync returns fresh data, so the ×2 can land the moment they join.
+// The scan runs inside the pcall so the array stays typed (the pcall result
+// itself collapses to unknown).
 function isInCommunity(player: Player): boolean {
-	const [ok, result] = pcall(() => player.IsInGroup(COMMUNITY.groupId));
-	return ok && result === true;
+	const [ok, member] = pcall(() => {
+		const groups = GroupService.GetGroupsAsync(player.UserId);
+		for (const group of groups) if (group.Id === COMMUNITY.groupId) return true;
+		return false;
+	});
+	return ok && member === true;
 }
 
 // Re-derive the boost attributes from the player's owned-pass set (highest money
@@ -113,17 +123,22 @@ export const BoostService = {
 			getOwned(player).add(gamePassId);
 			recount(player);
 		});
+
+		// The client opened the native community-join card (GroupService:PromptJoinAsync)
+		// and it returned Joined/AlreadyMember. Re-verify server-side and grant the ×2.
+		Events.CommunityJoinedEvent.OnServerEvent.Connect((player) => {
+			task.spawn(() => BoostService.refreshCommunity(player));
+		});
 	},
 
-	// Re-check ONLY community membership (the player triggered the CommunityJoinPart
-	// prompt). Called by RoomService. Yields.
+	// Re-check ONLY community membership and grant the ×2 if joined. Fired by the
+	// CommunityJoinedEvent handler after the client's native PromptJoinAsync card
+	// returns Joined/AlreadyMember. Yields (GetGroupsAsync is a web call).
 	//
-	// Roblox exposes no in-experience "join group/community" panel API
-	// (SocialService/GuiService have no PromptGroupJoin; OpenBrowserWindow is
-	// capability-locked to CoreScripts), so this prompt re-checks membership and
-	// flashes feedback: a confirmation when the player has just joined (boost
-	// unlocked + CommunityJoinController hides the prompt/billboard), or a hint to
-	// join otherwise.
+	// The membership re-check is the security boundary: a faked event still has to
+	// pass GetGroupsAsync, so the ×2 is only ever granted to a real member. On
+	// success it flashes the green confirmation; if somehow not a member it falls
+	// back to the blue join hint.
 	refreshCommunity(player: Player): void {
 		const wasIn = player.GetAttribute(IN_COMMUNITY_ATTR) === true;
 		const isIn = isInCommunity(player);

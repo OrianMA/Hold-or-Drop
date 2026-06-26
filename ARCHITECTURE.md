@@ -138,31 +138,31 @@ once a server event fires.
 - `RoomService` assigns the first free room on join (numeric-aware `P1<P2<…<P10` sort),
   releases it on leave, and mirrors the occupant's live **`EffectiveBaseCash`** (not raw
   `BaseCash`) onto the billboard.
-- **Community join prompt:** an optional `CommunityJoinPart` sibling of `ButtonModel` carries
-  a `ProximityPrompt` **and a `BillboardGui`** ("Rejoindre la communauté (×2 argent)"), both
-  globally `Enabled` in Studio (no per-player server toggle; the client narrows visibility).
-  `RoomService` wires the prompt's `Triggered` signal to `BoostService.refreshCommunity(player)`,
-  which re-checks group `963505568` membership server-side, updates `InCommunity`, calls
-  `PlayerProgressionService.recompute` (the ×2 is folded into `MoneyMult` — see §6.6) and
-  flashes feedback via `InformationTextEvent` — a green "Communauté rejointe — x2 argent !"
-  the moment membership is first detected, or a blue hint naming the community otherwise.
+- **Community join prompt:** an optional `CommunityJoinPart` sibling of `ButtonModel` — a
+  visible `Part` carrying a `ProximityPrompt` **and a `BillboardGui`** ("Rejoindre la communauté
+  (×2 argent)"), both globally `Enabled` in Studio (no per-player server toggle; the client
+  narrows visibility). The whole flow is **client-driven**.
   **`CommunityJoinController` (client, `rooms/CommunityJoinController.ts`)** mirrors the
-  replicated `InCommunity` **and `AssignedRoom`** attributes (client-local `Enabled` writes,
-  same per-player trick as `RoomPromptController`/`OwnerIndicatorController`):
+  replicated `InCommunity` **and `AssignedRoom`** attributes (client-local writes, same
+  per-player trick as `RoomPromptController`/`OwnerIndicatorController`):
   - The `CommunityJoinPart` is shown **only on the player's own room** — every other room's
-    prompt **and** billboard are disabled, so you only ever see the join cue at your own button.
+    **part is made fully transparent** (`Transparency = 1`) and its prompt + billboard disabled,
+    so you only ever see the join cue at your own button.
   - On the owned room the prompt is enabled **only while the player is not a member**; once they
-    join it is disabled and the billboard's `TextLabel` flips from its Studio CTA ("X2 Money")
-    to the claimed badge **"x2 réclamé"** (the billboard stays visible rather than being hidden).
-  - Re-evaluated on spawn, on room (re)assignment, and on the post-trigger membership re-check.
-  > Roblox provides **no native "join group/community" panel API**: `SocialService`/`GuiService`
-  > expose no `PromptGroupJoin`/`PromptCommunityJoin`/`OpenGroupJoinFrame` (verified against the
-  > live Studio — all absent; only `SocialService:PromptGameInvite` exists, which invites friends
-  > to the *game*), and `GuiService:OpenBrowserWindow` is capability-locked to CoreScripts
-  > (`RobloxScript`). So the prompt cannot pop a join dialog — it re-checks membership and gives
-  > HUD feedback. The experience is **owned by the community** (`CreatorType=Group`,
-  > `CreatorId=963505568`), so it surfaces natively in Roblox's own community UI; the player joins
-  > there and the ×2 + the prompt/billboard update apply automatically (next trigger or session).
+    join it is disabled and the billboard's `TextLabel` flips from its Studio CTA ("X2 Money") to
+    the claimed badge **"x2 réclamé"** (the billboard stays visible rather than being hidden).
+  - **Triggering the prompt opens Roblox's native community-join card** via
+    `GroupService:PromptJoinAsync(963505568)` (client-only — the exact card with title, creator,
+    member count and emblem rendered by Roblox). On a `Joined`/`AlreadyMember` result the client
+    fires **`CommunityJoinedEvent`** (C→S) → `BoostService.refreshCommunity` re-checks membership
+    and grants the ×2 (folded into `MoneyMult`, see §6.6), flashing a green
+    "Communauté rejointe — x2 argent !" via `InformationTextEvent`.
+  - Re-evaluated on spawn and on room (re)assignment.
+  > Server-side the re-check uses **`GroupService:GetGroupsAsync`** (a fresh web fetch), NOT
+  > `Player:IsInGroup` — the latter is cached for the whole session and would never reflect a
+  > join made mid-session, so the ×2 would not land until a rejoin. The re-check is also the
+  > **security boundary**: a spoofed `CommunityJoinedEvent` still has to pass `GetGroupsAsync`,
+  > so the ×2 is only ever granted to a real member. (`PromptJoinAsync` is live since Dec 2025.)
 - **Spawning:** each room folder may hold a spawn marker — a plain `Part` named one of
   `SPAWN_PART_NAMES` (`RespawnLocation`/`SpawnLocation`/`SpawnPart`, resolved in `Room.ts`).
   On assign, `RoomService` connects `player.CharacterAdded` to teleport the occupant onto
@@ -581,6 +581,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `InformationTextEvent` | S→C | Flash info text in HUD (e.g. "Not enough money") |
 | `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
 | `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |
+| `CommunityJoinedEvent` | C→S | Native join card returned Joined/AlreadyMember — server re-checks (GetGroupsAsync) + grants ×2 |
 
 Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for state the
 owning client just needs to read (used for `Money`, progression, `AssignedRoom`,

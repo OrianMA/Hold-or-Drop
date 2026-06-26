@@ -83,10 +83,22 @@ export interface ShopItem {
 }
 
 export const ITEMS: { readonly [K in ShopItemId]: ShopItem } = {
-	BaseCash: { id: "BaseCash", stat: "BaseCash", quantity: 1, frameName: "AButtonMoney", title: "+1 Boost" },
-	BaseCashX5: { id: "BaseCashX5", stat: "BaseCash", quantity: 5, frameName: "BX5ButtonMoney", title: "+5 Boost" },
-	Multiplier: { id: "Multiplier", stat: "Multiplier", quantity: 1, frameName: "CMultiplier", title: "+1 Boost" },
-	Safety: { id: "Safety", stat: "Safety", quantity: 1, frameName: "DSafety", title: "+1 Boost" },
+	BaseCash: { id: "BaseCash", stat: "BaseCash", quantity: 1, frameName: "AButtonMoney", title: "Button money" },
+	BaseCashX5: {
+		id: "BaseCashX5",
+		stat: "BaseCash",
+		quantity: 5,
+		frameName: "BX5ButtonMoney",
+		title: "+5 lvl Button money",
+	},
+	Multiplier: {
+		id: "Multiplier",
+		stat: "Multiplier",
+		quantity: 1,
+		frameName: "CMultiplier",
+		title: "Multiplier speed",
+	},
+	Safety: { id: "Safety", stat: "Safety", quantity: 1, frameName: "DSafety", title: "Additionnal safety" },
 };
 
 // Iteration order for the client (matches the A/B/C/D frame ordering).

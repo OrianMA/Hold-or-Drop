@@ -7,7 +7,6 @@ local Room = TS.import(script, game:GetService("ServerScriptService"), "TS", "ro
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 local RoomSpotlights = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RoomSpotlights").RoomSpotlights
-local BoostService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "BoostService").BoostService
 -- Owns the player ↔ room mapping (the "player-only" domain).
 --
 -- At server start it scans Workspace/PlayerZones for P{n} folders (one Button
@@ -144,15 +143,9 @@ local RoomService = {
 			room:release()
 			table.insert(rooms, room)
 		end
-		-- Wire each room's CommunityJoinPart prompt → re-check the triggerer's group
-		-- membership (grants the community ×2 if they've since joined the group).
-		for _, room in rooms do
-			if room.communityJoinPrompt then
-				room.communityJoinPrompt.Triggered:Connect(function(player)
-					return BoostService:refreshCommunity(player)
-				end)
-			end
-		end
+		-- The CommunityJoinPart prompt is now driven entirely client-side: the client
+		-- opens the native GroupService:PromptJoinAsync card and fires
+		-- CommunityJoinedEvent on success (wired in BoostService). No server wiring here.
 		Players.PlayerAdded:Connect(function(player)
 			return assign(player)
 		end)

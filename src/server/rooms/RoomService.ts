@@ -3,7 +3,6 @@ import { Room } from "./Room";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { NeonPipeColors } from "server/modules/NeonPipeColors";
 import { RoomSpotlights } from "server/modules/RoomSpotlights";
-import { BoostService } from "server/services/BoostService";
 
 // Owns the player ↔ room mapping (the "player-only" domain).
 //
@@ -112,13 +111,9 @@ export const RoomService = {
 			rooms.push(room);
 		}
 
-		// Wire each room's CommunityJoinPart prompt → re-check the triggerer's group
-		// membership (grants the community ×2 if they've since joined the group).
-		for (const room of rooms) {
-			if (room.communityJoinPrompt) {
-				room.communityJoinPrompt.Triggered.Connect((player) => BoostService.refreshCommunity(player));
-			}
-		}
+		// The CommunityJoinPart prompt is now driven entirely client-side: the client
+		// opens the native GroupService:PromptJoinAsync card and fires
+		// CommunityJoinedEvent on success (wired in BoostService). No server wiring here.
 
 		Players.PlayerAdded.Connect((player) => assign(player));
 		for (const player of Players.GetPlayers()) assign(player);
