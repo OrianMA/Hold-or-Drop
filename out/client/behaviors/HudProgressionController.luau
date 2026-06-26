@@ -19,6 +19,10 @@ local MoneyDisplay = TS.import(script, script.Parent.Parent, "ui", "MoneyDisplay
 local player = Players.LocalPlayer
 local PROGRESS_GRADIENT = "UIGradientProgress"
 local FINISH_GRADIENT = "UiGradientFinish"
+-- Smallest X-scale the fill is allowed to render at. Below this the sliver is too thin
+-- to read (rounded corners/stroke collapse), so the fill is hidden entirely until
+-- progress reaches it. At/above it, the fill never renders thinner than this.
+local MIN_VISIBLE_PROGRESS = 0.013
 local function getRebirths()
 	local _condition = (player:GetAttribute("Rebirths"))
 	if _condition == nil then
@@ -38,8 +42,15 @@ local function init()
 	local function render(money)
 		lastMoney = money
 		local progress = math.clamp(money / cost, 0, 1)
-		fill.Size = UDim2.new(progress, 0, 1, 0)
 		moneyNeededText.Text = `{FormatNumber(math.floor(money))} / {FormatNumber(cost)}`
+		-- Below the minimum displayable percentage, hide the fill rather than show an
+		-- unreadable sliver. At/above it, show the fill clamped to that minimum width.
+		if progress < MIN_VISIBLE_PROGRESS then
+			fill.Visible = false
+			return nil
+		end
+		fill.Visible = true
+		fill.Size = UDim2.new(math.max(progress, MIN_VISIBLE_PROGRESS), 0, 1, 0)
 		-- Full bar → "finish" gradient, otherwise the "progress" gradient.
 		local full = progress >= 1
 		if progressGradient then
