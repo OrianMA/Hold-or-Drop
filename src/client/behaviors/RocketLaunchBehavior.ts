@@ -7,7 +7,6 @@ import { AudioConfig } from "shared/AudioConfig";
 import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import {
-	GuiService,
 	Lighting,
 	Players,
 	RunService,
@@ -20,14 +19,12 @@ import {
 // UI refs — assigned on first setup(), never change after
 let claimButton: TextButton | undefined;
 let multiplierText: TextLabel | undefined;
-let vignetteCanvas: CanvasGroup | undefined;
 let buttonOriginalSize: UDim2 | undefined;
 let claimButtonOriginalColor: Color3 | undefined;
 let multiplierTextOriginalSize: number | undefined;
 let multiplierTextOriginalColor: Color3 | undefined;
 
 // Lighting effects — created once in init()
-let colorCorrection: ColorCorrectionEffect | undefined;
 let bloomEffect: BloomEffect | undefined;
 
 // Per-game state
@@ -73,10 +70,12 @@ function formatMultiplier(value: number): string {
 
 const SIZE_GROWTH_PER_UPDATE = 4;
 const MAX_MULTIPLIER_SIZE_INCREASE = 80;
-const MAX_SHAKE_AMPLITUDE = 0.06;
+const MAX_SHAKE_AMPLITUDE = 0.06; // shake d'impact à l'explosion (PlayerKilledEvent)
+// Tremblement du décollage : fort au début (poussée/atmosphère) puis s'atténue vers 0
+// (on monte vers l'espace, c'est de plus en plus calme).
+const LAUNCH_SHAKE_START = 0.06;
+const LAUNCH_SHAKE_DECAY = 0.6; // atténuation par seconde (multiplicative)
 const MAX_BLOOM_INTENSITY = 1.5;
-const MIN_VIGNETTE_TRANSPARENCY = 0.1;
-const MIN_FOV = 52;
 // Couleur du ClaimButton quand la fusée explose (il ne disparaît plus, il rougit).
 const CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45);
 
@@ -90,64 +89,8 @@ const EXPLODE_FOV_OVERSHOOT = 18;
 
 const PerfectParrytime = 2;
 
-function createVignetteEdge(
-	parent: Instance,
-	rotation: number,
-	anchorPoint: Vector2,
-	position: UDim2,
-	size: UDim2,
-): Frame {
-	const frame = new Instance("Frame");
-	frame.BackgroundColor3 = new Color3(0, 0, 0);
-	frame.BorderSizePixel = 0;
-	frame.AnchorPoint = anchorPoint;
-	frame.Position = position;
-	frame.Size = size;
-	frame.ZIndex = 10;
-	frame.Parent = parent;
-
-	const gradient = new Instance("UIGradient");
-	gradient.Transparency = new NumberSequence([new NumberSequenceKeypoint(0, 0), new NumberSequenceKeypoint(1, 1)]);
-	gradient.Rotation = rotation;
-	gradient.Parent = frame;
-
-	return frame;
-}
-
-function buildVignette(inGameUI: ScreenGui): CanvasGroup {
-	const [topLeft] = GuiService.GetGuiInset();
-	const insetY = topLeft.Y;
-
-	const canvas = new Instance("CanvasGroup");
-	canvas.Name = "VignetteCanvas";
-	canvas.Size = new UDim2(1, 0, 1, insetY);
-	canvas.Position = new UDim2(0, 0, 0, -insetY);
-	canvas.BackgroundTransparency = 1;
-	canvas.GroupTransparency = 1;
-	canvas.ZIndex = 1;
-	canvas.Parent = inGameUI;
-
-	// Four gradient edges: top, bottom, left, right
-	// Rotation controls which side is opaque (0 = opaque at start of gradient direction)
-	createVignetteEdge(canvas, 90, new Vector2(0.5, 0), new UDim2(0.5, 0, 0, 0), new UDim2(1, 0, 0.45, 0));
-	createVignetteEdge(canvas, 270, new Vector2(0.5, 1), new UDim2(0.5, 0, 1, 0), new UDim2(1, 0, 0.45, 0));
-	createVignetteEdge(canvas, 0, new Vector2(0, 0.5), new UDim2(0, 0, 0.5, 0), new UDim2(0.45, 0, 1, 0));
-	createVignetteEdge(canvas, 180, new Vector2(1, 0.5), new UDim2(1, 0, 0.5, 0), new UDim2(0.45, 0, 1, 0));
-
-	return canvas;
-}
-
 function resetPostProcess(instant = false, explode = false): void {
 	const ti = instant || explode ? new TweenInfo(0) : ResetPostProcessTI;
-	if (vignetteCanvas) {
-		TweenService.Create(vignetteCanvas, ti, { GroupTransparency: 1 }).Play();
-	}
-	if (colorCorrection) {
-		TweenService.Create(colorCorrection, ti, {
-			TintColor: new Color3(1, 1, 1),
-			Saturation: 0,
-		}).Play();
-	}
 	if (bloomEffect) {
 		TweenService.Create(bloomEffect, ti, { Intensity: 0 }).Play();
 	}
@@ -240,11 +183,10 @@ export function init(): void {
 			displayedMultiplier = multiplierTo;
 		}
 		multiplierText.Text = `${formatMultiplier(displayedMultiplier)}x`;
-	});
 
-	colorCorrection = new Instance("ColorCorrectionEffect");
-	colorCorrection.Name = "HoldOrDropCC";
-	colorCorrection.Parent = Lighting;
+		// Le tremblement de décollage s'atténue avec le temps (fort au début → calme).
+		shakeAmplitude = shakeAmplitude * math.max(0, 1 - LAUNCH_SHAKE_DECAY * dt);
+	});
 
 	bloomEffect = new Instance("BloomEffect");
 	bloomEffect.Name = "HoldOrDropBloom";
@@ -454,28 +396,12 @@ export function init(): void {
 			TextColor3: capturedColor,
 		}).Play();
 
-		// Effets ambiants immédiats (game-feel)
-		if (vignetteCanvas) {
-			TweenService.Create(vignetteCanvas, PostProcessTI, {
-				GroupTransparency: 1 - factor * (1 - MIN_VIGNETTE_TRANSPARENCY),
-			}).Play();
-		}
-		if (colorCorrection) {
-			TweenService.Create(colorCorrection, PostProcessTI, {
-				TintColor: new Color3(1, 1 - factor * 0.5, 1 - factor * 0.5),
-				Saturation: -factor * 0.4,
-			}).Play();
-		}
+		// Effets ambiants : pas de vignette/teinte rouge ni de zoom FOV progressif pendant
+		// le décollage ; juste un léger bloom. Le tremblement est géré (et atténué) dans la
+		// boucle RenderStepped, pas ici.
 		if (bloomEffect) {
 			TweenService.Create(bloomEffect, PostProcessTI, {
 				Intensity: factor * MAX_BLOOM_INTENSITY,
-			}).Play();
-		}
-		shakeAmplitude = factor * MAX_SHAKE_AMPLITUDE;
-		const camera = Workspace.CurrentCamera;
-		if (camera) {
-			TweenService.Create(camera, PostProcessTI, {
-				FieldOfView: baseFov - factor * (baseFov - MIN_FOV),
 			}).Play();
 		}
 	});
@@ -504,7 +430,6 @@ export function setup(inGameUI: ScreenGui): void {
 	if (!claimButtonOriginalColor) claimButtonOriginalColor = claimButton.BackgroundColor3;
 	if (!multiplierTextOriginalSize) multiplierTextOriginalSize = multiplierText.TextSize;
 	if (!multiplierTextOriginalColor) multiplierTextOriginalColor = multiplierText.TextColor3;
-	if (!vignetteCanvas) vignetteCanvas = buildVignette(inGameUI);
 
 	// Reset per-game state
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
@@ -522,6 +447,8 @@ export function setup(inGameUI: ScreenGui): void {
 	multiplierElapsed = MULTIPLIER_TICK_RATE;
 	MultiplierVisuals.clear();
 	resetPostProcess(true);
+	// Décollage : gros tremblement au départ, atténué ensuite par la boucle RenderStepped.
+	shakeAmplitude = LAUNCH_SHAKE_START;
 
 	// Restore button to full size, normal colour and re-enable it
 	claimButton.Size = buttonOriginalSize;

@@ -12,7 +12,6 @@ local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
-local GuiService = _services.GuiService
 local Lighting = _services.Lighting
 local Players = _services.Players
 local RunService = _services.RunService
@@ -23,13 +22,11 @@ local Workspace = _services.Workspace
 -- UI refs — assigned on first setup(), never change after
 local claimButton
 local multiplierText
-local vignetteCanvas
 local buttonOriginalSize
 local claimButtonOriginalColor
 local multiplierTextOriginalSize
 local multiplierTextOriginalColor
 -- Lighting effects — created once in init()
-local colorCorrection
 local bloomEffect
 -- Per-game state
 local isGameActive = false
@@ -75,9 +72,11 @@ end
 local SIZE_GROWTH_PER_UPDATE = 4
 local MAX_MULTIPLIER_SIZE_INCREASE = 80
 local MAX_SHAKE_AMPLITUDE = 0.06
+-- Tremblement du décollage : fort au début (poussée/atmosphère) puis s'atténue vers 0
+-- (on monte vers l'espace, c'est de plus en plus calme).
+local LAUNCH_SHAKE_START = 0.06
+local LAUNCH_SHAKE_DECAY = 0.6
 local MAX_BLOOM_INTENSITY = 1.5
-local MIN_VIGNETTE_TRANSPARENCY = 0.1
-local MIN_FOV = 52
 -- Couleur du ClaimButton quand la fusée explose (il ne disparaît plus, il rougit).
 local CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45)
 local UpgradeMultiplayerTI = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
@@ -88,40 +87,6 @@ local ZoomResetTI = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirect
 local ExplodeFovPunchTI = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local EXPLODE_FOV_OVERSHOOT = 18
 local PerfectParrytime = 2
-local function createVignetteEdge(parent, rotation, anchorPoint, position, size)
-	local frame = Instance.new("Frame")
-	frame.BackgroundColor3 = Color3.new(0, 0, 0)
-	frame.BorderSizePixel = 0
-	frame.AnchorPoint = anchorPoint
-	frame.Position = position
-	frame.Size = size
-	frame.ZIndex = 10
-	frame.Parent = parent
-	local gradient = Instance.new("UIGradient")
-	gradient.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) })
-	gradient.Rotation = rotation
-	gradient.Parent = frame
-	return frame
-end
-local function buildVignette(inGameUI)
-	local topLeft = GuiService:GetGuiInset()
-	local insetY = topLeft.Y
-	local canvas = Instance.new("CanvasGroup")
-	canvas.Name = "VignetteCanvas"
-	canvas.Size = UDim2.new(1, 0, 1, insetY)
-	canvas.Position = UDim2.new(0, 0, 0, -insetY)
-	canvas.BackgroundTransparency = 1
-	canvas.GroupTransparency = 1
-	canvas.ZIndex = 1
-	canvas.Parent = inGameUI
-	-- Four gradient edges: top, bottom, left, right
-	-- Rotation controls which side is opaque (0 = opaque at start of gradient direction)
-	createVignetteEdge(canvas, 90, Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 0), UDim2.new(1, 0, 0.45, 0))
-	createVignetteEdge(canvas, 270, Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, 0), UDim2.new(1, 0, 0.45, 0))
-	createVignetteEdge(canvas, 0, Vector2.new(0, 0.5), UDim2.new(0, 0, 0.5, 0), UDim2.new(0.45, 0, 1, 0))
-	createVignetteEdge(canvas, 180, Vector2.new(1, 0.5), UDim2.new(1, 0, 0.5, 0), UDim2.new(0.45, 0, 1, 0))
-	return canvas
-end
 local function resetPostProcess(instant, explode)
 	if instant == nil then
 		instant = false
@@ -130,17 +95,6 @@ local function resetPostProcess(instant, explode)
 		explode = false
 	end
 	local ti = if instant or explode then TweenInfo.new(0) else ResetPostProcessTI
-	if vignetteCanvas then
-		TweenService:Create(vignetteCanvas, ti, {
-			GroupTransparency = 1,
-		}):Play()
-	end
-	if colorCorrection then
-		TweenService:Create(colorCorrection, ti, {
-			TintColor = Color3.new(1, 1, 1),
-			Saturation = 0,
-		}):Play()
-	end
 	if bloomEffect then
 		TweenService:Create(bloomEffect, ti, {
 			Intensity = 0,
@@ -263,10 +217,9 @@ local function init()
 			displayedMultiplier = multiplierTo
 		end
 		multiplierText.Text = `{formatMultiplier(displayedMultiplier)}x`
+		-- Le tremblement de décollage s'atténue avec le temps (fort au début → calme).
+		shakeAmplitude = shakeAmplitude * math.max(0, 1 - LAUNCH_SHAKE_DECAY * dt)
 	end)
-	colorCorrection = Instance.new("ColorCorrectionEffect")
-	colorCorrection.Name = "HoldOrDropCC"
-	colorCorrection.Parent = Lighting
 	bloomEffect = Instance.new("BloomEffect")
 	bloomEffect.Name = "HoldOrDropBloom"
 	bloomEffect.Intensity = 0
@@ -490,28 +443,12 @@ local function init()
 			TextSize = multiplierTextSize,
 			TextColor3 = capturedColor,
 		}):Play()
-		-- Effets ambiants immédiats (game-feel)
-		if vignetteCanvas then
-			TweenService:Create(vignetteCanvas, PostProcessTI, {
-				GroupTransparency = 1 - factor * (1 - MIN_VIGNETTE_TRANSPARENCY),
-			}):Play()
-		end
-		if colorCorrection then
-			TweenService:Create(colorCorrection, PostProcessTI, {
-				TintColor = Color3.new(1, 1 - factor * 0.5, 1 - factor * 0.5),
-				Saturation = -factor * 0.4,
-			}):Play()
-		end
+		-- Effets ambiants : pas de vignette/teinte rouge ni de zoom FOV progressif pendant
+		-- le décollage ; juste un léger bloom. Le tremblement est géré (et atténué) dans la
+		-- boucle RenderStepped, pas ici.
 		if bloomEffect then
 			TweenService:Create(bloomEffect, PostProcessTI, {
 				Intensity = factor * MAX_BLOOM_INTENSITY,
-			}):Play()
-		end
-		shakeAmplitude = factor * MAX_SHAKE_AMPLITUDE
-		local camera = Workspace.CurrentCamera
-		if camera then
-			TweenService:Create(camera, PostProcessTI, {
-				FieldOfView = baseFov - factor * (baseFov - MIN_FOV),
 			}):Play()
 		end
 	end)
@@ -549,9 +486,6 @@ local function setup(inGameUI)
 	if not multiplierTextOriginalColor then
 		multiplierTextOriginalColor = multiplierText.TextColor3
 	end
-	if not vignetteCanvas then
-		vignetteCanvas = buildVignette(inGameUI)
-	end
 	-- Reset per-game state
 	local _result = Workspace.CurrentCamera
 	if _result ~= nil then
@@ -576,6 +510,8 @@ local function setup(inGameUI)
 	multiplierElapsed = MULTIPLIER_TICK_RATE
 	MultiplierVisuals:clear()
 	resetPostProcess(true)
+	-- Décollage : gros tremblement au départ, atténué ensuite par la boucle RenderStepped.
+	shakeAmplitude = LAUNCH_SHAKE_START
 	-- Restore button to full size, normal colour and re-enable it
 	claimButton.Size = buttonOriginalSize
 	claimButton.BackgroundColor3 = claimButtonOriginalColor

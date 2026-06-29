@@ -365,10 +365,14 @@ server credits `Money` and hides the popup.
   cache their UI references once at startup; without this guard, respawning would wipe
   `PlayerGui`, destroy the cached `startButton`/`quitButton`/etc., and silently break
   ButtonMenu et al. (subsequent `Activated.Connect` calls would land on dead instances).
-- `RocketLaunchBehavior` owns the heavy game-feel: vignette, ColorCorrection, Bloom, FOV
-  zoom, and a two-binding camera-shake design (restore clean CFrame at Camera-1, apply
-  shake at Camera+1) to avoid spring drift. It listens to all the server gameplay events
-  and translates them into effects.
+- `RocketLaunchBehavior` owns the heavy game-feel: Bloom and a two-binding camera-shake
+  design (restore clean CFrame at Camera-1, apply shake at Camera+1) to avoid spring drift.
+  The launch shake is **strong at liftoff** (`LAUNCH_SHAKE_START`) and **decays toward 0**
+  each frame (`LAUNCH_SHAKE_DECAY`, in the RenderStepped count-up loop) — like climbing out of
+  the atmosphere into calm space. The stronger `MAX_SHAKE_AMPLITUDE` is only the
+  explosion-impact punch. There is **no red vignette / ColorCorrection** and **no progressive
+  FOV zoom** during the climb (both removed); FOV is only touched for the explosion punch and
+  the reset. It listens to all the server gameplay events and translates them into effects.
 
 ### 6.8 Shop (`shared/ShopConfig.ts`, `server/services/ShopService.ts`, `client/behaviors/ShopItemsController.ts`)
 - The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `InGameUI/ShopMenu`,
