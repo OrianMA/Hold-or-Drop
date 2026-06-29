@@ -1,12 +1,14 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
-local RunService = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").RunService
+local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local RunService = _services.RunService
+local Workspace = _services.Workspace
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
 local ROCKET_ACCEL = _RocketGameConfig.ROCKET_ACCEL
 local ROCKET_MAX_SPEED = _RocketGameConfig.ROCKET_MAX_SPEED
 -- Drives the per-room rocket (the MovableModel): it rises while the button is held
 -- with a slow, accelerating, real-rocket feel, lights its engine Fire (NitroParticles)
--- while moving, and bursts an explosion on a loss.
+-- while moving, and physically blows the rocket apart on a loss.
 --
 -- Moving the whole MovableModel via PivotTo carries its CameraPosPart /
 -- CameraParentPart up with it, so the client's orbit camera (which reads the pivot
@@ -16,10 +18,97 @@ local PARTICLES_PARENT = "ParticlesParentPart"
 local EXPLOSION_PARTICLE_COUNT = 60
 -- Part inside the rocket holding the engine Fire(s) — lit while the rocket moves.
 local NITRO_PART = "NitroParticles"
+-- The rocket body model inside the MovableModel — these are the parts that physically
+-- break apart on an explosion (the Camera*/Particles helper parts stay anchored so the
+-- orbit camera keeps holding on the blast site).
+local ROCKET_MODEL = "RocketLvl1"
+-- ── Physical explosion tuning ───────────────────────────────────────────────────
+-- Height-based gravity (world-space Y, studs): above SPACE_HEIGHT the debris is in
+-- space and weightless; through the SPACE_HEIGHT→GROUND_HEIGHT band gravity fades in;
+-- below GROUND_HEIGHT it falls under full earth gravity.
+local SPACE_HEIGHT = 95
+local GROUND_HEIGHT = 50
+-- Outward burst applied to every debris part the instant the rocket bursts apart.
+local BURST_SPEED = 45
+local BURST_SPEED_VARIANCE = 25
+local BURST_UP_BIAS = 20
+local BURST_SPIN = 18
+-- One rocket body part with the data needed to fully restore it after a physical
+-- explosion: its pose relative to the launch pad and its authored collision flag.
 local states = {}
 -- The authored launch-pad pivot, captured once per room so every launch resets to
 -- the exact same spot regardless of where a previous run left the model.
 local originalPivots = {}
+-- The rocket-body parts (RocketLvl1 descendants) with their pad-relative pose,
+-- captured once per room so a physical explosion can be fully undone on reset.
+local rocketParts = {}
+-- The active debris-physics Heartbeat while the rocket is mid-explosion.
+local debrisConns = {}
+local function getRocketModel(room)
+	return room.movableModel:FindFirstChild(ROCKET_MODEL)
+end
+-- Capture the rocket body parts and their pad-relative pose once per room. Must be
+-- called while the model sits on its launch pad (so the captured offsets are the
+-- on-pad arrangement we restore to).
+local function captureRocketParts(room)
+	local _room = room
+	if rocketParts[_room] ~= nil then
+		return nil
+	end
+	local model = getRocketModel(room)
+	if not model then
+		return nil
+	end
+	local _room_1 = room
+	local _condition = originalPivots[_room_1]
+	if _condition == nil then
+		_condition = room.movableModel:GetPivot()
+	end
+	local padPivot = _condition
+	local parts = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			local _arg0 = {
+				part = d,
+				offset = padPivot:ToObjectSpace(d.CFrame),
+				canCollide = d.CanCollide,
+			}
+			table.insert(parts, _arg0)
+		end
+	end
+	local _room_2 = room
+	rocketParts[_room_2] = parts
+end
+-- Re-anchor and re-pose any exploded debris back onto the pad, restoring authored
+-- collision and zeroing physics — leaves the rocket ready for the next launch.
+local function restoreRocketParts(room)
+	local _room = room
+	local conn = debrisConns[_room]
+	if conn then
+		conn:Disconnect()
+		local _room_1 = room
+		debrisConns[_room_1] = nil
+	end
+	local _room_1 = room
+	local parts = rocketParts[_room_1]
+	local _room_2 = room
+	local padPivot = originalPivots[_room_2]
+	if not parts or not padPivot then
+		return nil
+	end
+	for _, rp in parts do
+		local part = rp.part
+		if not part.Parent then
+			continue
+		end
+		part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+		part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		part.Anchored = true
+		part.CanCollide = rp.canCollide
+		local _offset = rp.offset
+		part.CFrame = padPivot * _offset
+	end
+end
 -- Light/extinguish the engine Fire(s) inside the rocket's NitroParticles part(s).
 local function setNitroEnabled(room, enabled)
 	for _, d in room.movableModel:GetDescendants() do
@@ -40,6 +129,7 @@ local function stopRoom(room)
 end
 local function resetRoom(room)
 	stopRoom(room)
+	restoreRocketParts(room)
 	local _room = room
 	local pivot = originalPivots[_room]
 	if pivot then
@@ -58,6 +148,7 @@ local RocketLauncher = {
 			originalPivots[_room_1] = _arg1
 		end
 		resetRoom(room)
+		captureRocketParts(room)
 		local maxSpeed = ROCKET_MAX_SPEED * speedFactor
 		local accel = ROCKET_ACCEL * speedFactor
 		local state = {
@@ -82,6 +173,7 @@ local RocketLauncher = {
 		resetRoom(room)
 	end,
 	explode = function(self, room)
+		-- Particle burst (existing visual cue).
 		local ppp = room.movableModel:FindFirstChild(PARTICLES_PARENT)
 		local _emitter = ppp
 		if _emitter ~= nil then
@@ -91,6 +183,61 @@ local RocketLauncher = {
 		if emitter and emitter:IsA("ParticleEmitter") then
 			emitter:Emit(EXPLOSION_PARTICLE_COUNT)
 		end
+		local _room = room
+		local parts = rocketParts[_room]
+		if not parts or #parts == 0 then
+			return nil
+		end
+		local model = getRocketModel(room)
+		local center = (model or room.movableModel):GetPivot().Position
+		local gravity = Workspace.Gravity
+		-- Unanchor each body part and fling it radially outward from the rocket centre
+		-- (with an upward bias + random spin) so the rocket reads as blown apart. Debris
+		-- is non-collidable while flying so it can't snag on room geometry or jitter.
+		for _, rp in parts do
+			local part = rp.part
+			if not part.Parent then
+				continue
+			end
+			part.Anchored = false
+			part.CanCollide = false
+			local away = part.Position - center
+			local dir = if away.Magnitude > 0.05 then away.Unit else Vector3.new(math.random() * 2 - 1, 1, math.random() * 2 - 1).Unit
+			local speed = BURST_SPEED + math.random() * BURST_SPEED_VARIANCE
+			local _exp = dir * speed
+			local _vector3 = Vector3.new(0, BURST_UP_BIAS, 0)
+			part.AssemblyLinearVelocity = _exp + _vector3
+			part.AssemblyAngularVelocity = Vector3.new((math.random() * 2 - 1) * BURST_SPIN, (math.random() * 2 - 1) * BURST_SPIN, (math.random() * 2 - 1) * BURST_SPIN)
+		end
+		-- Height-based gravity. Roblox already pulls `gravity` studs/s² down on every
+		-- unanchored part; each frame we add back `gravity*(1-scale)` upward so the net
+		-- downward pull is `gravity*scale`: scale 0 above SPACE_HEIGHT (weightless space),
+		-- ramping to 1 at GROUND_HEIGHT and staying 1 below (full earth gravity).
+		local conn = RunService.Heartbeat:Connect(function(dt)
+			for _, rp in parts do
+				local part = rp.part
+				if not part.Parent or part.Anchored then
+					continue
+				end
+				local y = part.Position.Y
+				local scale
+				if y >= SPACE_HEIGHT then
+					scale = 0
+				elseif y <= GROUND_HEIGHT then
+					scale = 1
+				else
+					scale = (SPACE_HEIGHT - y) / (SPACE_HEIGHT - GROUND_HEIGHT)
+				end
+				local cancel = gravity * (1 - scale) * dt
+				if cancel > 0 then
+					local _assemblyLinearVelocity = part.AssemblyLinearVelocity
+					local _vector3 = Vector3.new(0, cancel, 0)
+					part.AssemblyLinearVelocity = _assemblyLinearVelocity + _vector3
+				end
+			end
+		end)
+		local _room_1 = room
+		debrisConns[_room_1] = conn
 	end,
 }
 return {
