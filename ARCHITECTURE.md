@@ -668,10 +668,14 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   **and physically breaks the rocket apart** (see below).
 - The rocket parts are all **anchored** (no PrimaryPart needed — `PivotTo` uses the model pivot).
   `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
-- **Physical explosion (loss path).** `explode` unanchors every body part of the `RocketLvl1`
-  model (the `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps
-  holding on the blast site), flings each one **radially outward from the rocket centre** with
-  an upward bias and a random spin, then runs a Heartbeat applying **height-based gravity**:
+- **Physical explosion (loss path).** `explode` first reads the rocket's current ascent speed
+  then **halts the ascent loop itself** (the loss path no longer pre-calls `stop`), so the speed
+  survives to be inherited. It unanchors every body part of the `RocketLvl1` model (the
+  `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps holding on the
+  blast site), and flings each one **radially outward from the rocket centre** with an upward
+  bias, a random spin, **and the inherited ascent momentum** — so the rocket **keeps climbing as
+  it breaks apart** until gravity bleeds the momentum off. It then runs a Heartbeat applying
+  **height-based gravity**:
   weightless above `SPACE_HEIGHT` (world-Y 95, "space"), gravity fading in through the 95→50
   band, full earth gravity below `GROUND_HEIGHT` (50). It cancels the appropriate fraction of
   `Workspace.Gravity` each frame (`+gravity*(1-scale)` upward → net pull `gravity*scale`) rather
