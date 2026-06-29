@@ -70,6 +70,28 @@ function getRisk(timeHeld: number): number {
 	return MAX_RISK * (t * t);
 }
 
+// ── Explosion-time preload ──────────────────────────────────────────────────────
+// Safety cap on the precompute loop. Risk plateaus at MAX_RISK once timeHeld passes
+// TOTAL_DURATION, so even at max safety an explosion is statistically certain within a
+// few seconds — this only guards against a pathological never-ending loop.
+const EXPLOSION_ROLL_CAP = 2000;
+
+// Precompute, once at launch, the exact moment the rocket will explode by running the
+// SAME per-tick risk roll the live loop used to do — but all at once, up front. This
+// "loads" the explosion time so the run can fire the explosion at that precise scheduled
+// moment instead of re-rolling RNG every tick and discovering it late (action/event delay).
+// The probability distribution is identical to the old per-tick model, so game balance is
+// unchanged. Returns the time-held (seconds, tick-aligned) at which the rocket explodes.
+function rollExplosionTime(safety: number): number {
+	let timeHeld = 0;
+	for (let i = 0; i < EXPLOSION_ROLL_CAP; i++) {
+		timeHeld += TICK_RATE;
+		const risk = getRisk(timeHeld) * (1 - safety);
+		if (math.random() < risk) return timeHeld;
+	}
+	return timeHeld;
+}
+
 // Triggers a 3D explosion at `pos`: visual and sound fire together from the
 // same replication batch, so clients see and hear them simultaneously.
 // blastPressure = 0 for parry (visual-only), non-zero for lethal explosions.
@@ -132,6 +154,12 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	let multiplierIncrement = MULTIPLIER_START_INCREMENT;
 	let isActive = true;
 
+	// Preload the "chance" at launch: precompute the exact instant the rocket will
+	// explode (tick-aligned, same distribution as the old per-tick roll). The run then
+	// fires the explosion at this scheduled moment — no per-tick RNG, no discovery delay.
+	// invincible ⇒ never explodes.
+	const explosionAt = invincible ? math.huge : rollExplosionTime(safety);
+
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 	Events.RiskUpdateEvent.FireClient(player, 0);
 
@@ -168,22 +196,26 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		}
 	});
 
-	// ── Boucle risque ──────────────────────────────────────────────────────────
-	// Tourne à TICK_RATE pour les checks d'explosion et le risque.
+	// ── Boucle risque / explosion planifiée ──────────────────────────────────────
+	// Rafraîchit la barre de risque à TICK_RATE et déclenche l'explosion à l'instant
+	// `explosionAt` précalculé au décollage — plus aucun tirage aléatoire par tick.
 	task.spawn(() => {
 		let timeHeld = 0;
 
 		while (isActive) {
-			task.wait(TICK_RATE);
+			// Avance jusqu'au prochain rafraîchissement de barre sans jamais dépasser
+			// l'instant d'explosion précalculé → l'explosion tombe pile à `explosionAt`.
+			const nextStep = math.min(timeHeld + TICK_RATE, explosionAt);
+			task.wait(nextStep - timeHeld);
 			if (!isActive) break;
 
-			timeHeld += TICK_RATE;
+			timeHeld = nextStep;
 
 			// Safety reduces the effective risk: at 50% safety the ceiling halves.
 			const risk = getRisk(timeHeld) * (1 - safety);
 			Events.RiskUpdateEvent.FireClient(player, risk);
 
-			if (!invincible && math.random() < risk) {
+			if (!invincible && timeHeld >= explosionAt) {
 				isActive = false;
 				releaseConn.Disconnect();
 
