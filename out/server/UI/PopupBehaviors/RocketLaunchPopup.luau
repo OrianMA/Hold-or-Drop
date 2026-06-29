@@ -3,34 +3,34 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local Popup = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "Popup").Popup
 local ButtonSessionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ButtonSessionService").ButtonSessionService
 local startButtonGame = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "ButtonInGameModule").startButtonGame
-local ButtonInGamePopup
+local RocketLaunchPopup
 do
 	local super = Popup
-	ButtonInGamePopup = setmetatable({}, {
+	RocketLaunchPopup = setmetatable({}, {
 		__tostring = function()
-			return "ButtonInGamePopup"
+			return "RocketLaunchPopup"
 		end,
 		__index = super,
 	})
-	ButtonInGamePopup.__index = ButtonInGamePopup
-	function ButtonInGamePopup.new(...)
-		local self = setmetatable({}, ButtonInGamePopup)
+	RocketLaunchPopup.__index = RocketLaunchPopup
+	function RocketLaunchPopup.new(...)
+		local self = setmetatable({}, RocketLaunchPopup)
 		return self:constructor(...) or self
 	end
-	function ButtonInGamePopup:constructor(...)
+	function RocketLaunchPopup:constructor(...)
 		super.constructor(self, ...)
-		self.className = "ButtonInGame"
+		self.className = "RocketLaunch"
 	end
-	function ButtonInGamePopup:Show(player)
+	function RocketLaunchPopup:Show(player)
 		super.Show(self, player)
 		local session = ButtonSessionService:getSession(player)
 		if not session then
-			warn(`ButtonInGamePopup: No session found for {player.Name}`)
+			warn(`RocketLaunchPopup: No session found for {player.Name}`)
 			return nil
 		end
 		startButtonGame(player, session)
 	end
 end
 return {
-	ButtonInGamePopup = ButtonInGamePopup,
+	RocketLaunchPopup = RocketLaunchPopup,
 }

@@ -1,22 +1,23 @@
 import DefineEvent from "./Utils/DefineEvent";
 
 export namespace Events {
+	// Start the menu flow. Args: (cameraPosPart, cameraPivotPart) — both from the
+	// room's MovableModel. The client starts an orbit camera at cameraPosPart that
+	// always looks at cameraPivotPart (see CameraController.StartOrbit).
 	export const ButtonTriggerEvent = DefineEvent("ButtonTriggerEvent", script);
 	export const StartButtonClickedEvent = DefineEvent("StartButtonClickedEvent", script);
 
-	// ButtonInGame — client → server
+	// RocketLaunch — client → server
 	export const ReleaseButtonEvent = DefineEvent("ReleaseButtonEvent", script);
 	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
 	export const PerfectParryEvent = DefineEvent("PerfectParryEvent", script);
 
-	// ButtonInGame — server → client
+	// RocketLaunch — server → client
 	export const PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script);
-	export const BaseCashEvent = DefineEvent("BaseCashEvent", script);
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script);
 	export const MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script);
 	export const RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script);
-	export const ProgressUpdateEvent = DefineEvent("ProgressUpdateEvent", script);
 	export const GameResultEvent = DefineEvent("GameResultEvent", script);
 
 	// EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)

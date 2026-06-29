@@ -17,9 +17,10 @@ export function init(onGameStart: (inGameUI: ScreenGui) => void): void {
 	const startButton = buttonMenu.WaitForChild("StartButton") as TextButton;
 	const quitButton = buttonMenu.WaitForChild("QuitButton") as TextButton;
 
-	Events.ButtonTriggerEvent.OnClientEvent.Connect((cameraPosPart: BasePart) => {
-		CameraController.SetCinematic();
-		CameraController.AnimateTo(cameraPosPart.CFrame);
+	Events.ButtonTriggerEvent.OnClientEvent.Connect((cameraPosPart: BasePart, cameraPivotPart: BasePart) => {
+		// Dynamic orbit: starts at cameraPosPart, always looks at cameraPivotPart,
+		// player can rotate. Persists into the hold (camera stays on the rocket).
+		CameraController.StartOrbit(cameraPosPart.CFrame, cameraPivotPart);
 
 		// Hand reaches onto the button while the menu is open.
 		ButtonAnimations.playInteract();

@@ -1,5 +1,5 @@
 // Shared snapshot of the in-game multiplier label's last "peak" appearance.
-// Captured by ButtonInGameBehavior on every MultiplierUpdate, consumed by
+// Captured by RocketLaunchBehavior on every MultiplierUpdate, consumed by
 // EndGameAnimation so the ButtonFinishGame popup opens with a MultiplierText
 // matching the size + color the player was looking at when the game ended.
 

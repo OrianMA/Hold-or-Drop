@@ -37,7 +37,7 @@ export class ButtonModule {
 		// when ButtonSessionService.cleanup() runs at the end of the session.
 		if (this.room.billboardGui) this.room.billboardGui.PlayerToHideFrom = player;
 
-		Events.ButtonTriggerEvent.FireClient(player, this.room.cameraPosPart);
+		Events.ButtonTriggerEvent.FireClient(player, this.room.cameraPosPart, this.room.cameraPivotPart);
 
 		this.teleportPlayer(character);
 

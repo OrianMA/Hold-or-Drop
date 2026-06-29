@@ -56,7 +56,7 @@ do
 		if self.room.billboardGui then
 			self.room.billboardGui.PlayerToHideFrom = player
 		end
-		Events.ButtonTriggerEvent:FireClient(player, self.room.cameraPosPart)
+		Events.ButtonTriggerEvent:FireClient(player, self.room.cameraPosPart, self.room.cameraPivotPart)
 		self:teleportPlayer(character)
 		UiService:Show(player, PopupType.ButtonMenu)
 	end

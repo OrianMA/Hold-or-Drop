@@ -1,6 +1,6 @@
 import { StarterGui } from "@rbxts/services";
 import { init as initButtonMenu } from "./behaviors/ButtonMenuBehavior";
-import { init as initButtonInGame, setup as setupButtonInGame } from "./behaviors/ButtonInGameBehavior";
+import { init as initRocketLaunch, setup as setupRocketLaunch } from "./behaviors/RocketLaunchBehavior";
 import { init as initEndGameButton } from "./behaviors/EndGameButtonBehavior";
 import { MoneyDisplay } from "./ui/MoneyDisplay";
 import { init as initInformationText } from "./ui/InformationText";
@@ -33,7 +33,7 @@ import { init as initNeonPipePulse } from "./ui/NeonPipePulse";
 // is added without thinking about its ResetOnSpawn.
 StarterGui.ResetPlayerGuiOnSpawn = false;
 
-initButtonInGame();
+initRocketLaunch();
 initEndGameButton();
 MoneyDisplay.init();
 initInformationText();
@@ -41,7 +41,7 @@ initRoomPrompts();
 initOwnerIndicator();
 initCommunityJoin();
 initCommunityMascot();
-initButtonMenu(setupButtonInGame);
+initButtonMenu(setupRocketLaunch);
 initShopMenu();
 initShopItems();
 initShopMoneyBuy();

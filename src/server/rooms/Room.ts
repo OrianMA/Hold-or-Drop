@@ -11,7 +11,12 @@ import { FormatCash } from "shared/NumberFormat";
 const BUTTON_MODEL = "ButtonModel";
 const BUTTON_PART = "ButtonPart";
 const PLAYER_POS_PART = "PlayerPosPlaceHolder";
+// Camera parts live in the MovableModel (the rocket rig), not the ButtonModel:
+// CameraPosPart is the camera's start pose, CameraParentPart the orbit pivot the
+// camera always faces (see CameraController.StartOrbit).
+const MOVABLE_MODEL = "MovableModel";
 const CAMERA_POS_PART = "CameraPosPart";
+const CAMERA_PIVOT_PART = "CameraParentPart";
 const UI_PART = "UiPart";
 const BILLBOARD = "BillboardGui";
 const GAIN_LABEL = "GainText";
@@ -32,10 +37,12 @@ export class Room {
 	readonly name: string;
 	readonly folder: Instance;
 	readonly buttonModel!: Model;
+	readonly movableModel!: Model;
 	readonly proximityPrompt!: ProximityPrompt;
 	readonly buttonPart!: BasePart;
 	readonly playerPosPart!: BasePart;
 	readonly cameraPosPart!: BasePart;
+	readonly cameraPivotPart!: BasePart;
 	readonly billboardGui: BillboardGui | undefined;
 	// The room's spawn marker — the occupant is teleported here on every spawn.
 	// A plain Part is fine (it's not used as a real SpawnLocation). Optional.
@@ -60,25 +67,41 @@ export class Room {
 		const buttonPart = buttonModel.FindFirstChild(BUTTON_PART);
 		const proximityPrompt = buttonPart?.FindFirstChildOfClass("ProximityPrompt");
 		const playerPosPart = buttonModel.FindFirstChild(PLAYER_POS_PART);
-		const cameraPosPart = buttonModel.FindFirstChild(CAMERA_POS_PART);
 
 		if (
 			!buttonPart ||
 			!buttonPart.IsA("BasePart") ||
 			!proximityPrompt ||
 			!playerPosPart ||
-			!playerPosPart.IsA("BasePart") ||
-			!cameraPosPart ||
-			!cameraPosPart.IsA("BasePart")
+			!playerPosPart.IsA("BasePart")
 		) {
 			this.invalidate("missing button parts");
+			return;
+		}
+
+		// Camera parts now live in the MovableModel (rocket rig), not the ButtonModel.
+		const movableModel = folder.FindFirstChild(MOVABLE_MODEL);
+		const cameraPosPart = movableModel?.FindFirstChild(CAMERA_POS_PART);
+		const cameraPivotPart = movableModel?.FindFirstChild(CAMERA_PIVOT_PART);
+
+		if (
+			!movableModel ||
+			!movableModel.IsA("Model") ||
+			!cameraPosPart ||
+			!cameraPosPart.IsA("BasePart") ||
+			!cameraPivotPart ||
+			!cameraPivotPart.IsA("BasePart")
+		) {
+			this.invalidate(`missing ${MOVABLE_MODEL} camera parts`);
 			return;
 		}
 
 		this.buttonPart = buttonPart;
 		this.proximityPrompt = proximityPrompt;
 		this.playerPosPart = playerPosPart;
+		this.movableModel = movableModel;
 		this.cameraPosPart = cameraPosPart;
+		this.cameraPivotPart = cameraPivotPart;
 
 		// ProximityPrompt.Enabled is a global property — there's no per-player
 		// toggle. We keep it disabled on the server and let each client enable only
@@ -165,7 +188,8 @@ export class Room {
 
 	// Display the occupant's BaseCash on the billboard + proximity prompt.
 	setGainCash(cash: number): void {
-		if (this.gainLabel) this.gainLabel.Text = FormatCash(cash);
+		// Billboard label prefixed with '$' (gain cash is always positive).
+		if (this.gainLabel) this.gainLabel.Text = `$${FormatCash(cash)}`;
 		this.proximityPrompt.ObjectText = `${FormatCash(cash)} money`;
 	}
 }

@@ -16,9 +16,10 @@ local function init(onGameStart)
 	local startButton = buttonMenu:WaitForChild("StartButton")
 	local quitButton = buttonMenu:WaitForChild("QuitButton")
 	local DisconnectEvents
-	Events.ButtonTriggerEvent.OnClientEvent:Connect(function(cameraPosPart)
-		CameraController.SetCinematic()
-		CameraController.AnimateTo(cameraPosPart.CFrame)
+	Events.ButtonTriggerEvent.OnClientEvent:Connect(function(cameraPosPart, cameraPivotPart)
+		-- Dynamic orbit: starts at cameraPosPart, always looks at cameraPivotPart,
+		-- player can rotate. Persists into the hold (camera stays on the rocket).
+		CameraController.StartOrbit(cameraPosPart.CFrame, cameraPivotPart)
 		-- Hand reaches onto the button while the menu is open.
 		ButtonAnimations.playInteract()
 		-- Menu is open → hide the persistent HUD behind it.

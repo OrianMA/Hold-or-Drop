@@ -1,5 +1,5 @@
 export enum PopupType {
 	ButtonMenu = "ButtonMenu",
-	ButtonInGame = "ButtonInGame",
+	RocketLaunch = "RocketLaunch",
 	ButtonFinishGame = "ButtonFinishGame",
 }

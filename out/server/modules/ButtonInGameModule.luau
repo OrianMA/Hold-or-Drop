@@ -11,10 +11,14 @@ local Workspace = _services.Workspace
 local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").invincible
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
 local ConfettiBurst = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "ConfettiBurst").ConfettiBurst
-local _ButtonGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig")
-local RISK_RAMP_DURATION = _ButtonGameConfig.RISK_RAMP_DURATION
-local MULTIPLIER_TICK_RATE = _ButtonGameConfig.MULTIPLIER_TICK_RATE
-local STARTING_MULTIPLIER = _ButtonGameConfig.STARTING_MULTIPLIER
+local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
+local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
+local RISK_RAMP_DURATION = _RocketGameConfig.RISK_RAMP_DURATION
+local MULTIPLIER_TICK_RATE = _RocketGameConfig.MULTIPLIER_TICK_RATE
+local STARTING_MULTIPLIER = _RocketGameConfig.STARTING_MULTIPLIER
+local MULTIPLIER_START_INCREMENT = _RocketGameConfig.MULTIPLIER_START_INCREMENT
+local MULTIPLIER_INCREMENT_GROWTH = _RocketGameConfig.MULTIPLIER_INCREMENT_GROWTH
+local EXPLOSION_VIEW_DELAY = _RocketGameConfig.EXPLOSION_VIEW_DELAY
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 -- ── Game tuning ───────────────────────────────────────────────────────────────
 local MAX_RISK = 0.8
@@ -27,7 +31,6 @@ local KNOCKBACK_DURATION = 0.5
 -- Roblox's default explosion handles the fling — we just keep the radius tight
 -- so the BlastPressure stays scoped to a single character.
 local EXPLOSION_BLAST_RADIUS = 12
-local EXPLOSION_KILL_PRESSURE = 180000
 local EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id
 local EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume
 local EXPLOSION_SOUND_ROLLOFF = 120
@@ -71,9 +74,10 @@ end
 -- the fling is naturally scoped to the player anchored on top of the button —
 -- bystanders standing a few studs away aren't inside the bubble and are left
 -- alone, no manual filtering required.
-local function triggerExplosionAt(pos, blastPressure)
-	-- Sound cloned from the pre-buffered template — no CDN fetch on the client.
-	-- Parented to Terrain via an Attachment for proper 3D rolloff.
+-- Plays the 3D explosion boom at `pos` (heard by everyone). Cloned from the
+-- pre-buffered template — no CDN fetch on the client. Parented to Terrain via an
+-- Attachment for proper 3D rolloff.
+local function playExplosionSoundAt(pos)
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = Workspace.Terrain
 	attachment.WorldPosition = pos
@@ -83,6 +87,9 @@ local function triggerExplosionAt(pos, blastPressure)
 	sound.Ended:Connect(function()
 		return attachment:Destroy()
 	end)
+end
+local function triggerExplosionAt(pos, blastPressure)
+	playExplosionSoundAt(pos)
 	local explosion = Instance.new("Explosion")
 	explosion.Position = pos
 	explosion.BlastRadius = EXPLOSION_BLAST_RADIUS
@@ -104,15 +111,19 @@ local function startButtonGame(player, session)
 	-- game-pass tier + community), additively. Read once — held for the session so
 	-- a mid-run boost change can't alter an in-progress hold.
 	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash")
-	local multiplierPerSecond = PlayerProgressionService:get(player, "Multiplier")
 	-- Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
 	local safety = PlayerProgressionService:get(player, "AdditionalSecurity")
-	-- Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
+	-- Démarre à 1.00x puis grimpe de façon accélérée (très lent au début, de plus en
+	-- plus vite — voir RocketGameConfig). Le niveau Multiplier du joueur n'est pas
+	-- encore pris en compte.
 	local currentMultiplier = STARTING_MULTIPLIER
+	local multiplierIncrement = MULTIPLIER_START_INCREMENT
 	local isActive = true
-	Events.BaseCashEvent:FireClient(player, baseCash)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 	Events.RiskUpdateEvent:FireClient(player, 0)
+	-- La fusée décolle dès le début du gameplay. speedFactor = 1 pour l'instant ;
+	-- il sera dérivé du multiplier level plus tard.
+	RocketLauncher:launch(room)
 	local releaseConn
 	releaseConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
 		if p ~= player or not isActive then
@@ -120,26 +131,30 @@ local function startButtonGame(player, session)
 		end
 		isActive = false
 		releaseConn:Disconnect()
+		-- Win : la fusée s'arrête et revient au pad pour la prochaine partie.
+		RocketLauncher:reset(room)
 		local earned = math.floor(baseCash * currentMultiplier)
 		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 		ConfettiBurst:play(buttonModel)
 		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
-	-- Increment plat : chaque seconde, currentMultiplier += multiplierPerSecond
-	-- (la valeur Multiplier du joueur). Indépendant de la boucle risque.
+	-- Croissance accélérée : chaque tick on ajoute `multiplierIncrement`, et cet
+	-- incrément grossit lui-même à chaque tick → très lent au début, de plus en plus
+	-- rapide. Indépendant de la boucle risque.
 	task.spawn(function()
 		while isActive do
 			task.wait(MULTIPLIER_TICK_RATE)
 			if not isActive then
 				break
 			end
-			currentMultiplier += multiplierPerSecond
+			currentMultiplier += multiplierIncrement
+			multiplierIncrement += MULTIPLIER_INCREMENT_GROWTH
 			Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 		end
 	end)
-	-- ── Boucle risque & progression ───────────────────────────────────────────
-	-- Tourne à TICK_RATE pour les checks d'explosion, le risque et la progress bar.
+	-- ── Boucle risque ──────────────────────────────────────────────────────────
+	-- Tourne à TICK_RATE pour les checks d'explosion et le risque.
 	task.spawn(function()
 		local timeHeld = 0
 		while isActive do
@@ -151,8 +166,6 @@ local function startButtonGame(player, session)
 			-- Safety reduces the effective risk: at 50% safety the ceiling halves.
 			local risk = getRisk(timeHeld) * (1 - safety)
 			Events.RiskUpdateEvent:FireClient(player, risk)
-			local progress = math.min(timeHeld / TOTAL_DURATION, 1)
-			Events.ProgressUpdateEvent:FireClient(player, progress)
 			if not invincible and math.random() < risk then
 				isActive = false
 				releaseConn:Disconnect()
@@ -170,6 +183,7 @@ local function startButtonGame(player, session)
 				task.wait(0.2)
 				gracePeriodConn:Disconnect()
 				if cancelledByPlayer then
+					RocketLauncher:reset(room)
 					local earned = math.floor(baseCash * currentMultiplier)
 					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 					ConfettiBurst:play(buttonModel)
@@ -235,6 +249,7 @@ local function startButtonGame(player, session)
 					task.wait(0.5)
 					parryConn:Disconnect()
 					if isPerfectParry then
+						RocketLauncher:reset(room)
 						if hrp then
 							hrp.Anchored = true
 						end
@@ -269,23 +284,25 @@ local function startButtonGame(player, session)
 						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
 						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 					else
+						-- Perte : la FUSÉE explose, pas le joueur. Pas de fling, pas de mort.
+						RocketLauncher:stop(room)
+						local rocketPos = room.movableModel:GetPivot().Position
+						RocketLauncher:explode(room)
+						playExplosionSoundAt(rocketPos)
+						-- Le joueur reste en vie : on lui rend sa mobilité (figée pendant la fenêtre).
 						if hrp then
 							hrp.Anchored = false
 						end
-						if character then
-							for _, desc in character:GetDescendants() do
-								if desc:IsA("Motor6D") then
-									desc.Enabled = false
-								end
-							end
-						end
-						if buttonPart then
-							triggerExplosionAt(buttonPart.Position, EXPLOSION_KILL_PRESSURE)
-						end
 						if humanoid then
-							humanoid.Health = 0
+							humanoid.WalkSpeed = origWalkSpeed
+							humanoid.JumpPower = origJumpPower
+							humanoid.JumpHeight = origJumpHeight
 						end
+						-- Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
 						Events.PlayerKilledEvent:FireClient(player)
+						-- On laisse l'explosion se jouer avant de ramener la fusée + ouvrir le payout.
+						task.wait(EXPLOSION_VIEW_DELAY)
+						RocketLauncher:reset(room)
 						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)
 						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
 						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER)

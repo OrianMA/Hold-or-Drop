@@ -6,7 +6,15 @@ import { ReplicatedStorage, TweenService, Workspace } from "@rbxts/services";
 import { invincible } from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { ConfettiBurst } from "server/modules/ConfettiBurst";
-import { RISK_RAMP_DURATION, MULTIPLIER_TICK_RATE, STARTING_MULTIPLIER } from "shared/ButtonGameConfig";
+import { RocketLauncher } from "server/modules/RocketLauncher";
+import {
+	RISK_RAMP_DURATION,
+	MULTIPLIER_TICK_RATE,
+	STARTING_MULTIPLIER,
+	MULTIPLIER_START_INCREMENT,
+	MULTIPLIER_INCREMENT_GROWTH,
+	EXPLOSION_VIEW_DELAY,
+} from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
@@ -23,7 +31,6 @@ const KNOCKBACK_DURATION = 0.5;
 // Roblox's default explosion handles the fling — we just keep the radius tight
 // so the BlastPressure stays scoped to a single character.
 const EXPLOSION_BLAST_RADIUS = 12;
-const EXPLOSION_KILL_PRESSURE = 180000;
 const EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id;
 const EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume;
 const EXPLOSION_SOUND_ROLLOFF = 120; // détail 3D propre au serveur
@@ -72,9 +79,10 @@ function getRisk(timeHeld: number): number {
 // the fling is naturally scoped to the player anchored on top of the button —
 // bystanders standing a few studs away aren't inside the bubble and are left
 // alone, no manual filtering required.
-function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
-	// Sound cloned from the pre-buffered template — no CDN fetch on the client.
-	// Parented to Terrain via an Attachment for proper 3D rolloff.
+// Plays the 3D explosion boom at `pos` (heard by everyone). Cloned from the
+// pre-buffered template — no CDN fetch on the client. Parented to Terrain via an
+// Attachment for proper 3D rolloff.
+function playExplosionSoundAt(pos: Vector3): void {
 	const attachment = new Instance("Attachment");
 	attachment.Parent = Workspace.Terrain;
 	attachment.WorldPosition = pos;
@@ -83,6 +91,10 @@ function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
 	sound.Parent = attachment;
 	sound.Play();
 	sound.Ended.Connect(() => attachment.Destroy());
+}
+
+function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
+	playExplosionSoundAt(pos);
 
 	const explosion = new Instance("Explosion");
 	explosion.Position = pos;
@@ -110,22 +122,30 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// a mid-run boost change can't alter an in-progress hold.
 	const baseCash = PlayerProgressionService.get(player, "EffectiveBaseCash");
 
-	const multiplierPerSecond = PlayerProgressionService.get(player, "Multiplier");
 	// Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
 	const safety = PlayerProgressionService.get(player, "AdditionalSecurity");
 
-	// Démarre à 1x (paiement de base) puis grimpe de `multiplierPerSecond`/s.
+	// Démarre à 1.00x puis grimpe de façon accélérée (très lent au début, de plus en
+	// plus vite — voir RocketGameConfig). Le niveau Multiplier du joueur n'est pas
+	// encore pris en compte.
 	let currentMultiplier = STARTING_MULTIPLIER;
+	let multiplierIncrement = MULTIPLIER_START_INCREMENT;
 	let isActive = true;
 
-	Events.BaseCashEvent.FireClient(player, baseCash);
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 	Events.RiskUpdateEvent.FireClient(player, 0);
+
+	// La fusée décolle dès le début du gameplay. speedFactor = 1 pour l'instant ;
+	// il sera dérivé du multiplier level plus tard.
+	RocketLauncher.launch(room);
 
 	const releaseConn = Events.ReleaseButtonEvent.OnServerEvent.Connect((p) => {
 		if (p !== player || !isActive) return;
 		isActive = false;
 		releaseConn.Disconnect();
+
+		// Win : la fusée s'arrête et revient au pad pour la prochaine partie.
+		RocketLauncher.reset(room);
 
 		const earned = math.floor(baseCash * currentMultiplier);
 		Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
@@ -134,20 +154,22 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
-	// Increment plat : chaque seconde, currentMultiplier += multiplierPerSecond
-	// (la valeur Multiplier du joueur). Indépendant de la boucle risque.
+	// Croissance accélérée : chaque tick on ajoute `multiplierIncrement`, et cet
+	// incrément grossit lui-même à chaque tick → très lent au début, de plus en plus
+	// rapide. Indépendant de la boucle risque.
 	task.spawn(() => {
 		while (isActive) {
 			task.wait(MULTIPLIER_TICK_RATE);
 			if (!isActive) break;
 
-			currentMultiplier += multiplierPerSecond;
+			currentMultiplier += multiplierIncrement;
+			multiplierIncrement += MULTIPLIER_INCREMENT_GROWTH;
 			Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 		}
 	});
 
-	// ── Boucle risque & progression ───────────────────────────────────────────
-	// Tourne à TICK_RATE pour les checks d'explosion, le risque et la progress bar.
+	// ── Boucle risque ──────────────────────────────────────────────────────────
+	// Tourne à TICK_RATE pour les checks d'explosion et le risque.
 	task.spawn(() => {
 		let timeHeld = 0;
 
@@ -160,9 +182,6 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 			// Safety reduces the effective risk: at 50% safety the ceiling halves.
 			const risk = getRisk(timeHeld) * (1 - safety);
 			Events.RiskUpdateEvent.FireClient(player, risk);
-
-			const progress = math.min(timeHeld / TOTAL_DURATION, 1);
-			Events.ProgressUpdateEvent.FireClient(player, progress);
 
 			if (!invincible && math.random() < risk) {
 				isActive = false;
@@ -182,6 +201,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 				gracePeriodConn.Disconnect();
 
 				if (cancelledByPlayer) {
+					RocketLauncher.reset(room);
 					const earned = math.floor(baseCash * currentMultiplier);
 					Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
 					ConfettiBurst.play(buttonModel);
@@ -217,6 +237,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					parryConn.Disconnect();
 
 					if (isPerfectParry) {
+						RocketLauncher.reset(room);
 						if (hrp) hrp.Anchored = true;
 
 						if (buttonPart) triggerExplosionAt(buttonPart.Position, 0);
@@ -256,19 +277,27 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
 						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 					} else {
-						if (hrp) hrp.Anchored = false;
+						// Perte : la FUSÉE explose, pas le joueur. Pas de fling, pas de mort.
+						RocketLauncher.stop(room); // stoppe l'ascension — la fusée explose en l'air
+						const rocketPos = room.movableModel.GetPivot().Position;
+						RocketLauncher.explode(room); // particules dans ParticlesParentPart
+						playExplosionSoundAt(rocketPos); // boom 3D entendu par tous
 
-						if (character) {
-							for (const desc of character.GetDescendants()) {
-								if (desc.IsA("Motor6D")) desc.Enabled = false;
-							}
+						// Le joueur reste en vie : on lui rend sa mobilité (figée pendant la fenêtre).
+						if (hrp) hrp.Anchored = false;
+						if (humanoid) {
+							humanoid.WalkSpeed = origWalkSpeed;
+							humanoid.JumpPower = origJumpPower;
+							humanoid.JumpHeight = origJumpHeight;
 						}
 
-						if (buttonPart) triggerExplosionAt(buttonPart.Position, EXPLOSION_KILL_PRESSURE);
-
-						if (humanoid) humanoid.Health = 0;
-
+						// Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
 						Events.PlayerKilledEvent.FireClient(player);
+
+						// On laisse l'explosion se jouer avant de ramener la fusée + ouvrir le payout.
+						task.wait(EXPLOSION_VIEW_DELAY);
+						RocketLauncher.reset(room);
+
 						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier);
 						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
 						EndGameButtonModule.enter(

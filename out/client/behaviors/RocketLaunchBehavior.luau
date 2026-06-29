@@ -2,34 +2,30 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local CameraController = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "CameraController").CameraController
-local spawnFloatingMultiplierLabel = TS.import(script, script.Parent.Parent, "ui", "FloatingMultiplierLabel").spawnFloatingMultiplierLabel
 local MultiplierVisuals = TS.import(script, script.Parent.Parent, "ui", "MultiplierVisuals").MultiplierVisuals
-local STARTING_MULTIPLIER = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ButtonGameConfig").STARTING_MULTIPLIER
-local _NumberFormat = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat")
-local FormatCash = _NumberFormat.FormatCash
-local FormatNumber = _NumberFormat.FormatNumber
+local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
+local STARTING_MULTIPLIER = _RocketGameConfig.STARTING_MULTIPLIER
+local EXPLOSION_VIEW_DELAY = _RocketGameConfig.EXPLOSION_VIEW_DELAY
+local MULTIPLIER_TICK_RATE = _RocketGameConfig.MULTIPLIER_TICK_RATE
+local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
-local ContentProvider = _services.ContentProvider
 local GuiService = _services.GuiService
 local Lighting = _services.Lighting
 local Players = _services.Players
-local ReplicatedStorage = _services.ReplicatedStorage
 local RunService = _services.RunService
 local SoundService = _services.SoundService
 local TweenService = _services.TweenService
 local UserInputService = _services.UserInputService
 local Workspace = _services.Workspace
 -- UI refs — assigned on first setup(), never change after
-local releaseButton
-local baseCashText
-local multiplierLabel
-local progressionIndicator
+local claimButton
+local multiplierText
 local vignetteCanvas
-local floatingTemplate
 local buttonOriginalSize
+local claimButtonOriginalColor
 local multiplierTextOriginalSize
 local multiplierTextOriginalColor
 -- Lighting effects — created once in init()
@@ -39,15 +35,20 @@ local bloomEffect
 local isGameActive = false
 local released = false
 local multiplierTextSize = 0
-local previousMultiplier = 1
 local shakeAmplitude = 0
+-- Continuous multiplier display: the server sends a discrete value each tick; we
+-- lerp the shown number from the previous value to the new one over the tick so it
+-- passes through every intermediate number (1.01, 1.02, …) instead of jumping.
+local displayedMultiplier = STARTING_MULTIPLIER
+local multiplierFrom = STARTING_MULTIPLIER
+local multiplierTo = STARTING_MULTIPLIER
+local multiplierElapsed = 0
 local shakeUndoCFrame
 local baseFov = 70
 local spaceConn
 local activatedConn
 local parryKnockbackCamConn
--- Sons bouton — IDs centralisés dans AudioConfig, joués via playSound() (non-3D, personnel)
-local SOUND_BUTTON_EXPLODE_ID = AudioConfig.sfx.buttonExplode.id
+-- Son de parry — id centralisé dans AudioConfig.
 local SOUND_PARRY_ID = AudioConfig.sfx.parry.id
 -- Template persistant en SoundService : le client garde l'asset en mémoire dès le démarrage.
 -- Cloner ce template au moment du parry élimine le fetch CDN et le délai de buffering.
@@ -59,31 +60,17 @@ local parrySoundTemplate = (function()
 	sound.Parent = SoundService
 	return sound
 end)()
--- Live multiplier label text. Keep one decimal below 1000 (e.g. "2.5") so the
--- early game stays precise, then abbreviate larger values with k/M/B suffixes
--- (e.g. "1.5K", "3M") so long holds don't overflow the label.
+-- Live multiplier label text. 2 decimals below 100 ("1.00", "1.05") so the slow
+-- early climb is readable, 1 decimal below 1000, then k/M/B suffixes so long holds
+-- don't overflow the label.
 local function formatMultiplier(value)
+	if value < 100 then
+		return string.format("%.2f", value)
+	end
 	if value < 1000 then
-		return tostring(math.round(value * 10) / 10)
+		return string.format("%.1f", value)
 	end
 	return FormatNumber(value)
-end
-local function playSound(id, volume, pitch)
-	if volume == nil then
-		volume = 1
-	end
-	if pitch == nil then
-		pitch = 1
-	end
-	local sound = Instance.new("Sound")
-	sound.SoundId = id
-	sound.Volume = volume
-	sound.PlaybackSpeed = pitch
-	sound.Parent = SoundService
-	sound:Play()
-	sound.Ended:Connect(function()
-		return sound:Destroy()
-	end)
 end
 local SIZE_GROWTH_PER_UPDATE = 4
 local MAX_MULTIPLIER_SIZE_INCREASE = 80
@@ -91,9 +78,10 @@ local MAX_SHAKE_AMPLITUDE = 0.06
 local MAX_BLOOM_INTENSITY = 1.5
 local MIN_VIGNETTE_TRANSPARENCY = 0.1
 local MIN_FOV = 52
+-- Couleur du ClaimButton quand la fusée explose (il ne disparaît plus, il rougit).
+local CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45)
 local UpgradeMultiplayerTI = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local ReleaseButtonDesapearTI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-local FillProgressBarTI = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
 local PostProcessTI = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ResetPostProcessTI = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ZoomResetTI = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -183,14 +171,14 @@ local function endInput()
 	end
 	spaceConn = nil
 	resetPostProcess()
-	if releaseButton then
-		releaseButton.Active = false
-		local tween = TweenService:Create(releaseButton, ReleaseButtonDesapearTI, {
+	if claimButton then
+		claimButton.Active = false
+		local tween = TweenService:Create(claimButton, ReleaseButtonDesapearTI, {
 			Size = UDim2.new(0, 0, 0, 0),
 		})
 		tween:Play()
 		tween.Completed:Wait()
-		releaseButton.Visible = false
+		claimButton.Visible = false
 	end
 end
 local function startParryWindow()
@@ -206,16 +194,12 @@ local function startParryWindow()
 		_result_1:Disconnect()
 	end
 	activatedConn = nil
-	if not releaseButton then
+	if not claimButton then
 		released = true
 		return nil
 	end
-	-- Le bouton disparaît pendant la fenêtre de parry
-	releaseButton.Active = true
-	local tween = TweenService:Create(releaseButton, ReleaseButtonDesapearTI, {
-		Size = UDim2.new(0, 0, 0, 0),
-	})
-	tween:Play()
+	-- Le bouton reste visible pendant la fenêtre de parry (il peut servir à parer).
+	claimButton.Active = true
 	local fireParry = function()
 		if released then
 			return nil
@@ -242,8 +226,9 @@ local function startParryWindow()
 			fireParry()
 		end
 	end)
-	activatedConn = releaseButton.Activated:Connect(fireParry)
-	-- Fin de la fenêtre de parry
+	activatedConn = claimButton.Activated:Connect(fireParry)
+	-- Fin de la fenêtre de parry — le bouton reste visible (rougi par PlayerKilledEvent
+	-- si la partie est perdue), on coupe juste l'input de parry.
 	task.delay(PerfectParrytime, function()
 		local _result_2 = spaceConn
 		if _result_2 ~= nil then
@@ -256,22 +241,29 @@ local function startParryWindow()
 		end
 		activatedConn = nil
 		released = true
-		releaseButton.Active = false
-		releaseButton.Visible = false
+		if claimButton then
+			claimButton.Active = false
+		end
 	end)
 end
 -- Called once at startup — all event listeners live here, gated by isGameActive
 local function init()
-	-- Préchargement du son bouton (non-template : joué via playSound à la demande)
-	task.spawn(function()
-		local s = Instance.new("Sound")
-		s.SoundId = SOUND_BUTTON_EXPLODE_ID
-		s.Parent = SoundService
-		ContentProvider:PreloadAsync({ s })
-		s:Destroy()
+	-- Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
+	-- valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
+	-- nombres intermédiaires (lent au début, de plus en plus vite).
+	RunService.RenderStepped:Connect(function(dt)
+		if not isGameActive or not multiplierText then
+			return nil
+		end
+		if multiplierElapsed < MULTIPLIER_TICK_RATE then
+			multiplierElapsed = math.min(multiplierElapsed + dt, MULTIPLIER_TICK_RATE)
+			local a = multiplierElapsed / MULTIPLIER_TICK_RATE
+			displayedMultiplier = multiplierFrom + (multiplierTo - multiplierFrom) * a
+		else
+			displayedMultiplier = multiplierTo
+		end
+		multiplierText.Text = `{formatMultiplier(displayedMultiplier)}x`
 	end)
-	-- Template du label flottant — stocké dans ReplicatedStorage, accessible par tous les clients
-	floatingTemplate = ReplicatedStorage:WaitForChild("FloatingMultiplierTemplate")
 	colorCorrection = Instance.new("ColorCorrectionEffect")
 	colorCorrection.Name = "HoldOrDropCC"
 	colorCorrection.Parent = Lighting
@@ -322,8 +314,49 @@ local function init()
 		camera.CFrame = CFrame.new(cf.Position, cf.Position + newLookDir)
 	end)
 	Events.PlayerKilledEvent.OnClientEvent:Connect(function()
-		-- Son joué côté serveur (3D, entendu par tous)
-		CameraController.BringBackPlayerCamera(0)
+		-- La fusée explose (le joueur ne meurt plus). Le bouton "claim" ne disparaît
+		-- pas : il devient rouge et non-cliquable (remis à l'état normal au lancement).
+		local _result = spaceConn
+		if _result ~= nil then
+			_result:Disconnect()
+		end
+		spaceConn = nil
+		local _result_1 = activatedConn
+		if _result_1 ~= nil then
+			_result_1:Disconnect()
+		end
+		activatedConn = nil
+		if claimButton then
+			claimButton.Active = false
+			claimButton.Interactable = false
+			claimButton.BackgroundColor3 = CLAIM_BUTTON_EXPLODE_COLOR
+		end
+		-- La caméra orbitale reste sur la fusée qui explose un court instant — punch FOV
+		-- + shake d'impact — puis revient au joueur. Le son d'explosion vient du serveur.
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera.FieldOfView = baseFov + EXPLODE_FOV_OVERSHOOT
+			TweenService:Create(camera, ZoomResetTI, {
+				FieldOfView = baseFov,
+			}):Play()
+		end
+		-- Shake d'impact qui s'atténue rapidement
+		shakeAmplitude = MAX_SHAKE_AMPLITUDE * 1.6
+		task.spawn(function()
+			for i = 0, 15 do
+				task.wait(0.03)
+				shakeAmplitude *= 0.85
+			end
+			shakeAmplitude = 0
+		end)
+		-- On attend que l'explosion se joue avant de ramener la caméra au joueur.
+		task.delay(EXPLOSION_VIEW_DELAY, function()
+			local cam = Workspace.CurrentCamera
+			if cam then
+				cam.FieldOfView = baseFov
+			end
+			CameraController.BringBackPlayerCamera()
+		end)
 	end)
 	Events.PerfectParryEffectEvent.OnClientEvent:Connect(function()
 		-- Le hold s'arrête et l'animation de projection parry se joue.
@@ -342,7 +375,9 @@ local function init()
 			_result = _result:FindFirstChild("HumanoidRootPart")
 		end
 		local hrp = _result
-		-- Caméra cinématique : au-dessus et derrière le joueur pour voir la projection
+		-- Caméra cinématique : au-dessus et derrière le joueur pour voir la projection.
+		-- L'orbite est stoppée — le tracking parry ci-dessous prend la main sur la CFrame.
+		CameraController.StopOrbit()
 		CameraController.SetCinematic()
 		local camera = Workspace.CurrentCamera
 		if camera then
@@ -431,18 +466,15 @@ local function init()
 		end
 		print(`Game over — exploded: {exploded} | cash: {cashEarned} | {multiplier}x`)
 	end)
-	Events.BaseCashEvent.OnClientEvent:Connect(function(baseCash)
-		if not isGameActive or not baseCashText then
-			return nil
-		end
-		baseCashText.Text = FormatCash(baseCash)
-	end)
 	Events.MultiplierUpdateEvent.OnClientEvent:Connect(function(multiplier)
-		if not isGameActive or not multiplierLabel then
+		if not isGameActive or not multiplierText then
 			return nil
 		end
-		local delta = multiplier - previousMultiplier
-		previousMultiplier = multiplier
+		-- Nouvelle cible : le nombre affiché va monter en continu vers `multiplier`
+		-- sur la durée d'un tick (voir la boucle RenderStepped dans init).
+		multiplierFrom = displayedMultiplier
+		multiplierTo = multiplier
+		multiplierElapsed = 0
 		multiplierTextSize += SIZE_GROWTH_PER_UPDATE
 		local _exp = multiplierTextSize
 		local _condition = multiplierTextOriginalSize
@@ -450,30 +482,15 @@ local function init()
 			_condition = 0
 		end
 		local factor = math.clamp((_exp - _condition) / MAX_MULTIPLIER_SIZE_INCREASE, 0, 1)
-		-- Capture pour la closure : plusieurs labels peuvent voler en même temps
-		local capturedLabel = multiplierLabel
-		local capturedMultiplier = multiplier
-		local capturedSize = multiplierTextSize
 		local capturedColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
-		-- Snapshot for the EndGameButton popup so it can open with matching visuals
-		MultiplierVisuals:capture(capturedSize, capturedColor)
-		-- Texte + bump déclenchés à l'impact du label flottant
-		local onLabelArrived = function()
-			capturedLabel.Text = `{formatMultiplier(capturedMultiplier)}x`
-			TweenService:Create(capturedLabel, UpgradeMultiplayerTI, {
-				TextSize = capturedSize,
-				TextColor3 = capturedColor,
-			}):Play()
-		end
-		if delta > 0 then
-			local screenGui = multiplierLabel:FindFirstAncestorOfClass("ScreenGui")
-			if screenGui and floatingTemplate then
-				spawnFloatingMultiplierLabel(screenGui, floatingTemplate, delta, multiplierLabel, onLabelArrived)
-			else
-				onLabelArrived()
-			end
-		end
-		-- Effets ambiants immédiats (game-feel, indépendants du label flottant)
+		-- Snapshot pour la popup de fin (taille + couleur au moment de la fin)
+		MultiplierVisuals:capture(multiplierTextSize, capturedColor)
+		-- Bump de taille + virage au rouge (la valeur, elle, monte en continu)
+		TweenService:Create(multiplierText, UpgradeMultiplayerTI, {
+			TextSize = multiplierTextSize,
+			TextColor3 = capturedColor,
+		}):Play()
+		-- Effets ambiants immédiats (game-feel)
 		if vignetteCanvas then
 			TweenService:Create(vignetteCanvas, PostProcessTI, {
 				GroupTransparency = 1 - factor * (1 - MIN_VIGNETTE_TRANSPARENCY),
@@ -498,20 +515,11 @@ local function init()
 			}):Play()
 		end
 	end)
-	Events.ProgressUpdateEvent.OnClientEvent:Connect(function(progress)
-		if not isGameActive or not progressionIndicator then
-			return nil
-		end
-		TweenService:Create(progressionIndicator, FillProgressBarTI, {
-			Position = UDim2.new(progress, 0, 0.5, 0),
-		}):Play()
-	end)
 	Events.ButtonExplodedEvent.OnClientEvent:Connect(function()
 		if not isGameActive then
 			return nil
 		end
 		MusicController:stopButtonMusic()
-		playSound(SOUND_BUTTON_EXPLODE_ID, AudioConfig.sfx.buttonExplode.volume)
 		-- 0.2s grace period : release normal encore possible
 		task.delay(0.2, function()
 			if released then
@@ -524,35 +532,22 @@ local function init()
 end
 -- Called each time the player starts a new game (after clicking StartButton)
 local function setup(inGameUI)
-	local popup = inGameUI:WaitForChild("ButtonInGame")
-	releaseButton = popup:WaitForChild("ReleaseButton")
-	baseCashText = popup:WaitForChild("BaseCashText")
-	local sliderParent = popup:WaitForChild("Slider")
-	multiplierLabel = sliderParent:WaitForChild("MultiplierLabel")
-	local progressBarParent = sliderParent:WaitForChild("ProgressBar")
-	progressionIndicator = progressBarParent:WaitForChild("ProgressionIndicator")
-	-- Legacy 5-stage level markers (Level1Text..Level5Text) are no longer driven —
-	-- the multiplier now grows by a flat per-second amount. Hide any that remain
-	-- in the Studio layout so the bar stays clean.
-	for _, n in { 1, 2, 3, 4, 5 } do
-		local child = sliderParent:FindFirstChild(`Level{n}Text`)
-		local _result = child
-		if _result ~= nil then
-			_result = _result:IsA("TextLabel")
-		end
-		if _result then
-			child.Visible = false
-		end
-	end
+	local popup = inGameUI:WaitForChild("RocketLaunch")
+	local claimButtonFrame = popup:WaitForChild("ClaimButtonFrame")
+	claimButton = claimButtonFrame:WaitForChild("ClaimButton")
+	multiplierText = popup:WaitForChild("MultiplierText")
 	-- Save original sizes/colors on first run so we can restore each game
 	if not buttonOriginalSize then
-		buttonOriginalSize = releaseButton.Size
+		buttonOriginalSize = claimButton.Size
+	end
+	if not claimButtonOriginalColor then
+		claimButtonOriginalColor = claimButton.BackgroundColor3
 	end
 	if not (multiplierTextOriginalSize ~= 0 and multiplierTextOriginalSize == multiplierTextOriginalSize and multiplierTextOriginalSize) then
-		multiplierTextOriginalSize = multiplierLabel.TextSize
+		multiplierTextOriginalSize = multiplierText.TextSize
 	end
 	if not multiplierTextOriginalColor then
-		multiplierTextOriginalColor = multiplierLabel.TextColor3
+		multiplierTextOriginalColor = multiplierText.TextColor3
 	end
 	if not vignetteCanvas then
 		vignetteCanvas = buildVignette(inGameUI)
@@ -571,20 +566,24 @@ local function setup(inGameUI)
 	released = false
 	MusicController:playButtonMusic()
 	ButtonAnimations.playHold()
-	previousMultiplier = STARTING_MULTIPLIER
-	multiplierLabel.TextSize = multiplierTextOriginalSize
-	multiplierLabel.TextColor3 = multiplierTextOriginalColor
+	multiplierText.TextSize = multiplierTextOriginalSize
+	multiplierText.TextColor3 = multiplierTextOriginalColor
 	multiplierTextSize = multiplierTextOriginalSize
+	-- Le compteur continu redémarre à 1.00x.
+	displayedMultiplier = STARTING_MULTIPLIER
+	multiplierFrom = STARTING_MULTIPLIER
+	multiplierTo = STARTING_MULTIPLIER
+	multiplierElapsed = MULTIPLIER_TICK_RATE
 	MultiplierVisuals:clear()
 	resetPostProcess(true)
-	-- Restore button to full size and re-enable it
-	releaseButton.Size = buttonOriginalSize
-	releaseButton.Active = true
-	releaseButton.Visible = true
-	print(releaseButton.Activated)
+	-- Restore button to full size, normal colour and re-enable it
+	claimButton.Size = buttonOriginalSize
+	claimButton.BackgroundColor3 = claimButtonOriginalColor
+	claimButton.Interactable = true
+	claimButton.Active = true
+	claimButton.Visible = true
 	-- Reset UI
-	multiplierLabel.Text = `{formatMultiplier(STARTING_MULTIPLIER)}x`
-	progressionIndicator.Position = UDim2.new(0, 0, 0.5, 0)
+	multiplierText.Text = `{formatMultiplier(STARTING_MULTIPLIER)}x`
 	-- Clean up any leftover connections from a previous game
 	local _result_1 = spaceConn
 	if _result_1 ~= nil then
@@ -602,7 +601,7 @@ local function setup(inGameUI)
 		ButtonAnimations.playRelease()
 		Events.ReleaseButtonEvent:FireServer()
 	end
-	activatedConn = releaseButton.Activated:Connect(fireRelease)
+	activatedConn = claimButton.Activated:Connect(fireRelease)
 end
 return {
 	init = init,

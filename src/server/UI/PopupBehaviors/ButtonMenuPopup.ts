@@ -14,7 +14,7 @@ export class ButtonMenuPopup extends Popup {
 			if (p !== player) return;
 			startConn.Disconnect();
 			quitConn.Disconnect();
-			UiService.Show(player, PopupType.ButtonInGame);
+			UiService.Show(player, PopupType.RocketLaunch);
 		});
 
 		const quitConn = Events.QuitButtonClickedEvent.OnServerEvent.Connect((p) => {

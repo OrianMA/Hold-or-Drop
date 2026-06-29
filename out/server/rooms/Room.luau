@@ -11,7 +11,12 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 local BUTTON_MODEL = "ButtonModel"
 local BUTTON_PART = "ButtonPart"
 local PLAYER_POS_PART = "PlayerPosPlaceHolder"
+-- Camera parts live in the MovableModel (the rocket rig), not the ButtonModel:
+-- CameraPosPart is the camera's start pose, CameraParentPart the orbit pivot the
+-- camera always faces (see CameraController.StartOrbit).
+local MOVABLE_MODEL = "MovableModel"
 local CAMERA_POS_PART = "CameraPosPart"
+local CAMERA_PIVOT_PART = "CameraParentPart"
 local UI_PART = "UiPart"
 local BILLBOARD = "BillboardGui"
 local GAIN_LABEL = "GainText"
@@ -56,15 +61,32 @@ do
 		end
 		local proximityPrompt = _proximityPrompt
 		local playerPosPart = buttonModel:FindFirstChild(PLAYER_POS_PART)
-		local cameraPosPart = buttonModel:FindFirstChild(CAMERA_POS_PART)
-		if not buttonPart or not buttonPart:IsA("BasePart") or not proximityPrompt or not playerPosPart or not playerPosPart:IsA("BasePart") or not cameraPosPart or not cameraPosPart:IsA("BasePart") then
+		if not buttonPart or not buttonPart:IsA("BasePart") or not proximityPrompt or not playerPosPart or not playerPosPart:IsA("BasePart") then
 			self:invalidate("missing button parts")
+			return nil
+		end
+		-- Camera parts now live in the MovableModel (rocket rig), not the ButtonModel.
+		local movableModel = folder:FindFirstChild(MOVABLE_MODEL)
+		local _cameraPosPart = movableModel
+		if _cameraPosPart ~= nil then
+			_cameraPosPart = _cameraPosPart:FindFirstChild(CAMERA_POS_PART)
+		end
+		local cameraPosPart = _cameraPosPart
+		local _cameraPivotPart = movableModel
+		if _cameraPivotPart ~= nil then
+			_cameraPivotPart = _cameraPivotPart:FindFirstChild(CAMERA_PIVOT_PART)
+		end
+		local cameraPivotPart = _cameraPivotPart
+		if not movableModel or not movableModel:IsA("Model") or not cameraPosPart or not cameraPosPart:IsA("BasePart") or not cameraPivotPart or not cameraPivotPart:IsA("BasePart") then
+			self:invalidate(`missing {MOVABLE_MODEL} camera parts`)
 			return nil
 		end
 		self.buttonPart = buttonPart
 		self.proximityPrompt = proximityPrompt
 		self.playerPosPart = playerPosPart
+		self.movableModel = movableModel
 		self.cameraPosPart = cameraPosPart
+		self.cameraPivotPart = cameraPivotPart
 		-- ProximityPrompt.Enabled is a global property — there's no per-player
 		-- toggle. We keep it disabled on the server and let each client enable only
 		-- the prompt for the room they own (client-side writes don't replicate). See
@@ -168,8 +190,9 @@ do
 		end
 	end
 	function Room:setGainCash(cash)
+		-- Billboard label prefixed with '$' (gain cash is always positive).
 		if self.gainLabel then
-			self.gainLabel.Text = FormatCash(cash)
+			self.gainLabel.Text = `${FormatCash(cash)}`
 		end
 		self.proximityPrompt.ObjectText = `{FormatCash(cash)} money`
 	end

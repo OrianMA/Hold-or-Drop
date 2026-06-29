@@ -57,18 +57,19 @@ src/
 │   ├── modules/
 │   │   ├── ButtonModule.ts          # Per-room trigger handler
 │   │   ├── ButtonInGameModule.ts    # THE hold/risk/parry game loop
+│   │   ├── RocketLauncher.ts        # Per-room rocket flight: launch/stop/reset/explode
 │   │   ├── EndGameButtonModule.ts   # Post-game payout + popup coordination
 │   │   ├── NeonPipeColors.ts        # Tints Environment/NeonPipe per room occupancy
 │   │   ├── ConfettiBurst.ts, CheatConfig.ts
 │   ├── UI/
 │   │   ├── Popup.ts                 # Base popup (Show/Hide a named Frame)
 │   │   ├── PopupConfig.ts           # PopupType → behavior class registry
-│   │   ├── PopupBehaviors/          # ButtonMenu / ButtonInGame / ButtonFinishGame
+│   │   ├── PopupBehaviors/          # ButtonMenu / RocketLaunch / ButtonFinishGame
 │   │   └── Interface/IPopup.ts
 │   └── main.server.ts
 ├── client/                  # StarterPlayerScripts — visuals, input, camera
 │   ├── main.client.ts       # Entry: wires up all client behaviors
-│   ├── behaviors/           # ButtonMenu / ButtonInGame / EndGameButton / Shop behaviors
+│   ├── behaviors/           # ButtonMenu / RocketLaunch / EndGameButton / Shop behaviors
 │   │   └── ShopBehavior (open/close), ShopItemsController (4 upgrade buttons), ShopMoneyBuyBehavior (Robux money popup)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
 │   ├── audio/MusicController.ts  # BGM playlist + button-hold music
@@ -76,7 +77,7 @@ src/
 └── shared/                  # ReplicatedStorage — code/data used by both sides
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
     ├── Utils/DefineEvent.ts # Creates (server) / waits for (client) a RemoteEvent
-    ├── ButtonGameConfig.ts  # Shared gameplay tuning constants
+    ├── RocketGameConfig.ts  # Shared gameplay tuning constants (risk, multiplier, rocket)
     ├── AudioConfig.ts       # All sound asset IDs/volumes (music + SFX)
     ├── ShopBalance.ts       # Shop economy numbers (THE rebalancing file)
     ├── ShopConfig.ts        # Shop items + price/value formulas (logic, reads ShopBalance)
@@ -131,9 +132,12 @@ once a server event fires.
 
 ### 6.1 Rooms (`rooms/Room.ts`, `rooms/RoomService.ts`)
 - A **Room** wraps one `Workspace/PlayerZones/P{n}` folder containing a `ButtonModel`
-  (`ButtonPart` + `ProximityPrompt`, `PlayerPosPlaceHolder`, `CameraPosPart`, optional
-  `UiPart/BillboardGui/GainText`, optional `CommunityJoinPart`). Invalid layouts are skipped
-  with a warning.
+  (`ButtonPart` + `ProximityPrompt`, `PlayerPosPlaceHolder`, optional
+  `UiPart/BillboardGui/GainText`) and a `MovableModel` (the rocket rig: `RocketLvl1`
+  plus `CameraPosPart` = camera start pose, `CameraParentPart` = orbit pivot the
+  camera always faces (see §6.7), and `ParticlesParentPart` holding a disabled
+  `ExplosionParticles` emitter burst on a loss (§6.17)), optional `CommunityJoinPart`.
+  Invalid layouts are skipped with a warning.
 - **Ownership is the access rule:** only the assigned occupant may trigger the button.
 - `RoomService` assigns the first free room on join (numeric-aware `P1<P2<…<P10` sort),
   releases it on leave, and mirrors the occupant's live **`EffectiveBaseCash`** (not raw
@@ -196,8 +200,8 @@ once a server event fires.
 One instance per room. On `Triggered`: validates ownership, guards against double-start
 (`InSession` lags one round-trip — re-check the session map), creates the session,
 sets `InSession=true`, hides the billboard for the active player, teleports + anchors the
-player on the button, fires `ButtonTriggerEvent` to the client, and shows the ButtonMenu
-popup.
+player on the button, fires `ButtonTriggerEvent` to the client (with the room's
+`cameraPosPart` + `cameraPivotPart`), and shows the ButtonMenu popup.
 
 > NOTE: `ButtonModule.onTriggered` currently shows the ButtonMenu popup directly but does
 > **not** itself call `startButtonGame`. The hold loop is started server-side; trace the
@@ -205,14 +209,23 @@ popup.
 
 ### 6.3 The game loop (`modules/ButtonInGameModule.ts`) — the heart
 `startButtonGame(player, session)` reads `EffectiveBaseCash` + `Multiplier` once (held for
-the session) and runs **two independent loops** via `task.spawn`:
+the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17) and runs
+**two independent loops** via `task.spawn`:
 
-- **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): `currentMultiplier += Multiplier` each
-  tick, starting from `STARTING_MULTIPLIER` (1). Flat per-second growth.
+- **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): **accelerating** growth from
+  `STARTING_MULTIPLIER` (1.00) — each tick adds `multiplierIncrement`, and the increment itself
+  grows by `MULTIPLIER_INCREMENT_GROWTH` every tick (starts at `MULTIPLIER_START_INCREMENT`), so
+  the number barely moves at first then climbs faster and faster. The player's `Multiplier`
+  level is **intentionally not used yet** (it will scale these later). Drives the `MultiplierText`
+  label (formerly `BaseCashText`) in the `RocketLaunch` popup — the client **lerps the shown
+  number continuously** between ticks (RenderStepped) so it passes through every intermediate
+  value (1.01, 1.02, …) rather than jumping. No floating labels (removed).
 - **Risk loop** (`TICK_RATE` = 0.5s): `getRisk(t)` is `MAX_RISK * (t/TOTAL_DURATION)²`
   (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s), then scaled by
   the player's **Safety**: `risk = getRisk(t) * (1 - safety)` (safety 0..0.70, read once at
-  session start — see §6.6). Each tick rolls `math.random() < risk`; also drives the progress bar.
+  session start — see §6.6). Each tick rolls `math.random() < risk`.
+
+Every ending **stops + resets the rocket** to its launch pad (`RocketLauncher`, §6.17).
 
 Endings:
 - **Release** (`ReleaseButtonEvent`): pays `floor(EffectiveBaseCash * currentMultiplier)`, confetti, → EndGame.
@@ -220,17 +233,25 @@ Endings:
   still release to cancel), then a **0.5s perfect-parry window** (`PerfectParryEvent`):
   - **Parry success:** visual-only explosion (`blastPressure=0`), sparkle effect, knockback
     tween, full payout. Movement frozen during the window, restored after.
-  - **Parry fail:** lethal explosion (`EXPLOSION_KILL_PRESSURE`), disable Motor6Ds,
-    `Humanoid.Health=0`, pay only `floor(EffectiveBaseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)`.
+  - **Parry fail (loss):** the **rocket explodes, not the player** — `RocketLauncher.explode`
+    bursts the `ExplosionParticles` in the rocket's `ParticlesParentPart` + a 3D boom; **no
+    `Explosion` instance, no fling, no death**. The player's frozen movement is restored, the
+    client (`PlayerKilledEvent`) keeps the orbit camera on the exploding rocket for
+    `EXPLOSION_VIEW_DELAY` (impact FOV punch + shake) before swinging back, then the rocket
+    resets and the partial payout `floor(EffectiveBaseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)`
+    runs. (No `Humanoid.Health=0` / Motor6D disable anymore.) The `ClaimButton` does **not**
+    disappear on a loss — it turns red and `Interactable=false` (reset to normal at the next launch).
+    There is **no pre-explosion "cling" sound** (removed).
 
-> All four payout paths (release, grace-cancel, parry-success, death) are floored and use
+> All four payout paths (release, grace-cancel, parry-success, loss) are floored and use
 > `EffectiveBaseCash` — the rebirth multiplier and all boosts are already folded into it (see
 > §6.6). `EffectiveBaseCash` is read once at session start so a mid-run boost change can't
 > affect an in-progress hold. There is no separate `MultRebirth` factor at payout time.
 
-The explosion (`triggerExplosionAt`) uses a tight `BlastRadius` (12) so the fling is scoped
-to the anchored player; the sound is cloned from a **pre-buffered ReplicatedStorage
-template** to avoid a CDN fetch at runtime.
+`triggerExplosionAt` is now used **only** for the parry-success visual (a `blastPressure=0`
+`Explosion` at the button — no fling). The 3D boom (used by both parry-success and the rocket
+loss via `playExplosionSoundAt`) is cloned from a **pre-buffered ReplicatedStorage template** to
+avoid a CDN fetch at runtime.
 
 ### 6.4 End game (`modules/EndGameButtonModule.ts`)
 `enter(...)` cleans up the session, stashes `pendingEarned`, then (after a delay or
@@ -243,7 +264,9 @@ server credits `Money` and hides the popup.
 **Money is credited only after the client animation completes** (single source of truth).
 
 ### 6.5 Popups (`UI/Popup.ts`, `UI/PopupConfig.ts`, `services/UiService.ts`)
-- `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `ButtonInGame`, `ButtonFinishGame`.
+- `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `RocketLaunch`, `ButtonFinishGame`.
+  (The `RocketLaunch` popup — formerly `ButtonInGame` — holds the live `MultiplierText` + the
+  `ClaimButtonFrame/ClaimButton`; the old `Slider`/progress-bar was removed.)
 - Server `PopupConfig` maps each type to a behavior class; `UiService` shows/hides by type
   and tracks one current popup per player (showing a new one hides the previous).
 - A popup resolves `PlayerGui/InGameUI/<className>` Frame and toggles `Visible`.
@@ -303,7 +326,18 @@ server credits `Money` and hides the popup.
 
 ### 6.7 Camera & HUD (client)
 - `CameraController` (shared): `SetCinematic` (Scriptable), `AnimateTo` (tween CFrame),
-  `BringBackPlayerCamera` (return to character + reset to Custom).
+  `BringBackPlayerCamera` (stop orbit + return to character + reset to Custom).
+  - **Orbit camera** (`StartOrbit(posCFrame, pivotPart)` / `StopOrbit`): the button/rocket
+    flow uses a dynamic orbit instead of a fixed cinematic CFrame. It tweens to the start
+    pose (seeded from `CameraPosPart`), then a `RenderStep` bound at `Camera` priority keeps
+    `camera.CFrame = lookAt(pivot + sphericalOffset(yaw,pitch,radius), pivot)` each frame, so
+    the camera **always faces `CameraParentPart`** while the player rotates (right-drag on PC,
+    touch-drag on mobile; pitch clamped). The pivot position is read **live**, so moving the
+    pivot (with the rocket) makes the camera follow. Started by `ButtonMenuBehavior` on
+    `ButtonTriggerEvent`, it persists through the hold; `BringBackPlayerCamera` stops it on
+    quit/release/death and `RocketLaunchBehavior` calls `StopOrbit` before the parry camera
+    takes over. The shake (Camera±1 bindings) layers on top of the orbit's `Camera`-priority
+    CFrame with no change.
 - `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
   popups inside the `InGameUI` ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
 - `CostTextRotator` (`ui/CostTextRotator.ts`): cosmetic — a single looping
@@ -331,7 +365,7 @@ server credits `Money` and hides the popup.
   cache their UI references once at startup; without this guard, respawning would wipe
   `PlayerGui`, destroy the cached `startButton`/`quitButton`/etc., and silently break
   ButtonMenu et al. (subsequent `Activated.Connect` calls would land on dead instances).
-- `ButtonInGameBehavior` owns the heavy game-feel: vignette, ColorCorrection, Bloom, FOV
+- `RocketLaunchBehavior` owns the heavy game-feel: vignette, ColorCorrection, Bloom, FOV
   zoom, and a two-binding camera-shake design (restore clean CFrame at Camera-1, apply
   shake at Camera+1) to avoid spring drift. It listens to all the server gameplay events
   and translates them into effects.
@@ -410,8 +444,9 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 ### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`, `client/audio/UiClickSound.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
   the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion`,
-  client `buttonExplode` / `parry` / `buttonUpgrade` / `moneyGain` / `uiClick`). SFX still play
-  from their existing call sites (`ButtonInGameBehavior` client-side, `ButtonInGameModule`
+  client `parry` / `buttonUpgrade` / `moneyGain` / `uiClick`; `buttonExplode` is still defined
+  but no longer played — the pre-explosion "cling" cue was removed). SFX still play
+  from their existing call sites (`RocketLaunchBehavior` client-side, `ButtonInGameModule`
   server-side, `NeonPipePulse` for `buttonUpgrade` — see §6.12, `MoneyDisplay` for `moneyGain`,
   `UiClickSound` for `uiClick`) — only the asset definitions are centralised here, so
   re-pointing a sound is a one-line edit.
@@ -441,7 +476,7 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
     cancelled before each new fade. `getBgmAnalyzer()` exposes the analyzer to the visualiser
     (client-only — `GetSpectrum` returns empty server-side).
   - **Button-hold music**: a **classic `Sound`** (unchanged by the audio-API migration), created
-    + preloaded at init (no CDN stall on first hold), looped. `ButtonInGameBehavior` drives it —
+    + preloaded at init (no CDN stall on first hold), looped. `RocketLaunchBehavior` drives it —
     `playButtonMusic()` at hold start (`setup`), `stopButtonMusic()` on release (`endInput`) and
     at the instant of explosion (`ButtonExplodedEvent`, before the parry window).
     `stopButtonMusic()` only stops the music (it no longer touches the BGM); both it and
@@ -519,7 +554,7 @@ Roblox's defaults on their own and a later `stop()` never cuts them short. `stop
 the held pose; `restoreDefault()` stops everything (held + in-flight one-shot) to force defaults.
 Tracks are lazily loaded against the current `Animator` and the cache is dropped on respawn.
 Call sites: `ButtonMenuBehavior` (`playInteract` on `ButtonTriggerEvent`, `playQuit` on Quit);
-`ButtonInGameBehavior` (`playHold` in `setup`, `playRelease` in `fireRelease`, `playParry` on
+`RocketLaunchBehavior` (`playHold` in `setup`, `playRelease` in `fireRelease`, `playParry` on
 `PerfectParryEffectEvent`, `stop` on `GameResultEvent` as a death-path safety net);
 `EndGameButtonBehavior` (`restoreDefault` on `EndGameStartEvent` — the payout popup opening ends
 the parry projection / any still-playing release clip).
@@ -610,6 +645,25 @@ cleanly client-side; a small random phase keeps the rooms from bobbing in lockst
   by the replicated `AssignedRoom` attribute (client-local write, re-applied on room (re)assignment
   and on each stream-in).
 
+### 6.17 Rocket launch (`server/modules/RocketLauncher.ts`)
+Server-driven rocket flight for a room's `MovableModel`. **Single source of truth** (replicates
+to everyone, ties to the server-side game loop), no RemoteEvent.
+- **`launch(room, speedFactor=1)`** — captures the model's launch-pad pivot once (per room),
+  resets to it, then a `RunService.Heartbeat` loop ramps `velocity` from 0 by `ROCKET_ACCEL`
+  up to `ROCKET_MAX_SPEED` (studs/s) and rises the model via `PivotTo` each frame (slow,
+  accelerating, real-rocket feel). `speedFactor` scales both — it will later be derived from the
+  player's multiplier level (neutral = 1 for now).
+- Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
+  the client orbit camera (reads the pivot live, §6.7) **follows the rocket** with zero extra code.
+- **Engine fire:** `launch` lights the `Fire` inside the rocket's `NitroParticles` part(s);
+  `stop`/`reset` extinguish it — so the nitro burns only while the rocket is moving. (Authored
+  `Enabled=false` at rest in Studio on every room.)
+- **`stop(room)`** halts the ascent in place; **`reset(room)`** halts + snaps back to the pad
+  (called on every ending, §6.3); **`explode(room)`** bursts the `ExplosionParticles` emitter in
+  the rocket's `ParticlesParentPart` (authored disabled in Studio, like `UpgradeButtonParticles`).
+- The rocket parts are all **anchored** (no PrimaryPart needed — `PivotTo` uses the model pivot).
+  `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -617,18 +671,16 @@ parented to the `Event` ModuleScript. Direction noted per event:
 
 | Event | Dir | Purpose |
 |-------|-----|---------|
-| `ButtonTriggerEvent` | S→C | Start menu flow; passes `cameraPosPart` |
+| `ButtonTriggerEvent` | S→C | Start menu flow; passes `cameraPosPart` + `cameraPivotPart` (orbit camera) |
 | `StartButtonClickedEvent` | C→S | Player clicked Start |
 | `ReleaseButtonEvent` | C→S | Player released the button |
 | `QuitButtonClickedEvent` | C→S | Player quit the menu |
 | `PerfectParryEvent` | C→S | Player parried within the window |
 | `PerfectParryEffectEvent` | S→C | Trigger sparkle/knockback visuals |
-| `BaseCashEvent` | S→C | Initial base cash for the HUD |
 | `ButtonExplodedEvent` | S→C | Explosion roll hit — start grace/parry on client |
-| `PlayerKilledEvent` | S→C | Player died from explosion |
-| `MultiplierUpdateEvent` | S→C | New current multiplier (drives floating label) |
+| `PlayerKilledEvent` | S→C | Loss — rocket exploded; client lingers the camera on it then restores (no death anymore) |
+| `MultiplierUpdateEvent` | S→C | New current multiplier (client lerps `MultiplierText` continuously to it) |
 | `RiskUpdateEvent` | S→C | Current risk value |
-| `ProgressUpdateEvent` | S→C | Progress-bar fill [0,1] |
 | `GameResultEvent` | S→C | (exploded, earned, multiplier) — re-enable HUD |
 | `EndGameStartEvent` | S→C | Start payout animation (baseCash=EffectiveBaseCash, mult, lossMult) — `multRebirth` removed |
 | `EndGameFinishedEvent` | C→S | Animation done → server credits money, hides popup |
@@ -650,12 +702,17 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 
 | Constant | Location | Value | Meaning |
 |----------|----------|-------|---------|
-| `RISK_RAMP_DURATION` | `shared/ButtonGameConfig.ts` | 17s | Risk/progress full ramp |
-| `MULTIPLIER_TICK_RATE` | `shared/ButtonGameConfig.ts` | 1s | Multiplier tick interval |
-| `STARTING_MULTIPLIER` | `shared/ButtonGameConfig.ts` | 1 | Base payout multiplier |
+| `RISK_RAMP_DURATION` | `shared/RocketGameConfig.ts` | 17s | Risk/progress full ramp |
+| `MULTIPLIER_TICK_RATE` | `shared/RocketGameConfig.ts` | 1s | Multiplier tick interval |
+| `STARTING_MULTIPLIER` | `shared/RocketGameConfig.ts` | 1 | Base payout multiplier (start) |
+| `MULTIPLIER_START_INCREMENT` | `shared/RocketGameConfig.ts` | 0.05 | First-tick multiplier increment |
+| `MULTIPLIER_INCREMENT_GROWTH` | `shared/RocketGameConfig.ts` | 0.05 | Increment growth per tick (accelerating) |
+| `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 6 | Rocket acceleration (studs/s²), ×speedFactor |
+| `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 60 | Rocket top speed (studs/s), ×speedFactor |
+| `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
 | `MAX_RISK` | `ButtonInGameModule.ts` | 0.8 | Risk ceiling |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
-| `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on death |
+| `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on loss (rocket explodes) |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
 | Default `BaseCash` / `Multiplier` | `PlayerProgressionService.ts` | 100 / 0.1 | New-player progression (level 0) |
 | Value growth (BaseCash / Multiplier) | `shared/ShopBalance.ts` | ×1.2 / ×1.18 per level | Per-level stat multiplier (must stay < price growth) |

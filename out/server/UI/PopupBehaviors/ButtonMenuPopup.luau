@@ -32,7 +32,7 @@ do
 			end
 			startConn:Disconnect()
 			quitConn:Disconnect()
-			UiService:Show(player, PopupType.ButtonInGame)
+			UiService:Show(player, PopupType.RocketLaunch)
 		end)
 		quitConn = Events.QuitButtonClickedEvent.OnServerEvent:Connect(function(p)
 			if p ~= player then

@@ -2,9 +2,9 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local StarterGui = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").StarterGui
 local initButtonMenu = TS.import(script, script.Parent, "behaviors", "ButtonMenuBehavior").init
-local _ButtonInGameBehavior = TS.import(script, script.Parent, "behaviors", "ButtonInGameBehavior")
-local initButtonInGame = _ButtonInGameBehavior.init
-local setupButtonInGame = _ButtonInGameBehavior.setup
+local _RocketLaunchBehavior = TS.import(script, script.Parent, "behaviors", "RocketLaunchBehavior")
+local initRocketLaunch = _RocketLaunchBehavior.init
+local setupRocketLaunch = _RocketLaunchBehavior.setup
 local initEndGameButton = TS.import(script, script.Parent, "behaviors", "EndGameButtonBehavior").init
 local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").MoneyDisplay
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
@@ -35,7 +35,7 @@ local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse"
 -- player-wide flag here as a belt-and-braces guard in case a future ScreenGui
 -- is added without thinking about its ResetOnSpawn.
 StarterGui.ResetPlayerGuiOnSpawn = false
-initButtonInGame()
+initRocketLaunch()
 initEndGameButton()
 MoneyDisplay:init()
 initInformationText()
@@ -43,7 +43,7 @@ initRoomPrompts()
 initOwnerIndicator()
 initCommunityJoin()
 initCommunityMascot()
-initButtonMenu(setupButtonInGame)
+initButtonMenu(setupRocketLaunch)
 initShopMenu()
 initShopItems()
 initShopMoneyBuy()

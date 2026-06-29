@@ -3,7 +3,7 @@ import { Players } from "@rbxts/services";
 // Centralized control for the persistent HUD container.
 // "HUD" here refers to a Frame (or other GuiObject) named "HUD" that sits
 // INSIDE the InGameUI ScreenGui — sibling to the button-game popups (ButtonMenu,
-// ButtonInGame, ButtonFinishGame). Toggling its Visible hides the HUD while
+// RocketLaunch, ButtonFinishGame). Toggling its Visible hides the HUD while
 // keeping the popups rendering normally.
 
 function getPlayerGui(): PlayerGui | undefined {

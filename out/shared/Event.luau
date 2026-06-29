@@ -4,22 +4,23 @@ local DefineEvent = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 local Events = {}
 do
 	local _container = Events
+	-- Start the menu flow. Args: (cameraPosPart, cameraPivotPart) — both from the
+	-- room's MovableModel. The client starts an orbit camera at cameraPosPart that
+	-- always looks at cameraPivotPart (see CameraController.StartOrbit).
 	local ButtonTriggerEvent = DefineEvent("ButtonTriggerEvent", script)
 	_container.ButtonTriggerEvent = ButtonTriggerEvent
 	local StartButtonClickedEvent = DefineEvent("StartButtonClickedEvent", script)
 	_container.StartButtonClickedEvent = StartButtonClickedEvent
-	-- ButtonInGame — client → server
+	-- RocketLaunch — client → server
 	local ReleaseButtonEvent = DefineEvent("ReleaseButtonEvent", script)
 	_container.ReleaseButtonEvent = ReleaseButtonEvent
 	local QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script)
 	_container.QuitButtonClickedEvent = QuitButtonClickedEvent
 	local PerfectParryEvent = DefineEvent("PerfectParryEvent", script)
 	_container.PerfectParryEvent = PerfectParryEvent
-	-- ButtonInGame — server → client
+	-- RocketLaunch — server → client
 	local PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script)
 	_container.PerfectParryEffectEvent = PerfectParryEffectEvent
-	local BaseCashEvent = DefineEvent("BaseCashEvent", script)
-	_container.BaseCashEvent = BaseCashEvent
 	local ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script)
 	_container.ButtonExplodedEvent = ButtonExplodedEvent
 	local PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script)
@@ -28,8 +29,6 @@ do
 	_container.MultiplierUpdateEvent = MultiplierUpdateEvent
 	local RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script)
 	_container.RiskUpdateEvent = RiskUpdateEvent
-	local ProgressUpdateEvent = DefineEvent("ProgressUpdateEvent", script)
-	_container.ProgressUpdateEvent = ProgressUpdateEvent
 	local GameResultEvent = DefineEvent("GameResultEvent", script)
 	_container.GameResultEvent = GameResultEvent
 	-- EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)
