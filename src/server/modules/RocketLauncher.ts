@@ -157,9 +157,16 @@ export const RocketLauncher = {
 
 	// Physical rocket explosion: burst the ExplosionParticles emitter, then unanchor
 	// every rocket body part and blow them outward so the rocket visibly breaks apart.
-	// A Heartbeat applies height-based gravity to the debris (weightless in space above
-	// SPACE_HEIGHT, full earth gravity below GROUND_HEIGHT). Undone by reset() (§6.17).
+	// The debris keeps the rocket's upward ascent momentum (so the rocket "continues to
+	// go up" after it explodes), then a Heartbeat applies height-based gravity (weightless
+	// in space above SPACE_HEIGHT, full earth gravity below GROUND_HEIGHT) that bleeds that
+	// momentum off and pulls it back down. Undone by reset() (§6.17).
 	explode(room: Room): void {
+		// Inherit the rocket's current ascent speed before halting the ascent loop, so the
+		// debris keeps rising instead of stopping dead the instant it explodes.
+		const ascentVelocity = states.get(room)?.velocity ?? 0;
+		stopRoom(room); // stop the PivotTo ascent + kill the engine fire — debris physics takes over
+
 		// Particle burst (existing visual cue).
 		const ppp = room.movableModel.FindFirstChild(PARTICLES_PARENT);
 		const emitter = ppp?.FindFirstChild(EXPLOSION_EMITTER);
@@ -187,7 +194,9 @@ export const RocketLauncher = {
 					? away.Unit
 					: new Vector3(math.random() * 2 - 1, 1, math.random() * 2 - 1).Unit;
 			const speed = BURST_SPEED + math.random() * BURST_SPEED_VARIANCE;
-			part.AssemblyLinearVelocity = dir.mul(speed).add(new Vector3(0, BURST_UP_BIAS, 0));
+			// Radial burst + an upward kick + the inherited ascent momentum → the rocket
+			// keeps climbing as it breaks apart, until height-based gravity pulls it back.
+			part.AssemblyLinearVelocity = dir.mul(speed).add(new Vector3(0, BURST_UP_BIAS + ascentVelocity, 0));
 			part.AssemblyAngularVelocity = new Vector3(
 				(math.random() * 2 - 1) * BURST_SPIN,
 				(math.random() * 2 - 1) * BURST_SPIN,

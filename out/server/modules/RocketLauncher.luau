@@ -173,6 +173,19 @@ local RocketLauncher = {
 		resetRoom(room)
 	end,
 	explode = function(self, room)
+		-- Inherit the rocket's current ascent speed before halting the ascent loop, so the
+		-- debris keeps rising instead of stopping dead the instant it explodes.
+		local _room = room
+		local _result = states[_room]
+		if _result ~= nil then
+			_result = _result.velocity
+		end
+		local _condition = _result
+		if _condition == nil then
+			_condition = 0
+		end
+		local ascentVelocity = _condition
+		stopRoom(room)
 		-- Particle burst (existing visual cue).
 		local ppp = room.movableModel:FindFirstChild(PARTICLES_PARENT)
 		local _emitter = ppp
@@ -183,8 +196,8 @@ local RocketLauncher = {
 		if emitter and emitter:IsA("ParticleEmitter") then
 			emitter:Emit(EXPLOSION_PARTICLE_COUNT)
 		end
-		local _room = room
-		local parts = rocketParts[_room]
+		local _room_1 = room
+		local parts = rocketParts[_room_1]
 		if not parts or #parts == 0 then
 			return nil
 		end
@@ -204,8 +217,10 @@ local RocketLauncher = {
 			local away = part.Position - center
 			local dir = if away.Magnitude > 0.05 then away.Unit else Vector3.new(math.random() * 2 - 1, 1, math.random() * 2 - 1).Unit
 			local speed = BURST_SPEED + math.random() * BURST_SPEED_VARIANCE
+			-- Radial burst + an upward kick + the inherited ascent momentum → the rocket
+			-- keeps climbing as it breaks apart, until height-based gravity pulls it back.
 			local _exp = dir * speed
-			local _vector3 = Vector3.new(0, BURST_UP_BIAS, 0)
+			local _vector3 = Vector3.new(0, BURST_UP_BIAS + ascentVelocity, 0)
 			part.AssemblyLinearVelocity = _exp + _vector3
 			part.AssemblyAngularVelocity = Vector3.new((math.random() * 2 - 1) * BURST_SPIN, (math.random() * 2 - 1) * BURST_SPIN, (math.random() * 2 - 1) * BURST_SPIN)
 		end
@@ -236,8 +251,8 @@ local RocketLauncher = {
 				end
 			end
 		end)
-		local _room_1 = room
-		debrisConns[_room_1] = conn
+		local _room_2 = room
+		debrisConns[_room_2] = conn
 	end,
 }
 return {
