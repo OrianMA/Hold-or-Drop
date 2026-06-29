@@ -664,9 +664,24 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   `Enabled=false` at rest in Studio on every room.)
 - **`stop(room)`** halts the ascent in place; **`reset(room)`** halts + snaps back to the pad
   (called on every ending, §6.3); **`explode(room)`** bursts the `ExplosionParticles` emitter in
-  the rocket's `ParticlesParentPart` (authored disabled in Studio, like `UpgradeButtonParticles`).
+  the rocket's `ParticlesParentPart` (authored disabled in Studio, like `UpgradeButtonParticles`)
+  **and physically breaks the rocket apart** (see below).
 - The rocket parts are all **anchored** (no PrimaryPart needed — `PivotTo` uses the model pivot).
   `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
+- **Physical explosion (loss path).** `explode` unanchors every body part of the `RocketLvl1`
+  model (the `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps
+  holding on the blast site), flings each one **radially outward from the rocket centre** with
+  an upward bias and a random spin, then runs a Heartbeat applying **height-based gravity**:
+  weightless above `SPACE_HEIGHT` (world-Y 95, "space"), gravity fading in through the 95→50
+  band, full earth gravity below `GROUND_HEIGHT` (50). It cancels the appropriate fraction of
+  `Workspace.Gravity` each frame (`+gravity*(1-scale)` upward → net pull `gravity*scale`) rather
+  than using `VectorForce` instances. Debris is `CanCollide=false` while flying so it can't snag
+  on geometry. `launch` captures each body part's **pad-relative pose + authored CanCollide once**
+  (`captureRocketParts`); `reset` (`restoreRocketParts`) disconnects the debris loop, zeroes
+  velocities, re-anchors, restores collision, and re-poses every part to `padPivot * offset` — so
+  the next launch starts from a pristine rocket no matter how the debris scattered. Tunables at
+  the top of `RocketLauncher.ts`: `SPACE_HEIGHT`, `GROUND_HEIGHT`, `BURST_SPEED`,
+  `BURST_SPEED_VARIANCE`, `BURST_UP_BIAS`, `BURST_SPIN`.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
