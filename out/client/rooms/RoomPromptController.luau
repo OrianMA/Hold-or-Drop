@@ -11,19 +11,24 @@ local Workspace = _services.Workspace
 --   • AssignedRoom — the P{n} folder name this player owns ("" when none)
 --   • InSession    — true while the player is mid-button-game
 --
--- This controller (one per client) enables ONLY the local player's room prompt,
+-- This controller (one per client) enables ONLY the local player's room prompts
+-- — the button prompt AND the rocket prompt, which both trigger the same game —
 -- and only when they're not already in a session. Client-side writes to Enabled
--- don't replicate, so each player sees just their own prompt. The server still
+-- don't replicate, so each player sees just their own prompts. The server still
 -- validates ownership on Triggered, so this is purely visibility/UX.
 local PLAYER_ZONES = "PlayerZones"
 local BUTTON_MODEL = "ButtonModel"
 local BUTTON_PART = "ButtonPart"
+-- The rocket prompt lives on MovableModel/RocketProximityPromptPart (same prompt
+-- name) and is shown/hidden together with the button prompt.
+local MOVABLE_MODEL = "MovableModel"
+local ROCKET_PROMPT_PART = "RocketProximityPromptPart"
 local PROMPT_NAME = "ProximityPrompt"
 local ASSIGNED_ROOM_ATTR = "AssignedRoom"
 local IN_SESSION_ATTR = "InSession"
 local function init()
 	local player = Players.LocalPlayer
-	-- roomName ("P1") → its ProximityPrompt
+	-- roomName ("P1") → its prompts (button + rocket), shown/hidden together
 	local prompts = {}
 	local evaluate = function()
 		local _condition = (player:GetAttribute(ASSIGNED_ROOM_ATTR))
@@ -32,8 +37,11 @@ local function init()
 		end
 		local assigned = _condition
 		local inSession = player:GetAttribute(IN_SESSION_ATTR) == true
-		for name, prompt in prompts do
-			prompt.Enabled = name == assigned and not inSession
+		for name, list in prompts do
+			local enabled = name == assigned and not inSession
+			for _, prompt in list do
+				prompt.Enabled = enabled
+			end
 		end
 	end
 	-- Server-driven state — re-render whenever ownership or session state changes.
@@ -48,26 +56,52 @@ local function init()
 			return nil
 		end
 		local register = function(folder)
-			local model = folder:WaitForChild(BUTTON_MODEL, 10)
-			local _part = model
-			if _part ~= nil then
-				_part = _part:WaitForChild(BUTTON_PART, 10)
+			local list = {}
+			-- Button prompt — ButtonModel/ButtonPart/ProximityPrompt
+			local buttonModel = folder:WaitForChild(BUTTON_MODEL, 10)
+			local _buttonPart = buttonModel
+			if _buttonPart ~= nil then
+				_buttonPart = _buttonPart:WaitForChild(BUTTON_PART, 10)
 			end
-			local part = _part
-			local _prompt = part
-			if _prompt ~= nil then
-				_prompt = _prompt:WaitForChild(PROMPT_NAME, 10)
+			local buttonPart = _buttonPart
+			local _buttonPrompt = buttonPart
+			if _buttonPrompt ~= nil then
+				_buttonPrompt = _buttonPrompt:WaitForChild(PROMPT_NAME, 10)
 			end
-			local prompt = _prompt
-			local _result = prompt
+			local buttonPrompt = _buttonPrompt
+			local _result = buttonPrompt
 			if _result ~= nil then
 				_result = _result:IsA("ProximityPrompt")
 			end
 			if _result then
-				local _name = folder.Name
-				prompts[_name] = prompt
+				table.insert(list, buttonPrompt)
 			else
-				warn(`RoomPromptController: no ProximityPrompt under {folder.Name}`)
+				warn(`RoomPromptController: no button ProximityPrompt under {folder.Name}`)
+			end
+			-- Rocket prompt — MovableModel/RocketProximityPromptPart/ProximityPrompt
+			local movableModel = folder:WaitForChild(MOVABLE_MODEL, 10)
+			local _rocketPart = movableModel
+			if _rocketPart ~= nil then
+				_rocketPart = _rocketPart:WaitForChild(ROCKET_PROMPT_PART, 10)
+			end
+			local rocketPart = _rocketPart
+			local _rocketPrompt = rocketPart
+			if _rocketPrompt ~= nil then
+				_rocketPrompt = _rocketPrompt:WaitForChild(PROMPT_NAME, 10)
+			end
+			local rocketPrompt = _rocketPrompt
+			local _result_1 = rocketPrompt
+			if _result_1 ~= nil then
+				_result_1 = _result_1:IsA("ProximityPrompt")
+			end
+			if _result_1 then
+				table.insert(list, rocketPrompt)
+			else
+				warn(`RoomPromptController: no rocket ProximityPrompt under {folder.Name}`)
+			end
+			if #list > 0 then
+				local _name = folder.Name
+				prompts[_name] = list
 			end
 		end
 		for _, folder in zones:GetChildren() do

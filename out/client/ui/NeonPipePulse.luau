@@ -29,6 +29,14 @@ local PARTICLE_PART = "ParticleEmmiter"
 local PARTICLE_EMITTER = "UpgradeButtonParticles"
 local BUTTON_PART = "ButtonPart"
 local PARTICLE_DURATION = 1.2
+-- Petit sursaut de la fusée à l'arrivée de l'amélioration : la fusée (MovableModel), au
+-- repos sur son pad, tremble légèrement sur X+Z puis revient à sa place. Réaction visuelle
+-- à l'upgrade — présentation 100 % client, comme la particule (la fusée n'est jamais en vol
+-- au moment d'un achat, le joueur étant au shop et non sur son bouton).
+local SHAKE_DURATION = 0.4
+local SHAKE_AMPLITUDE = 0.25
+local SHAKE_FREQUENCY_X = 26
+local SHAKE_FREQUENCY_Z = 19
 -- --- réglages -------------------------------------------------------------
 local SEGMENT_LENGTH = 5
 local TRAVEL_TIME = 5
@@ -234,6 +242,11 @@ local function fireButtonEffect(state)
 	if _result ~= nil then
 		_result:Play()
 	end
+	-- Sursaut de la fusée : (ré)arme le timer ; advanceShake (boucle) fait le reste.
+	if state.movable then
+		state.shakeTime = SHAKE_DURATION
+		state.shakeElapsed = 0
+	end
 	local particles = state.particles
 	if not particles then
 		return nil
@@ -246,6 +259,28 @@ local function fireButtonEffect(state)
 			particles.Enabled = false
 		end
 	end)
+end
+-- Avance le sursaut de la fusée : oscillation X+Z amortie sur SHAKE_DURATION, appliquée
+-- au MovableModel en delta (la somme revient à zéro → aucune dérive de la position du pad).
+local function advanceShake(state, dt)
+	local movable = state.movable
+	if not movable then
+		return nil
+	end
+	local target = Vector3.zero
+	if state.shakeTime > 0 then
+		state.shakeElapsed += dt
+		local decay = state.shakeTime / SHAKE_DURATION
+		target = Vector3.new(math.sin(state.shakeElapsed * SHAKE_FREQUENCY_X) * SHAKE_AMPLITUDE * decay, 0, math.sin(state.shakeElapsed * SHAKE_FREQUENCY_Z) * SHAKE_AMPLITUDE * decay)
+		state.shakeTime -= dt
+	end
+	local _target = target
+	local _shakeApplied = state.shakeApplied
+	local delta = _target - _shakeApplied
+	if delta.Magnitude > 1e-4 then
+		movable:PivotTo(movable:GetPivot() + delta)
+	end
+	state.shakeApplied = target
 end
 local function buildRoomState(folder)
 	local tubes = {}
@@ -269,6 +304,15 @@ local function buildRoomState(folder)
 	end
 	local base = tubes[1].ordered[1].Color
 	local effect = resolveButtonEffect(folder.Name)
+	local _movableInst = Workspace:FindFirstChild(PLAYER_ZONES)
+	if _movableInst ~= nil then
+		_movableInst = _movableInst:FindFirstChild(folder.Name)
+		if _movableInst ~= nil then
+			_movableInst = _movableInst:FindFirstChild(MOVABLE_MODEL)
+		end
+	end
+	local movableInst = _movableInst
+	local movable = if movableInst ~= nil and movableInst:IsA("Model") then movableInst else nil
 	return {
 		tubes = tubes,
 		base = base,
@@ -279,6 +323,10 @@ local function buildRoomState(folder)
 		particles = effect.particles,
 		sound = effect.sound,
 		particleToken = 0,
+		movable = movable,
+		shakeTime = 0,
+		shakeElapsed = 0,
+		shakeApplied = Vector3.zero,
 	}
 end
 -- Met `count` segments en file pour cette salle (un par amélioration achetée).
@@ -383,8 +431,11 @@ local function updateRoom(state, dt)
 	for _, tube in state.tubes do
 		renderTube(tube, state)
 	end
-	-- Plus rien à animer ni en file → la salle est nettoyée et désactivée.
-	if #state.segments == 0 and state.pending == 0 then
+	-- Sursaut de la fusée déclenché par une arrivée (peut survivre aux segments).
+	advanceShake(state, dt)
+	-- Plus rien à animer (segments, file, sursaut) → la salle est nettoyée et désactivée.
+	local idle = #state.segments == 0 and state.pending == 0 and state.shakeTime <= 0 and state.shakeApplied.Magnitude < 1e-3
+	if idle then
 		local _state = state
 		activeRooms[_state] = nil
 	end

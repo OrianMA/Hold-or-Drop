@@ -17,6 +17,11 @@ const PLAYER_POS_PART = "PlayerPosPlaceHolder";
 const MOVABLE_MODEL = "MovableModel";
 const CAMERA_POS_PART = "CameraPosPart";
 const CAMERA_PIVOT_PART = "CameraParentPart";
+// The rocket rig carries its own ProximityPrompt (on RocketProximityPromptPart).
+// It triggers the exact same game flow as the button prompt (see ButtonModule) but
+// keeps its own fixed description instead of showing the cash gain.
+const ROCKET_PROMPT_PART = "RocketProximityPromptPart";
+const ROCKET_PROMPT_TEXT = "Launch the rocket";
 const UI_PART = "UiPart";
 const BILLBOARD = "BillboardGui";
 const GAIN_LABEL = "GainText";
@@ -39,6 +44,7 @@ export class Room {
 	readonly buttonModel!: Model;
 	readonly movableModel!: Model;
 	readonly proximityPrompt!: ProximityPrompt;
+	readonly rocketProximityPrompt!: ProximityPrompt;
 	readonly buttonPart!: BasePart;
 	readonly playerPosPart!: BasePart;
 	readonly cameraPosPart!: BasePart;
@@ -79,10 +85,14 @@ export class Room {
 			return;
 		}
 
-		// Camera parts now live in the MovableModel (rocket rig), not the ButtonModel.
+		// Camera parts (and the rocket's own ProximityPrompt) live in the
+		// MovableModel (rocket rig), not the ButtonModel.
 		const movableModel = folder.FindFirstChild(MOVABLE_MODEL);
 		const cameraPosPart = movableModel?.FindFirstChild(CAMERA_POS_PART);
 		const cameraPivotPart = movableModel?.FindFirstChild(CAMERA_PIVOT_PART);
+		const rocketProximityPrompt = movableModel
+			?.FindFirstChild(ROCKET_PROMPT_PART)
+			?.FindFirstChildOfClass("ProximityPrompt");
 
 		if (
 			!movableModel ||
@@ -90,9 +100,10 @@ export class Room {
 			!cameraPosPart ||
 			!cameraPosPart.IsA("BasePart") ||
 			!cameraPivotPart ||
-			!cameraPivotPart.IsA("BasePart")
+			!cameraPivotPart.IsA("BasePart") ||
+			!rocketProximityPrompt
 		) {
-			this.invalidate(`missing ${MOVABLE_MODEL} camera parts`);
+			this.invalidate(`missing ${MOVABLE_MODEL} camera/prompt parts`);
 			return;
 		}
 
@@ -102,6 +113,7 @@ export class Room {
 		this.movableModel = movableModel;
 		this.cameraPosPart = cameraPosPart;
 		this.cameraPivotPart = cameraPivotPart;
+		this.rocketProximityPrompt = rocketProximityPrompt;
 
 		// ProximityPrompt.Enabled is a global property — there's no per-player
 		// toggle. We keep it disabled on the server and let each client enable only
@@ -109,6 +121,13 @@ export class Room {
 		// RoomPromptController. The server never flips Enabled again, so the client's
 		// local override is never stomped.
 		this.proximityPrompt.Enabled = false;
+
+		// The rocket prompt uses the exact same per-player visibility model, so it is
+		// also kept disabled on the server (RoomPromptController enables it for the
+		// owner). Unlike the button (which shows the cash gain via setGainCash), the
+		// rocket keeps its own fixed description.
+		this.rocketProximityPrompt.Enabled = false;
+		this.rocketProximityPrompt.ObjectText = ROCKET_PROMPT_TEXT;
 
 		// Billboard is optional — gameplay still works without it.
 		const billboard = buttonModel.FindFirstChild(UI_PART)?.FindFirstChild(BILLBOARD);

@@ -6,6 +6,7 @@ local Workspace = _services.Workspace
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
 local ROCKET_ACCEL = _RocketGameConfig.ROCKET_ACCEL
 local ROCKET_MAX_SPEED = _RocketGameConfig.ROCKET_MAX_SPEED
+local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 -- Drives the per-room rocket (the MovableModel): it rises while the button is held
 -- with a slow, accelerating, real-rocket feel, lights its engine Fire (NitroParticles)
 -- while moving, and physically blows the rocket apart on a loss.
@@ -18,6 +19,8 @@ local PARTICLES_PARENT = "ParticlesParentPart"
 local EXPLOSION_PARTICLE_COUNT = 60
 -- Part inside the rocket holding the engine Fire(s) — lit while the rocket moves.
 local NITRO_PART = "NitroParticles"
+-- 3D rolloff (studs) for the looped launch roar, server-authored like the explosion boom.
+local LAUNCH_SOUND_ROLLOFF = 150
 -- The rocket body model inside the MovableModel — these are the parts that physically
 -- break apart on an explosion (the Camera*/Particles helper parts stay anchored so the
 -- orbit camera keeps holding on the blast site).
@@ -37,12 +40,6 @@ local BURST_SPEED_VARIANCE = 25
 local BURST_UP_MIN = 5
 local BURST_UP_MAX = 95
 local BURST_SPIN = 18
--- ── Ascent shake tuning ─────────────────────────────────────────────────────────
--- Très léger tremblement latéral pendant la montée : la fusée vibre un peu sur X et Z.
--- Appliqué en delta (cf. boucle de launch) pour ne jamais dériver de sa trajectoire.
-local SHAKE_AMPLITUDE = 0.2
-local SHAKE_FREQUENCY_X = 23
-local SHAKE_FREQUENCY_Z = 17
 -- One rocket body part with the data needed to fully restore it after a physical
 -- explosion: its pose relative to the launch pad and its authored collision flag.
 local states = {}
@@ -54,8 +51,44 @@ local originalPivots = {}
 local rocketParts = {}
 -- The active debris-physics Heartbeat while the rocket is mid-explosion.
 local debrisConns = {}
+-- The looped 3D "engine roar" sound per room, created once and parented to the rocket
+-- engine so it rises with the rocket. Played on launch, stopped on every ending (stopRoom).
+local launchSounds = {}
 local function getRocketModel(room)
 	return room.movableModel:FindFirstChild(ROCKET_MODEL)
+end
+-- The engine part (holds the nitro Fire) — the natural 3D source for the launch roar.
+local function getNitroPart(room)
+	local _nitro = getRocketModel(room)
+	if _nitro ~= nil then
+		_nitro = _nitro:FindFirstChild(NITRO_PART, true)
+	end
+	local nitro = _nitro
+	return if nitro and nitro:IsA("BasePart") then nitro else nil
+end
+-- Lazily create + cache the looped launch sound, parented to the engine part so the roar
+-- emanates from the rocket and follows it up (the whole MovableModel moves during ascent).
+-- 3D positional like the explosion boom — server-authored so every nearby client hears it.
+local function getLaunchSound(room)
+	local _room = room
+	local existing = launchSounds[_room]
+	if existing and existing.Parent then
+		return existing
+	end
+	local host = getNitroPart(room) or room.movableModel:FindFirstChildWhichIsA("BasePart", true)
+	if not host then
+		return nil
+	end
+	local sound = Instance.new("Sound")
+	sound.Name = "RocketLaunchSound"
+	sound.SoundId = AudioConfig.sfx.rocketLaunch.id
+	sound.Volume = AudioConfig.sfx.rocketLaunch.volume
+	sound.Looped = true
+	sound.RollOffMaxDistance = LAUNCH_SOUND_ROLLOFF
+	sound.Parent = host
+	local _room_1 = room
+	launchSounds[_room_1] = sound
+	return sound
 end
 -- Capture the rocket body parts and their pad-relative pose once per room. Must be
 -- called while the model sits on its launch pad (so the captured offsets are the
@@ -136,6 +169,13 @@ local function stopRoom(room)
 		states[_room_1] = nil
 	end
 	setNitroEnabled(room, false)
+	-- Coupe le son de décollage sur toute fin de partie (explosion, claim/release, parry, quit)
+	-- — stopRoom est le point de passage commun à stop/reset/explode.
+	local _room_1 = room
+	local sound = launchSounds[_room_1]
+	if sound then
+		sound:Stop()
+	end
 end
 local function resetRoom(room)
 	stopRoom(room)
@@ -164,25 +204,21 @@ local RocketLauncher = {
 		local state = {
 			conn = nil,
 			velocity = 0,
-			elapsed = 0,
-			shake = Vector3.zero,
 		}
 		state.conn = RunService.Heartbeat:Connect(function(dt)
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed)
-			state.elapsed += dt
-			-- Tremblement latéral très léger (X + Z). Calculé en absolu puis appliqué comme
-			-- delta par rapport à la frame précédente : sur une période complète la somme des
-			-- deltas est nulle, donc la fusée vibre sans jamais dériver de sa trajectoire verticale.
-			local shake = Vector3.new(math.sin(state.elapsed * SHAKE_FREQUENCY_X) * SHAKE_AMPLITUDE, 0, math.sin(state.elapsed * SHAKE_FREQUENCY_Z) * SHAKE_AMPLITUDE)
-			local _shake = state.shake
-			local shakeDelta = shake - _shake
-			state.shake = shake
-			local rise = Vector3.new(0, state.velocity * dt, 0)
-			room.movableModel:PivotTo(room.movableModel:GetPivot() + rise + shakeDelta)
+			local _movableModel = room.movableModel
+			local _exp = room.movableModel:GetPivot()
+			local _vector3 = Vector3.new(0, state.velocity * dt, 0)
+			_movableModel:PivotTo(_exp + _vector3)
 		end)
 		local _room_1 = room
 		states[_room_1] = state
 		setNitroEnabled(room, true)
+		local sound = getLaunchSound(room)
+		if sound then
+			sound:Play()
+		end
 	end,
 	getVelocity = function(self, room)
 		local _room = room

@@ -30,6 +30,10 @@ do
 		self.room.proximityPrompt.Triggered:Connect(function(player)
 			return self:onTriggered(player)
 		end)
+		-- The rocket prompt mirrors the button: triggering it starts the same game.
+		self.room.rocketProximityPrompt.Triggered:Connect(function(player)
+			return self:onTriggered(player)
+		end)
 	end
 	function ButtonModule:onTriggered(player)
 		if not self.room:owns(player) then

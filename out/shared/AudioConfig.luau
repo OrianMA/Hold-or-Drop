@@ -18,6 +18,10 @@ local AudioConfig = {
 			id = "rbxassetid://139771888058836",
 			volume = 0.8,
 		},
+		rocketLaunch = {
+			id = "rbxassetid://136678911797673",
+			volume = 0.5,
+		},
 		buttonExplode = {
 			id = "rbxassetid://133384716023284",
 			volume = 1,

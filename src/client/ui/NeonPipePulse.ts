@@ -29,6 +29,15 @@ const PARTICLE_EMITTER = "UpgradeButtonParticles";
 const BUTTON_PART = "ButtonPart";
 const PARTICLE_DURATION = 1.2; // s, durée d'émission de la particule à l'arrivée
 
+// Petit sursaut de la fusée à l'arrivée de l'amélioration : la fusée (MovableModel), au
+// repos sur son pad, tremble légèrement sur X+Z puis revient à sa place. Réaction visuelle
+// à l'upgrade — présentation 100 % client, comme la particule (la fusée n'est jamais en vol
+// au moment d'un achat, le joueur étant au shop et non sur son bouton).
+const SHAKE_DURATION = 0.4; // s, durée du sursaut (s'amortit jusqu'à 0)
+const SHAKE_AMPLITUDE = 0.25; // studs, décalage latéral max (volontairement faible / « soft »)
+const SHAKE_FREQUENCY_X = 26; // rad/s, oscillation sur X (~4 Hz)
+const SHAKE_FREQUENCY_Z = 19; // rad/s, oscillation sur Z (différente de X → tremblement organique)
+
 // --- réglages -------------------------------------------------------------
 const SEGMENT_LENGTH = 5; // longueur du bandeau, en nombre de parts
 const TRAVEL_TIME = 5; // s, durée du trajet shop → bouton (assez lent pour voir la couleur passer)
@@ -66,6 +75,11 @@ interface RoomState {
 	particles: ParticleEmitter | undefined;
 	sound: Sound | undefined;
 	particleToken: number; // dernière arrivée : gère les déclenchements rapprochés
+	// Sursaut de la fusée à l'arrivée (résolu une fois ; absent → simplement ignoré).
+	movable: Model | undefined;
+	shakeTime: number; // temps de sursaut restant (0 = au repos)
+	shakeElapsed: number; // temps écoulé du sursaut courant (phase des sinus)
+	shakeApplied: Vector3; // décalage de sursaut appliqué (pour le delta / la remise à zéro)
 }
 
 const roomStates = new Map<Instance, RoomState>(); // dossier P{n} → état (construit à la 1re impulsion)
@@ -181,6 +195,11 @@ function resolveButtonEffect(roomName: string): {
 // quand plusieurs segments arrivent coup sur coup.
 function fireButtonEffect(state: RoomState): void {
 	state.sound?.Play();
+	// Sursaut de la fusée : (ré)arme le timer ; advanceShake (boucle) fait le reste.
+	if (state.movable) {
+		state.shakeTime = SHAKE_DURATION;
+		state.shakeElapsed = 0;
+	}
 	const particles = state.particles;
 	if (!particles) return;
 	particles.Enabled = true;
@@ -189,6 +208,29 @@ function fireButtonEffect(state: RoomState): void {
 	task.delay(PARTICLE_DURATION, () => {
 		if (state.particleToken === token) particles.Enabled = false;
 	});
+}
+
+// Avance le sursaut de la fusée : oscillation X+Z amortie sur SHAKE_DURATION, appliquée
+// au MovableModel en delta (la somme revient à zéro → aucune dérive de la position du pad).
+function advanceShake(state: RoomState, dt: number): void {
+	const movable = state.movable;
+	if (!movable) return;
+
+	let target = Vector3.zero;
+	if (state.shakeTime > 0) {
+		state.shakeElapsed += dt;
+		const decay = state.shakeTime / SHAKE_DURATION; // enveloppe 1 → 0 (amortissement)
+		target = new Vector3(
+			math.sin(state.shakeElapsed * SHAKE_FREQUENCY_X) * SHAKE_AMPLITUDE * decay,
+			0,
+			math.sin(state.shakeElapsed * SHAKE_FREQUENCY_Z) * SHAKE_AMPLITUDE * decay,
+		);
+		state.shakeTime -= dt;
+	}
+
+	const delta = target.sub(state.shakeApplied);
+	if (delta.Magnitude > 1e-4) movable.PivotTo(movable.GetPivot().add(delta));
+	state.shakeApplied = target;
 }
 
 function buildRoomState(folder: Instance): RoomState | undefined {
@@ -203,6 +245,10 @@ function buildRoomState(folder: Instance): RoomState | undefined {
 	if (tubes.size() === 0) return undefined;
 	const base = tubes[0].ordered[0].Color;
 	const effect = resolveButtonEffect(folder.Name);
+	const movableInst = Workspace.FindFirstChild(PLAYER_ZONES)
+		?.FindFirstChild(folder.Name)
+		?.FindFirstChild(MOVABLE_MODEL);
+	const movable = movableInst !== undefined && movableInst.IsA("Model") ? movableInst : undefined;
 	return {
 		tubes,
 		base,
@@ -213,6 +259,10 @@ function buildRoomState(folder: Instance): RoomState | undefined {
 		particles: effect.particles,
 		sound: effect.sound,
 		particleToken: 0,
+		movable,
+		shakeTime: 0,
+		shakeElapsed: 0,
+		shakeApplied: Vector3.zero,
 	};
 }
 
@@ -294,8 +344,16 @@ function updateRoom(state: RoomState, dt: number): void {
 
 	for (const tube of state.tubes) renderTube(tube, state);
 
-	// Plus rien à animer ni en file → la salle est nettoyée et désactivée.
-	if (state.segments.size() === 0 && state.pending === 0) activeRooms.delete(state);
+	// Sursaut de la fusée déclenché par une arrivée (peut survivre aux segments).
+	advanceShake(state, dt);
+
+	// Plus rien à animer (segments, file, sursaut) → la salle est nettoyée et désactivée.
+	const idle =
+		state.segments.size() === 0 &&
+		state.pending === 0 &&
+		state.shakeTime <= 0 &&
+		state.shakeApplied.Magnitude < 1e-3;
+	if (idle) activeRooms.delete(state);
 }
 
 export function init(): void {

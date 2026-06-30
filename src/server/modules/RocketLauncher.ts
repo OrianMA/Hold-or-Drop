@@ -1,6 +1,7 @@
 import { RunService, Workspace } from "@rbxts/services";
 import { Room } from "server/rooms/Room";
 import { ROCKET_ACCEL, ROCKET_MAX_SPEED } from "shared/RocketGameConfig";
+import { AudioConfig } from "shared/AudioConfig";
 
 // Drives the per-room rocket (the MovableModel): it rises while the button is held
 // with a slow, accelerating, real-rocket feel, lights its engine Fire (NitroParticles)
@@ -15,6 +16,8 @@ const PARTICLES_PARENT = "ParticlesParentPart";
 const EXPLOSION_PARTICLE_COUNT = 60;
 // Part inside the rocket holding the engine Fire(s) — lit while the rocket moves.
 const NITRO_PART = "NitroParticles";
+// 3D rolloff (studs) for the looped launch roar, server-authored like the explosion boom.
+const LAUNCH_SOUND_ROLLOFF = 150;
 // The rocket body model inside the MovableModel — these are the parts that physically
 // break apart on an explosion (the Camera*/Particles helper parts stay anchored so the
 // orbit camera keeps holding on the blast site).
@@ -36,13 +39,6 @@ const BURST_UP_MIN = 5; // upward kick for the lowest part (barely lifts, never 
 const BURST_UP_MAX = 95; // upward kick for the highest part (nose flung hardest)
 const BURST_SPIN = 18; // random angular velocity magnitude (rad/s)
 
-// ── Ascent shake tuning ─────────────────────────────────────────────────────────
-// Très léger tremblement latéral pendant la montée : la fusée vibre un peu sur X et Z.
-// Appliqué en delta (cf. boucle de launch) pour ne jamais dériver de sa trajectoire.
-const SHAKE_AMPLITUDE = 0.2; // studs, décalage latéral max (volontairement faible / « soft »)
-const SHAKE_FREQUENCY_X = 23; // rad/s, vitesse d'oscillation sur X (~3.7 Hz)
-const SHAKE_FREQUENCY_Z = 17; // rad/s, vitesse sur Z (différente de X → tremblement organique, pas un cercle)
-
 // One rocket body part with the data needed to fully restore it after a physical
 // explosion: its pose relative to the launch pad and its authored collision flag.
 interface RocketPart {
@@ -54,8 +50,6 @@ interface RocketPart {
 interface RocketState {
 	conn: RBXScriptConnection;
 	velocity: number;
-	elapsed: number; // temps écoulé depuis le décollage, pour le tremblement latéral
-	shake: Vector3; // décalage de tremblement appliqué à la frame précédente (pour le delta)
 }
 
 const states = new Map<Room, RocketState>();
@@ -67,9 +61,39 @@ const originalPivots = new Map<Room, CFrame>();
 const rocketParts = new Map<Room, RocketPart[]>();
 // The active debris-physics Heartbeat while the rocket is mid-explosion.
 const debrisConns = new Map<Room, RBXScriptConnection>();
+// The looped 3D "engine roar" sound per room, created once and parented to the rocket
+// engine so it rises with the rocket. Played on launch, stopped on every ending (stopRoom).
+const launchSounds = new Map<Room, Sound>();
 
 function getRocketModel(room: Room): Model | undefined {
 	return room.movableModel.FindFirstChild(ROCKET_MODEL) as Model | undefined;
+}
+
+// The engine part (holds the nitro Fire) — the natural 3D source for the launch roar.
+function getNitroPart(room: Room): BasePart | undefined {
+	const nitro = getRocketModel(room)?.FindFirstChild(NITRO_PART, true);
+	return nitro && nitro.IsA("BasePart") ? nitro : undefined;
+}
+
+// Lazily create + cache the looped launch sound, parented to the engine part so the roar
+// emanates from the rocket and follows it up (the whole MovableModel moves during ascent).
+// 3D positional like the explosion boom — server-authored so every nearby client hears it.
+function getLaunchSound(room: Room): Sound | undefined {
+	const existing = launchSounds.get(room);
+	if (existing && existing.Parent) return existing;
+
+	const host = getNitroPart(room) ?? room.movableModel.FindFirstChildWhichIsA("BasePart", true);
+	if (!host) return undefined;
+
+	const sound = new Instance("Sound");
+	sound.Name = "RocketLaunchSound";
+	sound.SoundId = AudioConfig.sfx.rocketLaunch.id;
+	sound.Volume = AudioConfig.sfx.rocketLaunch.volume;
+	sound.Looped = true;
+	sound.RollOffMaxDistance = LAUNCH_SOUND_ROLLOFF;
+	sound.Parent = host;
+	launchSounds.set(room, sound);
+	return sound;
 }
 
 // Capture the rocket body parts and their pad-relative pose once per room. Must be
@@ -127,6 +151,10 @@ function stopRoom(room: Room): void {
 		states.delete(room);
 	}
 	setNitroEnabled(room, false); // moteur éteint dès que la fusée ne bouge plus
+	// Coupe le son de décollage sur toute fin de partie (explosion, claim/release, parry, quit)
+	// — stopRoom est le point de passage commun à stop/reset/explode.
+	const sound = launchSounds.get(room);
+	if (sound) sound.Stop();
 }
 
 function resetRoom(room: Room): void {
@@ -149,28 +177,16 @@ export const RocketLauncher = {
 		const maxSpeed = ROCKET_MAX_SPEED * speedFactor;
 		const accel = ROCKET_ACCEL * speedFactor;
 
-		const state: RocketState = { conn: undefined!, velocity: 0, elapsed: 0, shake: Vector3.zero };
+		const state: RocketState = { conn: undefined!, velocity: 0 };
 		state.conn = RunService.Heartbeat.Connect((dt) => {
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed);
-			state.elapsed += dt;
-
-			// Tremblement latéral très léger (X + Z). Calculé en absolu puis appliqué comme
-			// delta par rapport à la frame précédente : sur une période complète la somme des
-			// deltas est nulle, donc la fusée vibre sans jamais dériver de sa trajectoire verticale.
-			const shake = new Vector3(
-				math.sin(state.elapsed * SHAKE_FREQUENCY_X) * SHAKE_AMPLITUDE,
-				0,
-				math.sin(state.elapsed * SHAKE_FREQUENCY_Z) * SHAKE_AMPLITUDE,
-			);
-			const shakeDelta = shake.sub(state.shake);
-			state.shake = shake;
-
-			const rise = new Vector3(0, state.velocity * dt, 0);
-			room.movableModel.PivotTo(room.movableModel.GetPivot().add(rise).add(shakeDelta));
+			room.movableModel.PivotTo(room.movableModel.GetPivot().add(new Vector3(0, state.velocity * dt, 0)));
 		});
 		states.set(room, state);
 
 		setNitroEnabled(room, true); // moteur allumé tant que la fusée monte
+		const sound = getLaunchSound(room);
+		if (sound) sound.Play(); // son de décollage en boucle (3D, suit la fusée)
 	},
 
 	// Current ascent velocity (studs/s) for a room, or 0 if not flying. Read by the

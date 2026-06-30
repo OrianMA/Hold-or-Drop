@@ -135,8 +135,9 @@ once a server event fires.
   (`ButtonPart` + `ProximityPrompt`, `PlayerPosPlaceHolder`, optional
   `UiPart/BillboardGui/GainText`) and a `MovableModel` (the rocket rig: `RocketLvl1`
   plus `CameraPosPart` = camera start pose, `CameraParentPart` = orbit pivot the
-  camera always faces (see §6.7), and `ParticlesParentPart` holding a disabled
-  `ExplosionParticles` emitter burst on a loss (§6.17)), optional `CommunityJoinPart`.
+  camera always faces (see §6.7), `ParticlesParentPart` holding a disabled
+  `ExplosionParticles` emitter burst on a loss (§6.17), and `RocketProximityPromptPart`
+  carrying the rocket's own `ProximityPrompt`), optional `CommunityJoinPart`.
   Invalid layouts are skipped with a warning.
 - **Ownership is the access rule:** only the assigned occupant may trigger the button.
 - `RoomService` assigns the first free room on join (numeric-aware `P1<P2<…<P10` sort),
@@ -174,8 +175,12 @@ once a server event fires.
   `SpawnLocation` instance is **not** required — matching is by name, placement by teleport.
 - `ProximityPrompt.Enabled` is **global** (no per-player toggle), so the server keeps every
   prompt **disabled** and publishes `AssignedRoom` / `InSession` attributes per player.
-  `RoomPromptController` (client) enables only the local player's prompt — client-side
-  writes don't replicate. Server still validates ownership on `Triggered`.
+  `RoomPromptController` (client) enables only the local player's prompts — client-side
+  writes don't replicate. Server still validates ownership on `Triggered`. **Each room has
+  two prompts wired identically:** the button prompt (`ButtonModel/ButtonPart`) and the
+  rocket prompt (`MovableModel/RocketProximityPromptPart`) both start the same game (§6.2),
+  and `RoomPromptController` shows/hides them together. The button prompt's `ObjectText`
+  shows the cash gain; the rocket prompt keeps its own fixed description ("Launch the rocket").
 - **Slot colours** (`modules/RoomColors.ts`): the single source of truth for the per-slot
   palette (P1 blue, P2 red, P3 yellow, P4 green, P5 purple; empty = grey), shared by the
   neon pipes and the spotlights below so the two never drift — **edit here to retune**.
@@ -197,7 +202,9 @@ once a server event fires.
     local player's assigned room so the "your base" cue is visible to its owner alone.
 
 ### 6.2 Button trigger (`modules/ButtonModule.ts`)
-One instance per room. On `Triggered`: validates ownership, guards against double-start
+One instance per room. **`bind` connects both the button prompt and the rocket prompt
+(`Room.rocketProximityPrompt`, §6.1/§6.17) to the same `onTriggered`** — interacting with
+either starts the game. On `Triggered`: validates ownership, guards against double-start
 (`InSession` lags one round-trip — re-check the session map), creates the session,
 sets `InSession=true`, hides the billboard for the active player, teleports + anchors the
 player on the button, fires `ButtonTriggerEvent` to the client (with the room's
@@ -450,7 +457,8 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 
 ### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`, `client/audio/UiClickSound.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
-  the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion`,
+  the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion` +
+  `rocketLaunch` (looped 3D engine roar — see §6.17),
   client `parry` / `buttonUpgrade` / `moneyGain` / `uiClick`; `buttonExplode` is still defined
   but no longer played — the pre-explosion "cling" cue was removed). SFX still play
   from their existing call sites (`RocketLaunchBehavior` client-side, `ButtonInGameModule`
@@ -535,6 +543,14 @@ button. 100 % client / presentation (like §6.11).
   Overlapping arrivals are handled by a `particleToken` so only the latest 1.2 s timer disables
   the emitter. The emitter sits **disabled** at rest in Studio; its holder part is anchored /
   non-collidable. 100 % client (every client animates the replicated `Pulse`, so all see it).
+  - **Rocket reaction shake:** the same arrival also gives the **`MovableModel`** a brief soft
+    **X+Z jitter** (`advanceShake`): a damped sine oscillation over `SHAKE_DURATION` (≈0.4 s,
+    amplitude ≈0.25 studs) so the rocket — at rest on its pad — visibly reacts to the upgrade,
+    then settles back. Applied via `PivotTo` as a **delta** (sums to zero → no drift), advanced
+    inside the existing `RenderStepped` loop, and the room stays active until the shake settles.
+    Client-only presentation (the rocket is never mid-flight during a purchase, since the owner is
+    at the shop, not holding the button). Tunables at the top of `NeonPipePulse.ts`:
+    `SHAKE_DURATION`, `SHAKE_AMPLITUDE`, `SHAKE_FREQUENCY_X/Z`.
 - **Tunables** (top of `NeonPipePulse.ts`): `SEGMENT_LENGTH` 5, `TRAVEL_TIME` 5 s,
   `LIGHT_FACTOR` 0.85 (0 = slot colour, 1 = white), `QUEUE_DELAY` 0.35 s, `TRAIL_FADE`,
   `PARTICLE_DURATION` 1.2 s.
@@ -665,21 +681,25 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   (value 1 = crawl, value 6 = old accel 6 / max 60). **`getVelocity(room)`** exposes the live
   velocity (0 if not flying) — the game loop's multiplier tick reads it so the payout multiplier
   tracks the rocket's speed (§6.3).
-- **Ascent shake:** the same loop adds a very soft lateral **X+Z jitter** (two sine waves at
-  different frequencies, amplitude `SHAKE_AMPLITUDE` ≈ 0.2 studs) so the rocket vibrates a little
-  while it climbs. It is applied as a **delta** from the previous frame's offset (so over a full
-  period it sums to zero and never drifts off the vertical path), and is cleared on `reset`.
-  Tunables at the top of `RocketLauncher.ts`: `SHAKE_AMPLITUDE`, `SHAKE_FREQUENCY_X/Z`.
 - Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
   the client orbit camera (reads the pivot live, §6.7) **follows the rocket** with zero extra code.
 - **Engine fire:** `launch` lights the `Fire` inside the rocket's `NitroParticles` part(s);
   `stop`/`reset` extinguish it — so the nitro burns only while the rocket is moving. (Authored
   `Enabled=false` at rest in Studio on every room.)
+- **Launch sound:** `launch` also plays a **looped 3D** "engine roar"
+  (`AudioConfig.sfx.rocketLaunch`) — a `Sound` created once per room and parented to the
+  `NitroParticles` engine part (so it emanates from the rocket and rises with it; server-authored
+  like the explosion boom so every nearby client hears it). It is stopped in **`stopRoom`** — the
+  common chokepoint of `stop`/`reset`/`explode` — so it cuts on every ending: explosion, claim
+  (release), parry, and quit. (`LAUNCH_SOUND_ROLLOFF` at the top of `RocketLauncher.ts`.)
 - **`stop(room)`** halts the ascent in place; **`reset(room)`** halts + snaps back to the pad
   (called on every ending, §6.3); **`explode(room)`** bursts the `ExplosionParticles` emitter in
   the rocket's `ParticlesParentPart` (authored disabled in Studio, like `UpgradeButtonParticles`)
   **and physically breaks the rocket apart** (see below).
 - The rocket parts are all **anchored** (no PrimaryPart needed — `PivotTo` uses the model pivot).
+  The non-body helpers (`CameraPosPart`, `CameraParentPart`, `ParticlesParentPart`,
+  `RocketProximityPromptPart`) are anchored + non-collidable too, so they ride with the rig and
+  never fall — `explode` only unanchors `RocketLvl1` body parts.
   `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
 - **Physical explosion (loss path).** `explode` unanchors every body part of the `RocketLvl1`
   model (the `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps
