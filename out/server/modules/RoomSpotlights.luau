@@ -4,7 +4,7 @@ local Workspace = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local _RoomColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RoomColors")
 local EMPTY_COLOR = _RoomColors.EMPTY_COLOR
 local roomColor = _RoomColors.roomColor
--- Drives the per-room spotlight (Workspace/PlayerZones/P{n}/SpotLight) from room
+-- Drives the per-room spotlight (Workspace/PlayerZones/P{n}/Environment/SpotLight) from room
 -- occupancy, mirroring NeonPipeColors: the lamp lights up in the slot colour while
 -- the room is owned and turns OFF when empty — same on/off feel as the neon pipes.
 --
@@ -15,6 +15,7 @@ local roomColor = _RoomColors.roomColor
 -- Driven by RoomService: setOccupied(room.name) on assign, setEmpty(room.name) on
 -- release. init() turns every lamp off — the empty / server-start baseline.
 local PLAYER_ZONES = "PlayerZones"
+local ENVIRONMENT = "Environment"
 local SPOTLIGHT = "SpotLight"
 local LIGHT_SOURCE = "LightSource"
 -- Resolve + cache each room's lamp once — the instance set never changes at runtime.
@@ -30,7 +31,10 @@ local function resolveLamp(roomName)
 	if _model ~= nil then
 		_model = _model:FindFirstChild(roomName)
 		if _model ~= nil then
-			_model = _model:FindFirstChild(SPOTLIGHT)
+			_model = _model:FindFirstChild(ENVIRONMENT)
+			if _model ~= nil then
+				_model = _model:FindFirstChild(SPOTLIGHT)
+			end
 		end
 	end
 	local model = _model
@@ -75,7 +79,11 @@ local RoomSpotlights = {
 			return nil
 		end
 		for _, zone in zones:GetChildren() do
-			if zone:FindFirstChild(SPOTLIGHT) then
+			local _result = zone:FindFirstChild(ENVIRONMENT)
+			if _result ~= nil then
+				_result = _result:FindFirstChild(SPOTLIGHT)
+			end
+			if _result then
 				setLamp(zone.Name, EMPTY_COLOR, false)
 			end
 		end

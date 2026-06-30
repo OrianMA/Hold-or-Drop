@@ -184,7 +184,7 @@ once a server event fires.
   pipe at init (empty baseline), tints a slot's pipe its colour on `assign`, and greys it
   again on `release`.
 - **Room spotlight** (`modules/RoomSpotlights.ts`): each room holds a
-  `Workspace/PlayerZones/P{n}/SpotLight` lamp — a Neon `LightSource` lens wrapping a
+  `Workspace/PlayerZones/P{n}/Environment/SpotLight` lamp — a Neon `LightSource` lens wrapping a
   `SurfaceLight` cone. Mirroring the neon pipe, `RoomService` turns every lamp **off** at
   init, lights it in the slot colour (lens + `SurfaceLight`, `Enabled=true`) on `assign`,
   and switches it off (grey lens, `SurfaceLight` disabled — no projected light) on
@@ -524,12 +524,14 @@ button. 100 % client / presentation (like §6.11).
   sync. The base is sampled live from the pipe (the slot colour the server already painted in
   §6.1), so no colour table is duplicated client-side.
 - **Button-arrival effect:** when a segment reaches the button (`progress >= 1`, the instant it
-  leaves the live list), `NeonPipePulse` fires a one-shot on that room's button —
-  `PlayerZones/P{n}/ButtonModel`: it enables the `ParticleEmmiter.UpgradeButtonParticles`
-  emitter for `PARTICLE_DURATION` (1.2 s) then disables it, and plays a 3D electric SFX
-  (`AudioConfig.sfx.buttonUpgrade`, a `Sound` created client-side once and parented to
-  `ButtonPart`). Both are resolved once in `buildRoomState` and cached on the `RoomState`;
-  either may be absent (e.g. a room whose button package lacks the emitter) and is then skipped.
+  leaves the live list), `NeonPipePulse` fires a one-shot: it enables the electric
+  `ParticleEmmiter.UpgradeButtonParticles` emitter for `PARTICLE_DURATION` (1.2 s) then disables
+  it, and plays a 3D electric SFX (`AudioConfig.sfx.buttonUpgrade`, a `Sound` created client-side
+  once and parented to `ButtonPart`). The emitter now lives on the **rocket**
+  (`PlayerZones/P{n}/MovableModel/ParticleEmmiter`, moved from the button), while the sound stays
+  on `PlayerZones/P{n}/ButtonModel/ButtonPart`. Both are resolved once in `buildRoomState` and
+  cached on the `RoomState`; either may be absent (e.g. a room whose package lacks the emitter)
+  and is then skipped.
   Overlapping arrivals are handled by a `particleToken` so only the latest 1.2 s timer disables
   the emitter. The emitter sits **disabled** at rest in Studio; its holder part is anchored /
   non-collidable. 100 % client (every client animates the replicated `Pulse`, so all see it).
@@ -663,6 +665,11 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   (value 1 = crawl, value 6 = old accel 6 / max 60). **`getVelocity(room)`** exposes the live
   velocity (0 if not flying) — the game loop's multiplier tick reads it so the payout multiplier
   tracks the rocket's speed (§6.3).
+- **Ascent shake:** the same loop adds a very soft lateral **X+Z jitter** (two sine waves at
+  different frequencies, amplitude `SHAKE_AMPLITUDE` ≈ 0.2 studs) so the rocket vibrates a little
+  while it climbs. It is applied as a **delta** from the previous frame's offset (so over a full
+  period it sums to zero and never drifts off the vertical path), and is cleared on `reset`.
+  Tunables at the top of `RocketLauncher.ts`: `SHAKE_AMPLITUDE`, `SHAKE_FREQUENCY_X/Z`.
 - Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
   the client orbit camera (reads the pivot live, §6.7) **follows the rocket** with zero extra code.
 - **Engine fire:** `launch` lights the `Fire` inside the rocket's `NitroParticles` part(s);

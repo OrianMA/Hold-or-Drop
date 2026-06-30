@@ -36,6 +36,13 @@ const BURST_UP_MIN = 5; // upward kick for the lowest part (barely lifts, never 
 const BURST_UP_MAX = 95; // upward kick for the highest part (nose flung hardest)
 const BURST_SPIN = 18; // random angular velocity magnitude (rad/s)
 
+// ── Ascent shake tuning ─────────────────────────────────────────────────────────
+// Très léger tremblement latéral pendant la montée : la fusée vibre un peu sur X et Z.
+// Appliqué en delta (cf. boucle de launch) pour ne jamais dériver de sa trajectoire.
+const SHAKE_AMPLITUDE = 0.2; // studs, décalage latéral max (volontairement faible / « soft »)
+const SHAKE_FREQUENCY_X = 23; // rad/s, vitesse d'oscillation sur X (~3.7 Hz)
+const SHAKE_FREQUENCY_Z = 17; // rad/s, vitesse sur Z (différente de X → tremblement organique, pas un cercle)
+
 // One rocket body part with the data needed to fully restore it after a physical
 // explosion: its pose relative to the launch pad and its authored collision flag.
 interface RocketPart {
@@ -47,6 +54,8 @@ interface RocketPart {
 interface RocketState {
 	conn: RBXScriptConnection;
 	velocity: number;
+	elapsed: number; // temps écoulé depuis le décollage, pour le tremblement latéral
+	shake: Vector3; // décalage de tremblement appliqué à la frame précédente (pour le delta)
 }
 
 const states = new Map<Room, RocketState>();
@@ -140,10 +149,24 @@ export const RocketLauncher = {
 		const maxSpeed = ROCKET_MAX_SPEED * speedFactor;
 		const accel = ROCKET_ACCEL * speedFactor;
 
-		const state: RocketState = { conn: undefined!, velocity: 0 };
+		const state: RocketState = { conn: undefined!, velocity: 0, elapsed: 0, shake: Vector3.zero };
 		state.conn = RunService.Heartbeat.Connect((dt) => {
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed);
-			room.movableModel.PivotTo(room.movableModel.GetPivot().add(new Vector3(0, state.velocity * dt, 0)));
+			state.elapsed += dt;
+
+			// Tremblement latéral très léger (X + Z). Calculé en absolu puis appliqué comme
+			// delta par rapport à la frame précédente : sur une période complète la somme des
+			// deltas est nulle, donc la fusée vibre sans jamais dériver de sa trajectoire verticale.
+			const shake = new Vector3(
+				math.sin(state.elapsed * SHAKE_FREQUENCY_X) * SHAKE_AMPLITUDE,
+				0,
+				math.sin(state.elapsed * SHAKE_FREQUENCY_Z) * SHAKE_AMPLITUDE,
+			);
+			const shakeDelta = shake.sub(state.shake);
+			state.shake = shake;
+
+			const rise = new Vector3(0, state.velocity * dt, 0);
+			room.movableModel.PivotTo(room.movableModel.GetPivot().add(rise).add(shakeDelta));
 		});
 		states.set(room, state);
 

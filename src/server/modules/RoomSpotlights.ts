@@ -1,7 +1,7 @@
 import { Workspace } from "@rbxts/services";
 import { EMPTY_COLOR, roomColor } from "server/modules/RoomColors";
 
-// Drives the per-room spotlight (Workspace/PlayerZones/P{n}/SpotLight) from room
+// Drives the per-room spotlight (Workspace/PlayerZones/P{n}/Environment/SpotLight) from room
 // occupancy, mirroring NeonPipeColors: the lamp lights up in the slot colour while
 // the room is owned and turns OFF when empty — same on/off feel as the neon pipes.
 //
@@ -13,6 +13,7 @@ import { EMPTY_COLOR, roomColor } from "server/modules/RoomColors";
 // release. init() turns every lamp off — the empty / server-start baseline.
 
 const PLAYER_ZONES = "PlayerZones";
+const ENVIRONMENT = "Environment";
 const SPOTLIGHT = "SpotLight";
 const LIGHT_SOURCE = "LightSource";
 
@@ -28,7 +29,10 @@ const lampByRoom = new Map<string, Lamp | undefined>();
 function resolveLamp(roomName: string): Lamp | undefined {
 	if (lampByRoom.has(roomName)) return lampByRoom.get(roomName);
 
-	const model = Workspace.FindFirstChild(PLAYER_ZONES)?.FindFirstChild(roomName)?.FindFirstChild(SPOTLIGHT);
+	const model = Workspace.FindFirstChild(PLAYER_ZONES)
+		?.FindFirstChild(roomName)
+		?.FindFirstChild(ENVIRONMENT)
+		?.FindFirstChild(SPOTLIGHT);
 	const lens = model?.FindFirstChild(LIGHT_SOURCE);
 	const light = lens?.FindFirstChildWhichIsA("SurfaceLight");
 
@@ -59,7 +63,7 @@ export const RoomSpotlights = {
 			return;
 		}
 		for (const zone of zones.GetChildren()) {
-			if (zone.FindFirstChild(SPOTLIGHT)) setLamp(zone.Name, EMPTY_COLOR, false);
+			if (zone.FindFirstChild(ENVIRONMENT)?.FindFirstChild(SPOTLIGHT)) setLamp(zone.Name, EMPTY_COLOR, false);
 		}
 	},
 

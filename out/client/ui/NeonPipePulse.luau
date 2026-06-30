@@ -24,6 +24,7 @@ local TUBE_NAMES = { "Right", "Left" }
 -- atteint le bouton allume une gerbe d'étincelles + un petit son électrique.
 local PLAYER_ZONES = "PlayerZones"
 local BUTTON_MODEL = "ButtonModel"
+local MOVABLE_MODEL = "MovableModel"
 local PARTICLE_PART = "ParticleEmmiter"
 local PARTICLE_EMITTER = "UpgradeButtonParticles"
 local BUTTON_PART = "ButtonPart"
@@ -183,30 +184,35 @@ end
 -- Résout la particule + crée le son 3D du bouton de la salle. Le nom de dossier P{n}
 -- correspond 1:1 à PlayerZones/P{n}/ButtonModel. Tolère l'absence (effet ignoré).
 local function resolveButtonEffect(roomName)
-	local _buttonModel = Workspace:FindFirstChild(PLAYER_ZONES)
-	if _buttonModel ~= nil then
-		_buttonModel = _buttonModel:FindFirstChild(roomName)
-		if _buttonModel ~= nil then
-			_buttonModel = _buttonModel:FindFirstChild(BUTTON_MODEL)
-		end
+	local _room = Workspace:FindFirstChild(PLAYER_ZONES)
+	if _room ~= nil then
+		_room = _room:FindFirstChild(roomName)
 	end
-	local buttonModel = _buttonModel
-	if not buttonModel then
+	local room = _room
+	if not room then
 		return {
 			particles = nil,
 			sound = nil,
 		}
 	end
-	local _emitter = buttonModel:FindFirstChild(PARTICLE_PART)
+	-- La gerbe électrique a été déplacée sur la fusée : MovableModel/ParticleEmmiter/UpgradeButtonParticles.
+	local _emitter = room:FindFirstChild(MOVABLE_MODEL)
 	if _emitter ~= nil then
-		_emitter = _emitter:FindFirstChild(PARTICLE_EMITTER)
+		_emitter = _emitter:FindFirstChild(PARTICLE_PART)
+		if _emitter ~= nil then
+			_emitter = _emitter:FindFirstChild(PARTICLE_EMITTER)
+		end
 	end
 	local emitter = _emitter
 	local particles = if emitter ~= nil and emitter:IsA("ParticleEmitter") then emitter else nil
-	-- Son électrique 3D : parenté au bouton pour qu'il sonne « sur le bouton ».
+	-- Son électrique 3D : toujours parenté au bouton pour qu'il sonne « sur le bouton ».
 	local sound
 	local id = AudioConfig.sfx.buttonUpgrade.id
-	local buttonPart = buttonModel:FindFirstChild(BUTTON_PART)
+	local _buttonPart = room:FindFirstChild(BUTTON_MODEL)
+	if _buttonPart ~= nil then
+		_buttonPart = _buttonPart:FindFirstChild(BUTTON_PART)
+	end
+	local buttonPart = _buttonPart
 	if id ~= "" and buttonPart ~= nil and buttonPart:IsA("BasePart") then
 		local s = Instance.new("Sound")
 		s.Name = "ButtonUpgradeSfx"

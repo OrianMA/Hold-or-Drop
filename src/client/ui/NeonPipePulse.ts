@@ -23,6 +23,7 @@ const TUBE_NAMES = ["Right", "Left"] as const; // les deux tubes par joueur
 // atteint le bouton allume une gerbe d'étincelles + un petit son électrique.
 const PLAYER_ZONES = "PlayerZones";
 const BUTTON_MODEL = "ButtonModel";
+const MOVABLE_MODEL = "MovableModel"; // la particule électrique vit sur la fusée, pas le bouton
 const PARTICLE_PART = "ParticleEmmiter"; // nom réel dans Studio (typo conservée volontairement)
 const PARTICLE_EMITTER = "UpgradeButtonParticles";
 const BUTTON_PART = "ButtonPart";
@@ -150,18 +151,20 @@ function resolveButtonEffect(roomName: string): {
 	particles: ParticleEmitter | undefined;
 	sound: Sound | undefined;
 } {
-	const buttonModel = Workspace.FindFirstChild(PLAYER_ZONES)
-		?.FindFirstChild(roomName)
-		?.FindFirstChild(BUTTON_MODEL);
-	if (!buttonModel) return { particles: undefined, sound: undefined };
+	const room = Workspace.FindFirstChild(PLAYER_ZONES)?.FindFirstChild(roomName);
+	if (!room) return { particles: undefined, sound: undefined };
 
-	const emitter = buttonModel.FindFirstChild(PARTICLE_PART)?.FindFirstChild(PARTICLE_EMITTER);
+	// La gerbe électrique a été déplacée sur la fusée : MovableModel/ParticleEmmiter/UpgradeButtonParticles.
+	const emitter = room
+		.FindFirstChild(MOVABLE_MODEL)
+		?.FindFirstChild(PARTICLE_PART)
+		?.FindFirstChild(PARTICLE_EMITTER);
 	const particles = emitter !== undefined && emitter.IsA("ParticleEmitter") ? emitter : undefined;
 
-	// Son électrique 3D : parenté au bouton pour qu'il sonne « sur le bouton ».
+	// Son électrique 3D : toujours parenté au bouton pour qu'il sonne « sur le bouton ».
 	let sound: Sound | undefined;
 	const id: string = AudioConfig.sfx.buttonUpgrade.id;
-	const buttonPart = buttonModel.FindFirstChild(BUTTON_PART);
+	const buttonPart = room.FindFirstChild(BUTTON_MODEL)?.FindFirstChild(BUTTON_PART);
 	if (id !== "" && buttonPart !== undefined && buttonPart.IsA("BasePart")) {
 		const s = new Instance("Sound");
 		s.Name = "ButtonUpgradeSfx";

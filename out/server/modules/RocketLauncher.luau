@@ -37,6 +37,12 @@ local BURST_SPEED_VARIANCE = 25
 local BURST_UP_MIN = 5
 local BURST_UP_MAX = 95
 local BURST_SPIN = 18
+-- ── Ascent shake tuning ─────────────────────────────────────────────────────────
+-- Très léger tremblement latéral pendant la montée : la fusée vibre un peu sur X et Z.
+-- Appliqué en delta (cf. boucle de launch) pour ne jamais dériver de sa trajectoire.
+local SHAKE_AMPLITUDE = 0.2
+local SHAKE_FREQUENCY_X = 23
+local SHAKE_FREQUENCY_Z = 17
 -- One rocket body part with the data needed to fully restore it after a physical
 -- explosion: its pose relative to the launch pad and its authored collision flag.
 local states = {}
@@ -158,13 +164,21 @@ local RocketLauncher = {
 		local state = {
 			conn = nil,
 			velocity = 0,
+			elapsed = 0,
+			shake = Vector3.zero,
 		}
 		state.conn = RunService.Heartbeat:Connect(function(dt)
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed)
-			local _movableModel = room.movableModel
-			local _exp = room.movableModel:GetPivot()
-			local _vector3 = Vector3.new(0, state.velocity * dt, 0)
-			_movableModel:PivotTo(_exp + _vector3)
+			state.elapsed += dt
+			-- Tremblement latéral très léger (X + Z). Calculé en absolu puis appliqué comme
+			-- delta par rapport à la frame précédente : sur une période complète la somme des
+			-- deltas est nulle, donc la fusée vibre sans jamais dériver de sa trajectoire verticale.
+			local shake = Vector3.new(math.sin(state.elapsed * SHAKE_FREQUENCY_X) * SHAKE_AMPLITUDE, 0, math.sin(state.elapsed * SHAKE_FREQUENCY_Z) * SHAKE_AMPLITUDE)
+			local _shake = state.shake
+			local shakeDelta = shake - _shake
+			state.shake = shake
+			local rise = Vector3.new(0, state.velocity * dt, 0)
+			room.movableModel:PivotTo(room.movableModel:GetPivot() + rise + shakeDelta)
 		end)
 		local _room_1 = room
 		states[_room_1] = state
