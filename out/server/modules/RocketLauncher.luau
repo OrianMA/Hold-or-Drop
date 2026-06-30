@@ -117,6 +117,11 @@ local function captureRocketParts(room)
 				canCollide = d.CanCollide,
 			}
 			table.insert(parts, _arg0)
+			-- The follow camera's subject is the rocket, so its occlusion raycasts would
+			-- hit the rocket body and pull the camera in. CanQuery = false excludes the
+			-- body from those raycasts (physics/collisions untouched) so the camera never
+			-- "collides" with the rocket.
+			d.CanQuery = false
 		end
 	end
 	local _room_2 = room

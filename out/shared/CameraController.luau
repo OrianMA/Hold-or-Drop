@@ -2,78 +2,61 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local Players = _services.Players
-local RunService = _services.RunService
 local TweenService = _services.TweenService
-local UserInputService = _services.UserInputService
 local Workspace = _services.Workspace
 local DEFAULT_DURATION = 0.35
 local camera = Workspace.CurrentCamera
+-- Zoom distances (studs from the camera subject) snapped on each transition:
+-- dezoomed to frame the rocket + a bit of the room when the camera goes to the
+-- rocket, and back to the Roblox default when it returns to the player.
+local ROCKET_VIEW_DISTANCE = 35
+local DEFAULT_VIEW_DISTANCE = 12.5
+-- How long the zoom stays locked at the snapped distance before the player regains
+-- free zoom control (one snap, then released).
+local ZOOM_SNAP_HOLD = 0.1
 local previousCameraType
--- ── Orbit camera ──────────────────────────────────────────────────────────────
--- Dynamic camera used during the button/rocket flow: the player rotates freely
--- (right-drag on PC, touch-drag on mobile) but the camera always looks at a pivot
--- part (CameraParentPart). The pivot position is read live each frame, so moving
--- the pivot (e.g. with the rocket) makes the camera follow automatically.
-local ORBIT_BINDING = "HoldOrDropCameraOrbit"
-local ORBIT_SENSITIVITY = 0.0075
-local MIN_PITCH = math.rad(-15)
-local MAX_PITCH = math.rad(80)
-local orbitPivot
-local orbitYaw = 0
-local orbitPitch = 0
-local orbitRadius = 0
-local orbitConns = {}
-local orbitDragging = false
-local orbitTouch
-local function orbitOffset()
-	local horizontal = orbitRadius * math.cos(orbitPitch)
-	return Vector3.new(horizontal * math.sin(orbitYaw), orbitRadius * math.sin(orbitPitch), horizontal * math.cos(orbitYaw))
-end
-local function applyOrbitDelta(dx, dy)
-	orbitYaw -= dx * ORBIT_SENSITIVITY
-	orbitPitch = math.clamp(orbitPitch - dy * ORBIT_SENSITIVITY, MIN_PITCH, MAX_PITCH)
-end
-local function orbitStep()
-	if not orbitPivot then
-		return nil
+-- ── Rocket follow camera ───────────────────────────────────────────────────────
+-- During the button/rocket flow the camera uses the default Roblox camera
+-- (CameraType.Custom) with its CameraSubject pointed at the rocket pivot
+-- (CameraParentPart) instead of the player. The player keeps native camera
+-- controls (rotate/zoom), and because the MovableModel carries CameraParentPart
+-- up with it, the camera follows the rocket as it climbs with no extra code.
+-- The default Roblox camera subject (the player's Humanoid) so we can hand the
+-- camera back to the player after the rocket flow.
+local function playerCameraSubject()
+	local character = Players.LocalPlayer.Character
+	local _humanoid = character
+	if _humanoid ~= nil then
+		_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
 	end
-	local pivotPos = orbitPivot.Position
-	local _arg0 = orbitOffset()
-	camera.CFrame = CFrame.lookAt(pivotPos + _arg0, pivotPos)
+	local humanoid = _humanoid
+	if humanoid then
+		return humanoid
+	end
+	local _hrp = character
+	if _hrp ~= nil then
+		_hrp = _hrp:FindFirstChild("HumanoidRootPart")
+	end
+	local hrp = _hrp
+	local _result = hrp
+	if _result ~= nil then
+		_result = _result:IsA("BasePart")
+	end
+	return if _result then hrp else nil
 end
-local function bindOrbitInput()
-	local _orbitConns = orbitConns
-	local _arg0 = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return nil
-		end
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			orbitDragging = true
-			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-		elseif input.UserInputType == Enum.UserInputType.Touch and orbitTouch == nil then
-			orbitTouch = input
-		end
+-- Snap the default Roblox camera to a fixed zoom distance, then release the lock so
+-- the player keeps free zoom control. Pinning Min == Max forces the distance; the
+-- PlayerModule eases into it (no hard pop). Restored next tick to the captured limits.
+local function snapZoomDistance(distance)
+	local player = Players.LocalPlayer
+	local prevMin = player.CameraMinZoomDistance
+	local prevMax = player.CameraMaxZoomDistance
+	player.CameraMinZoomDistance = distance
+	player.CameraMaxZoomDistance = distance
+	task.delay(ZOOM_SNAP_HOLD, function()
+		player.CameraMinZoomDistance = prevMin
+		player.CameraMaxZoomDistance = prevMax
 	end)
-	table.insert(_orbitConns, _arg0)
-	local _orbitConns_1 = orbitConns
-	local _arg0_1 = UserInputService.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement and orbitDragging then
-			applyOrbitDelta(input.Delta.X, input.Delta.Y)
-		elseif input.UserInputType == Enum.UserInputType.Touch and input == orbitTouch then
-			applyOrbitDelta(input.Delta.X, input.Delta.Y)
-		end
-	end)
-	table.insert(_orbitConns_1, _arg0_1)
-	local _orbitConns_2 = orbitConns
-	local _arg0_2 = UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			orbitDragging = false
-			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-		elseif input == orbitTouch then
-			orbitTouch = nil
-		end
-	end)
-	table.insert(_orbitConns_2, _arg0_2)
 end
 local CameraController = {}
 do
@@ -93,68 +76,49 @@ do
 		tween.Completed:Wait()
 	end
 	_container.AnimateTo = AnimateTo
-	-- Smoothly move to the start pose (looking at the pivot from posCFrame), then
-	-- hand off to a live orbit the player can rotate. Always faces pivotPart.
+	-- Point the default Roblox camera at the rocket: native controls, but the camera
+	-- follows subjectPart (CameraParentPart) so it tracks the rocket as it climbs.
+	-- posCFrame is unused now that the native camera owns positioning — kept so the
+	-- call site (ButtonMenuBehavior) stays unchanged.
 	local StopOrbit
-	local function StartOrbit(posCFrame, pivotPart)
+	local function StartOrbit(_posCFrame, subjectPart)
 		StopOrbit()
-		camera.CameraType = Enum.CameraType.Scriptable
-		local pivotPos = pivotPart.Position
-		local delta = posCFrame.Position - pivotPos
-		orbitRadius = delta.Magnitude
-		orbitPitch = if orbitRadius > 0 then math.clamp(math.asin(math.clamp(delta.Y / orbitRadius, -1, 1)), MIN_PITCH, MAX_PITCH) else 0
-		orbitYaw = math.atan2(delta.X, delta.Z)
-		orbitPivot = pivotPart
-		-- Entry transition to the seeded orbit pose (looking straight at the pivot),
-		-- then start the per-frame loop so the pose matches seamlessly.
-		local _arg0 = orbitOffset()
-		local startPos = pivotPos + _arg0
-		AnimateTo(CFrame.lookAt(startPos, pivotPos))
-		RunService:BindToRenderStep(ORBIT_BINDING, Enum.RenderPriority.Camera.Value, orbitStep)
-		bindOrbitInput()
+		camera.CameraType = Enum.CameraType.Custom
+		camera.CameraSubject = subjectPart
+		-- Pull back so the player sees the rocket plus a bit of the room before launch.
+		snapZoomDistance(ROCKET_VIEW_DISTANCE)
 	end
 	_container.StartOrbit = StartOrbit
 	function StopOrbit()
-		if orbitPivot == nil and #orbitConns == 0 then
-			return nil
-		end
-		pcall(function()
-			return RunService:UnbindFromRenderStep(ORBIT_BINDING)
-		end)
-		-- ▼ ReadonlyArray.forEach ▼
-		local _callback = function(c)
-			return c:Disconnect()
-		end
-		for _k, _v in orbitConns do
-			_callback(_v, _k - 1, orbitConns)
-		end
-		-- ▲ ReadonlyArray.forEach ▲
-		orbitConns = {}
-		if orbitDragging then
-			orbitDragging = false
-			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-		end
-		orbitTouch = nil
-		orbitPivot = nil
+		-- Native rocket-follow has no render loop/connections to tear down; the camera
+		-- subject is restored by BringBackPlayerCamera. Kept so call sites are unchanged.
 	end
 	_container.StopOrbit = StopOrbit
-	local Reset
 	local function BringBackPlayerCamera(duration)
 		if duration == nil then
 			duration = DEFAULT_DURATION
 		end
-		StopOrbit()
-		local _result = Players.LocalPlayer.Character
-		if _result ~= nil then
-			_result = _result:GetPivot()
+		-- From a Scriptable cinematic (loss / parry) tween smoothly back to the player;
+		-- from the native rocket-follow there's nothing to tween — handing the subject
+		-- back to the player is the native return.
+		if camera.CameraType == Enum.CameraType.Scriptable then
+			local _result = Players.LocalPlayer.Character
+			if _result ~= nil then
+				_result = _result:GetPivot()
+			end
+			AnimateTo(_result, duration)
 		end
-		AnimateTo(_result, duration)
-		Reset()
+		StopOrbit()
+		local subject = playerCameraSubject()
+		if subject then
+			camera.CameraSubject = subject
+		end
+		camera.CameraType = previousCameraType or Enum.CameraType.Custom
+		-- Classic reset: snap the zoom back to the default distance behind the player
+		-- (the rocket view left the camera dezoomed).
+		snapZoomDistance(DEFAULT_VIEW_DISTANCE)
 	end
 	_container.BringBackPlayerCamera = BringBackPlayerCamera
-	function Reset()
-		camera.CameraType = previousCameraType or Enum.CameraType.Custom
-	end
 end
 return {
 	CameraController = CameraController,

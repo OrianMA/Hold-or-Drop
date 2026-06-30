@@ -108,6 +108,11 @@ function captureRocketParts(room: Room): void {
 	for (const d of model.GetDescendants()) {
 		if (d.IsA("BasePart")) {
 			parts.push({ part: d, offset: padPivot.ToObjectSpace(d.CFrame), canCollide: d.CanCollide });
+			// The follow camera's subject is the rocket, so its occlusion raycasts would
+			// hit the rocket body and pull the camera in. CanQuery = false excludes the
+			// body from those raycasts (physics/collisions untouched) so the camera never
+			// "collides" with the rocket.
+			d.CanQuery = false;
 		}
 	}
 	rocketParts.set(room, parts);

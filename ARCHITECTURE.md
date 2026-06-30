@@ -84,7 +84,7 @@ src/
     ├── MoneyProducts.ts     # 9 Robux "buy money" dev products (productId ↔ amount)
     ├── PopupType.ts         # Popup enum (shared contract)
     ├── NumberFormat.ts      # FormatCash helper
-    └── CameraController.ts  # Scriptable camera helper (client-only at runtime)
+    └── CameraController.ts  # Camera helper: rocket-follow (Custom) + parry cinematic (Scriptable)
 ```
 
 ## 4. Client / Server / Shared Boundaries
@@ -134,8 +134,8 @@ once a server event fires.
 - A **Room** wraps one `Workspace/PlayerZones/P{n}` folder containing a `ButtonModel`
   (`ButtonPart` + `ProximityPrompt`, `PlayerPosPlaceHolder`, optional
   `UiPart/BillboardGui/GainText`) and a `MovableModel` (the rocket rig: `RocketLvl1`
-  plus `CameraPosPart` = camera start pose, `CameraParentPart` = orbit pivot the
-  camera always faces (see §6.7), `ParticlesParentPart` holding a disabled
+  plus `CameraParentPart` = the rocket-follow camera's `CameraSubject` (see §6.7;
+  `CameraPosPart` is now unused), `ParticlesParentPart` holding a disabled
   `ExplosionParticles` emitter burst on a loss (§6.17), and `RocketProximityPromptPart`
   carrying the rocket's own `ProximityPrompt`), optional `CommunityJoinPart`.
   Invalid layouts are skipped with a warning.
@@ -336,18 +336,25 @@ server credits `Money` and hides the popup.
 
 ### 6.7 Camera & HUD (client)
 - `CameraController` (shared): `SetCinematic` (Scriptable), `AnimateTo` (tween CFrame),
-  `BringBackPlayerCamera` (stop orbit + return to character + reset to Custom).
-  - **Orbit camera** (`StartOrbit(posCFrame, pivotPart)` / `StopOrbit`): the button/rocket
-    flow uses a dynamic orbit instead of a fixed cinematic CFrame. It tweens to the start
-    pose (seeded from `CameraPosPart`), then a `RenderStep` bound at `Camera` priority keeps
-    `camera.CFrame = lookAt(pivot + sphericalOffset(yaw,pitch,radius), pivot)` each frame, so
-    the camera **always faces `CameraParentPart`** while the player rotates (right-drag on PC,
-    touch-drag on mobile; pitch clamped). The pivot position is read **live**, so moving the
-    pivot (with the rocket) makes the camera follow. Started by `ButtonMenuBehavior` on
-    `ButtonTriggerEvent`, it persists through the hold; `BringBackPlayerCamera` stops it on
-    quit/release/death and `RocketLaunchBehavior` calls `StopOrbit` before the parry camera
-    takes over. The shake (Camera±1 bindings) layers on top of the orbit's `Camera`-priority
-    CFrame with no change.
+  `BringBackPlayerCamera` (return the camera to the player + reset to Custom).
+  - **Rocket follow camera** (`StartOrbit(posCFrame, subjectPart)` / `StopOrbit`): the
+    button/rocket flow uses the **default Roblox camera** (`CameraType.Custom`) with its
+    `CameraSubject` pointed at `CameraParentPart` instead of the player's Humanoid. The player
+    keeps native camera controls (rotate/zoom on all platforms), and because the MovableModel
+    carries `CameraParentPart` up with it, the camera **follows the rocket** as it climbs with
+    no per-frame code. On the switch to the rocket the zoom is snapped to a dezoomed distance
+    (`ROCKET_VIEW_DISTANCE`, framing the rocket + a bit of the room); on the return to the
+    player it snaps back to `DEFAULT_VIEW_DISTANCE` — both via a one-tick
+    `CameraMin/MaxZoomDistance` pin that is then released so the player keeps free zoom
+    (`snapZoomDistance`). `posCFrame` is unused (the native camera owns positioning) — the
+    parameter is kept so the call site stays unchanged. Started by `ButtonMenuBehavior` on
+    `ButtonTriggerEvent`, it persists through the hold; `BringBackPlayerCamera` hands the
+    subject back to the player's Humanoid on quit/release/death (tweening only when returning
+    from a `Scriptable` cinematic), and `RocketLaunchBehavior` calls `StopOrbit` before the
+    parry camera takes over. The shake (Camera±1 bindings) layers on top of the native camera's
+    `Camera`-priority CFrame with no change. The rocket body parts (`RocketLvl1`) are set
+    `CanQuery = false` in `RocketLauncher` so the camera's occlusion raycasts ignore them and
+    never pull the camera into the rocket.
 - `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
   popups inside the `InGameUI` ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
 - `CostTextRotator` (`ui/CostTextRotator.ts`): cosmetic — a single looping
