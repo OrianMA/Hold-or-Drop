@@ -16,7 +16,7 @@ local LEVEL_PRODUCTS = { {
 	levels = 10,
 }, {
 	productId = 3605483849,
-	stat = "Multiplier",
+	stat = "RocketSpeed",
 	levels = 10,
 }, {
 	productId = 3605484029,

@@ -129,8 +129,9 @@ function resetRoom(room: Room): void {
 
 export const RocketLauncher = {
 	// Start the ascent: velocity ramps from 0 to ROCKET_MAX_SPEED, accelerating by
-	// ROCKET_ACCEL. `speedFactor` scales both (1 = neutral) — it will later be fed
-	// from the player's multiplier level.
+	// ROCKET_ACCEL. `speedFactor` scales both — it is the player's Rocket Speed stat
+	// value (1 = crawling, higher = faster), so the rocket and the velocity-driven
+	// payout multiplier speed up together.
 	launch(room: Room, speedFactor = 1): void {
 		if (!originalPivots.has(room)) originalPivots.set(room, room.movableModel.GetPivot());
 		resetRoom(room); // start clean from the pad (restores debris from a prior explosion)
@@ -147,6 +148,12 @@ export const RocketLauncher = {
 		states.set(room, state);
 
 		setNitroEnabled(room, true); // moteur allumé tant que la fusée monte
+	},
+
+	// Current ascent velocity (studs/s) for a room, or 0 if not flying. Read by the
+	// game loop's multiplier tick so the payout multiplier tracks the rocket's speed.
+	getVelocity(room: Room): number {
+		return states.get(room)?.velocity ?? 0;
 	},
 
 	// Stop the ascent in place (no reset) — used on a win/release.

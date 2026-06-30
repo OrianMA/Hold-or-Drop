@@ -10,17 +10,17 @@ local rebirthMult = _ShopConfig.rebirthMult
 local moneyMult = _ShopConfig.moneyMult
 local effectiveSafety = _ShopConfig.effectiveSafety
 -- Per-player progression. The LEVELS are the persisted source of truth; the
--- effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
+-- effective values (BaseCash, RocketSpeed, AdditionalSecurity) are *derived* from
 -- the levels via shared/ShopConfig and mirrored to attributes so the owning
 -- client, the game loop and the room billboard read them directly (replication).
 --
--- Stored per player (DataStore): BaseCashLevel, MultiplierLevel, SafetyLevel.
+-- Stored per player (DataStore): BaseCashLevel, RocketSpeedLevel, SafetyLevel.
 -- Mirrored attributes: the three level attributes AND the three value attributes.
 --
 -- DataStore access requires API Services enabled in Studio:
 -- Game Settings → Security → "Enable Studio Access to API Services".
 -- The three stats, in a stable iteration order.
-local STAT_LIST = { "BaseCash", "Multiplier", "Safety" }
+local STAT_LIST = { "BaseCash", "RocketSpeed", "Safety" }
 -- Persisted alongside the stat levels (same store table). The reward multiplier
 -- is derived from it like the stat values are derived from their levels.
 local REBIRTHS_KEY = "Rebirths"
@@ -37,7 +37,7 @@ local EFFECTIVE_BASE_CASH_ATTR = "EffectiveBaseCash"
 -- Fallback values if a value attribute is somehow missing (matches level 0).
 local DEFAULT_VALUES = {
 	BaseCash = 100,
-	Multiplier = 0.1,
+	RocketSpeed = 1,
 	AdditionalSecurity = 0,
 	EffectiveBaseCash = 100,
 	MoneyMult = 1,

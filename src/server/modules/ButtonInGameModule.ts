@@ -11,8 +11,7 @@ import {
 	RISK_RAMP_DURATION,
 	MULTIPLIER_TICK_RATE,
 	STARTING_MULTIPLIER,
-	MULTIPLIER_START_INCREMENT,
-	MULTIPLIER_INCREMENT_GROWTH,
+	MULTIPLIER_PER_STUD,
 	EXPLOSION_VIEW_DELAY,
 } from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
@@ -147,11 +146,13 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
 	const safety = PlayerProgressionService.get(player, "AdditionalSecurity");
 
-	// Démarre à 1.00x puis grimpe de façon accélérée (très lent au début, de plus en
-	// plus vite — voir RocketGameConfig). Le niveau Multiplier du joueur n'est pas
-	// encore pris en compte.
+	// Rocket Speed stat value (≥1) scales the rocket's ascent. Read once for the run.
+	const rocketSpeed = PlayerProgressionService.get(player, "RocketSpeed");
+
+	// Démarre à 1.00x puis grimpe au rythme de la vitesse RÉELLE de la fusée : tant
+	// qu'elle est lente (Rocket Speed bas), le multiplicateur bouge à peine ; plus la
+	// fusée va vite, plus il grimpe (voir RocketGameConfig).
 	let currentMultiplier = STARTING_MULTIPLIER;
-	let multiplierIncrement = MULTIPLIER_START_INCREMENT;
 	let isActive = true;
 
 	// Preload the "chance" at launch: precompute the exact instant the rocket will
@@ -163,9 +164,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 	Events.RiskUpdateEvent.FireClient(player, 0);
 
-	// La fusée décolle dès le début du gameplay. speedFactor = 1 pour l'instant ;
-	// il sera dérivé du multiplier level plus tard.
-	RocketLauncher.launch(room);
+	// La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
+	// Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
+	RocketLauncher.launch(room, rocketSpeed);
 
 	const releaseConn = Events.ReleaseButtonEvent.OnServerEvent.Connect((p) => {
 		if (p !== player || !isActive) return;
@@ -182,16 +183,18 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
-	// Croissance accélérée : chaque tick on ajoute `multiplierIncrement`, et cet
-	// incrément grossit lui-même à chaque tick → très lent au début, de plus en plus
-	// rapide. Indépendant de la boucle risque.
+	// Le multiplicateur suit la vitesse RÉELLE de la fusée : chaque tick on ajoute
+	// `vélocité × tick × MULTIPLIER_PER_STUD` (= la distance que la fusée vient de
+	// monter). La vélocité part de 0 et accélère, donc le multiplicateur est quasi
+	// figé au décollage puis grimpe d'autant plus vite que la fusée va vite (Rocket
+	// Speed élevé). Indépendant de la boucle risque.
 	task.spawn(() => {
 		while (isActive) {
 			task.wait(MULTIPLIER_TICK_RATE);
 			if (!isActive) break;
 
-			currentMultiplier += multiplierIncrement;
-			multiplierIncrement += MULTIPLIER_INCREMENT_GROWTH;
+			const climbed = RocketLauncher.getVelocity(room) * MULTIPLIER_TICK_RATE;
+			currentMultiplier += climbed * MULTIPLIER_PER_STUD;
 			Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 		}
 	});

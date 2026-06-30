@@ -170,6 +170,18 @@ local RocketLauncher = {
 		states[_room_1] = state
 		setNitroEnabled(room, true)
 	end,
+	getVelocity = function(self, room)
+		local _room = room
+		local _result = states[_room]
+		if _result ~= nil then
+			_result = _result.velocity
+		end
+		local _condition = _result
+		if _condition == nil then
+			_condition = 0
+		end
+		return _condition
+	end,
 	stop = function(self, room)
 		stopRoom(room)
 	end,

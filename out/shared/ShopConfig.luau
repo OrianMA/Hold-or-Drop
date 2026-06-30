@@ -5,9 +5,9 @@ local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS
 local BASE_CASH = _ShopBalance.BASE_CASH
 local COMMUNITY = _ShopBalance.COMMUNITY
 local MONEY_TIERS = _ShopBalance.MONEY_TIERS
-local MULTIPLIER = _ShopBalance.MULTIPLIER
 local PRICE_GROWTH = _ShopBalance.PRICE_GROWTH
 local REBIRTH = _ShopBalance.REBIRTH
+local ROCKET_SPEED = _ShopBalance.ROCKET_SPEED
 local SAFETY = _ShopBalance.SAFETY
 local SAFETY_PASS = _ShopBalance.SAFETY_PASS
 local SAFETY_TOTAL_CAP = _ShopBalance.SAFETY_TOTAL_CAP
@@ -44,15 +44,15 @@ local STATS = {
 			return FormatNumber(value)
 		end,
 	},
-	Multiplier = {
-		valueAttribute = "Multiplier",
-		levelAttribute = "MultiplierLevel",
-		startPrice = MULTIPLIER.startPrice,
+	RocketSpeed = {
+		valueAttribute = "RocketSpeed",
+		levelAttribute = "RocketSpeedLevel",
+		startPrice = ROCKET_SPEED.startPrice,
 		valueFor = function(level)
-			return MULTIPLIER.baseValue * MULTIPLIER.valueGrowth ^ level
+			return ROCKET_SPEED.baseValue + level
 		end,
 		display = function(value)
-			return if value < 1000 then trimDecimals(value) else FormatNumber(value)
+			return tostring(value)
 		end,
 	},
 	Safety = {
@@ -83,12 +83,12 @@ local ITEMS = {
 		frameName = "BX5ButtonMoney",
 		title = "+5 lvl Button money",
 	},
-	Multiplier = {
-		id = "Multiplier",
-		stat = "Multiplier",
+	RocketSpeed = {
+		id = "RocketSpeed",
+		stat = "RocketSpeed",
 		quantity = 1,
-		frameName = "CMultiplier",
-		title = "Multiplier speed",
+		frameName = "CRocketSpeed",
+		title = "Rocket speed",
 	},
 	Safety = {
 		id = "Safety",
@@ -99,7 +99,7 @@ local ITEMS = {
 	},
 }
 -- Iteration order for the client (matches the A/B/C/D frame ordering).
-local ITEM_ORDER = { "BaseCash", "BaseCashX5", "Multiplier", "Safety" }
+local ITEM_ORDER = { "BaseCash", "BaseCashX5", "RocketSpeed", "Safety" }
 -- Price to go from `level` → `level + 1` for a stat. Deterministic integer so
 -- client and server always agree.
 local function priceForLevel(stat, level)

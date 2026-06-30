@@ -5,8 +5,8 @@
 // migration.
 //
 // Two curve shapes (defined in ShopConfig, fed by the numbers here):
-//   • exponential value : baseValue * valueGrowth ^ level   (BaseCash, Multiplier)
-//   • linear value      : level * perLevel  (capped)         (Safety)
+//   • exponential value : baseValue * valueGrowth ^ level   (BaseCash)
+//   • linear value      : baseValue + level / level * perLevel (RocketSpeed / Safety)
 //   • price (all stats) : startPrice * PRICE_GROWTH ^ level
 
 // Price multiplier applied per level for every stat. Higher = steeper grind wall.
@@ -23,13 +23,15 @@ export const BASE_CASH = {
 	startPrice: 25,
 };
 
-// Multiplier — per-second growth during a hold. Uncapped.
-//   value = baseValue * valueGrowth ^ level   (L0=0.1, L10≈0.52, L20≈2.7)
+// Rocket Speed — drives BOTH the rocket's ascent speed and how fast the payout
+// multiplier grows (the multiplier tracks the rocket's live velocity, so a faster
+// rocket = a faster-climbing multiplier). Integer, +1 per level, uncapped.
+//   value = baseValue + level   (L0=1 → rocket crawls, multiplier barely moves;
+//                                each level is a full unit → noticeably faster at once)
+//   actual rocket accel/max = value × the per-unit constants in RocketGameConfig.
 //   price = startPrice * PRICE_GROWTH ^ level  (L0→1 = 100)
-//   Invariant: valueGrowth < PRICE_GROWTH (1.18 < 1.5).
-export const MULTIPLIER = {
-	baseValue: 0.1,
-	valueGrowth: 1.18,
+export const ROCKET_SPEED = {
+	baseValue: 1,
 	startPrice: 100,
 };
 

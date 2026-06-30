@@ -16,8 +16,7 @@ local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage")
 local RISK_RAMP_DURATION = _RocketGameConfig.RISK_RAMP_DURATION
 local MULTIPLIER_TICK_RATE = _RocketGameConfig.MULTIPLIER_TICK_RATE
 local STARTING_MULTIPLIER = _RocketGameConfig.STARTING_MULTIPLIER
-local MULTIPLIER_START_INCREMENT = _RocketGameConfig.MULTIPLIER_START_INCREMENT
-local MULTIPLIER_INCREMENT_GROWTH = _RocketGameConfig.MULTIPLIER_INCREMENT_GROWTH
+local MULTIPLIER_PER_STUD = _RocketGameConfig.MULTIPLIER_PER_STUD
 local EXPLOSION_VIEW_DELAY = _RocketGameConfig.EXPLOSION_VIEW_DELAY
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 -- ── Game tuning ───────────────────────────────────────────────────────────────
@@ -135,11 +134,12 @@ local function startButtonGame(player, session)
 	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash")
 	-- Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
 	local safety = PlayerProgressionService:get(player, "AdditionalSecurity")
-	-- Démarre à 1.00x puis grimpe de façon accélérée (très lent au début, de plus en
-	-- plus vite — voir RocketGameConfig). Le niveau Multiplier du joueur n'est pas
-	-- encore pris en compte.
+	-- Rocket Speed stat value (≥1) scales the rocket's ascent. Read once for the run.
+	local rocketSpeed = PlayerProgressionService:get(player, "RocketSpeed")
+	-- Démarre à 1.00x puis grimpe au rythme de la vitesse RÉELLE de la fusée : tant
+	-- qu'elle est lente (Rocket Speed bas), le multiplicateur bouge à peine ; plus la
+	-- fusée va vite, plus il grimpe (voir RocketGameConfig).
 	local currentMultiplier = STARTING_MULTIPLIER
-	local multiplierIncrement = MULTIPLIER_START_INCREMENT
 	local isActive = true
 	-- Preload the "chance" at launch: precompute the exact instant the rocket will
 	-- explode (tick-aligned, same distribution as the old per-tick roll). The run then
@@ -148,9 +148,9 @@ local function startButtonGame(player, session)
 	local explosionAt = if invincible then math.huge else rollExplosionTime(safety)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 	Events.RiskUpdateEvent:FireClient(player, 0)
-	-- La fusée décolle dès le début du gameplay. speedFactor = 1 pour l'instant ;
-	-- il sera dérivé du multiplier level plus tard.
-	RocketLauncher:launch(room)
+	-- La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
+	-- Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
+	RocketLauncher:launch(room, rocketSpeed)
 	local releaseConn
 	releaseConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
 		if p ~= player or not isActive then
@@ -166,17 +166,19 @@ local function startButtonGame(player, session)
 		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
-	-- Croissance accélérée : chaque tick on ajoute `multiplierIncrement`, et cet
-	-- incrément grossit lui-même à chaque tick → très lent au début, de plus en plus
-	-- rapide. Indépendant de la boucle risque.
+	-- Le multiplicateur suit la vitesse RÉELLE de la fusée : chaque tick on ajoute
+	-- `vélocité × tick × MULTIPLIER_PER_STUD` (= la distance que la fusée vient de
+	-- monter). La vélocité part de 0 et accélère, donc le multiplicateur est quasi
+	-- figé au décollage puis grimpe d'autant plus vite que la fusée va vite (Rocket
+	-- Speed élevé). Indépendant de la boucle risque.
 	task.spawn(function()
 		while isActive do
 			task.wait(MULTIPLIER_TICK_RATE)
 			if not isActive then
 				break
 			end
-			currentMultiplier += multiplierIncrement
-			multiplierIncrement += MULTIPLIER_INCREMENT_GROWTH
+			local climbed = RocketLauncher:getVelocity(room) * MULTIPLIER_TICK_RATE
+			currentMultiplier += climbed * MULTIPLIER_PER_STUD
 			Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 		end
 	end)

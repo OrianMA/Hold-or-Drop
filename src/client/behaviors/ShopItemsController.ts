@@ -137,6 +137,6 @@ export function init(): void {
 	// stat display + next price. Refresh everything on any of them for simplicity.
 	player.GetAttributeChangedSignal("Money").Connect(refreshAll);
 	player.GetAttributeChangedSignal("BaseCashLevel").Connect(refreshAll);
-	player.GetAttributeChangedSignal("MultiplierLevel").Connect(refreshAll);
+	player.GetAttributeChangedSignal("RocketSpeedLevel").Connect(refreshAll);
 	player.GetAttributeChangedSignal("SafetyLevel").Connect(refreshAll);
 }

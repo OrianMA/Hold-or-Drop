@@ -20,7 +20,7 @@ export type LevelProduct = {
 
 export const LEVEL_PRODUCTS: ReadonlyArray<LevelProduct> = [
 	{ productId: 3605483805, stat: "BaseCash", levels: 10 },
-	{ productId: 3605483849, stat: "Multiplier", levels: 10 },
+	{ productId: 3605483849, stat: "RocketSpeed", levels: 10 },
 	{ productId: 3605484029, stat: "Safety", levels: 1 },
 ];
 

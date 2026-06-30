@@ -212,11 +212,14 @@ player on the button, fires `ButtonTriggerEvent` to the client (with the room's
 the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17) and runs
 **two independent loops** via `task.spawn`:
 
-- **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): **accelerating** growth from
-  `STARTING_MULTIPLIER` (1.00) — each tick adds `multiplierIncrement`, and the increment itself
-  grows by `MULTIPLIER_INCREMENT_GROWTH` every tick (starts at `MULTIPLIER_START_INCREMENT`), so
-  the number barely moves at first then climbs faster and faster. The player's `Multiplier`
-  level is **intentionally not used yet** (it will scale these later). Drives the `MultiplierText`
+- **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): the payout multiplier tracks the rocket's
+  **live velocity** — each tick adds `RocketLauncher.getVelocity(room) × MULTIPLIER_TICK_RATE ×
+  MULTIPLIER_PER_STUD` (i.e. it grows by the distance the rocket just climbed), starting from
+  `STARTING_MULTIPLIER` (1.00). Velocity ramps from 0 and accelerates, so the number is
+  near-frozen at liftoff and climbs faster the faster the rocket goes. The rocket's speed is
+  scaled by the player's **`RocketSpeed`** stat (read once at session start, passed to
+  `RocketLauncher.launch`), so a higher Rocket Speed speeds up the rocket **and** the multiplier
+  together — at `RocketSpeed` 1 the rocket crawls and the multiplier barely moves. Drives the `MultiplierText`
   label (formerly `BaseCashText`) in the `RocketLaunch` popup — the client **lerps the shown
   number continuously** between ticks (RenderStepped) so it passes through every intermediate
   value (1.01, 1.02, …) rather than jumping. No floating labels (removed).
@@ -277,9 +280,9 @@ server credits `Money` and hides the popup.
   owning client can read state directly via replication.
 - `PlayerDataService` → `Money` **and `Playtime`** (total seconds played, accumulated across
   sessions; defaults 0 for existing saves — no version bump) (store `PlayerData_v1`).
-- `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `MultiplierLevel`,
+- `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `RocketSpeedLevel`,
   `SafetyLevel` **and the `Rebirths` count** (store `PlayerProgression_v2`). The effective
-  values `BaseCash`, `Multiplier`, `AdditionalSecurity` are **derived** from the levels, and
+  values `BaseCash`, `RocketSpeed`, `AdditionalSecurity` are **derived** from the levels, and
   `MultRebirth` is derived from `Rebirths`, all via `shared/ShopConfig` and mirrored to
   attributes (levels, values, `Rebirths` and `MultRebirth` all replicate). Storing levels/count
   means the curves can be retuned later with **zero save migration** — and `Rebirths` is a new
@@ -377,7 +380,7 @@ server credits `Money` and hides the popup.
 ### 6.8 Shop (`shared/ShopConfig.ts`, `server/services/ShopService.ts`, `client/behaviors/ShopItemsController.ts`)
 - The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `InGameUI/ShopMenu`,
   open/close handled by `ShopBehavior`). Four buttons map to the upgrades:
-  `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CMultiplier` = Multiplier +1,
+  `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CRocketSpeed` = RocketSpeed +1,
   `DSafety` = Safety +1.
 - **`ShopBalance` (shared)** holds every tunable economy number (start prices, value/price
   growth, Safety cap) and nothing else — **the file to edit when rebalancing**.
@@ -386,9 +389,9 @@ server credits `Money` and hides the popup.
   `display`) and pure pricing helpers — `priceForLevel` = `floor(start * PRICE_GROWTH^level)`,
   `priceForItem` (strict sum of the next N levels), `isAtCap`. Imported by both sides so
   prices/stat previews computed on the client always match the server.
-  - Curves: BaseCash `floor(100 * 1.2^level)`, Multiplier `0.1 * 1.18^level` (uncapped),
-    Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 500. Value
-    growth stays **below** the ×1.5 `PRICE_GROWTH` so ROI decelerates (no runaway).
+  - Curves: BaseCash `floor(100 * 1.2^level)`, RocketSpeed `1 + level` (integer, uncapped),
+    Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 500. The
+    RocketSpeed value scales the rocket's ascent (and thus the multiplier) — see §6.3 / §6.17.
 - **`ShopService` (server)** owns the **cash** mutation path. On `ShopPurchaseEvent` it validates
   the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
   + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
@@ -607,7 +610,7 @@ Two families of Robux developer products, both routed through one `ProcessReceip
   (separate from the upgrade `ShopMenu`, §6.8). Nine packs, opened from the HUD's
   `MoneyParent/PlusButton/TextButton`.
 - **Progression products** — 3 products sold on the upgrade `ShopMenu` **RobuxButtons** (§6.8):
-  BaseCash +10 levels (on both the +1 and +5 frames), Multiplier +10 levels, Safety +1 level.
+  BaseCash +10 levels (on both the +1 and +5 frames), RocketSpeed +10 levels, Safety +1 level.
 
 - **`MoneyProducts` (shared)** — single source of truth for the money packs: an **ordered** list
   of the 9 `{ productId, amount }` pairs. Index *i* maps to `Body/MoneyElement{i+1}`; `amount`
@@ -654,9 +657,12 @@ Server-driven rocket flight for a room's `MovableModel`. **Single source of trut
 to everyone, ties to the server-side game loop), no RemoteEvent.
 - **`launch(room, speedFactor=1)`** — captures the model's launch-pad pivot once (per room),
   resets to it, then a `RunService.Heartbeat` loop ramps `velocity` from 0 by `ROCKET_ACCEL`
-  up to `ROCKET_MAX_SPEED` (studs/s) and rises the model via `PivotTo` each frame (slow,
-  accelerating, real-rocket feel). `speedFactor` scales both — it will later be derived from the
-  player's multiplier level (neutral = 1 for now).
+  up to `ROCKET_MAX_SPEED` and rises the model via `PivotTo` each frame (slow, accelerating,
+  real-rocket feel). `ROCKET_ACCEL`/`ROCKET_MAX_SPEED` are **per Rocket-Speed unit** (1 / 10);
+  `speedFactor` is the player's **`RocketSpeed`** stat value, so actual accel/max = value × those
+  (value 1 = crawl, value 6 = old accel 6 / max 60). **`getVelocity(room)`** exposes the live
+  velocity (0 if not flying) — the game loop's multiplier tick reads it so the payout multiplier
+  tracks the rocket's speed (§6.3).
 - Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
   the client orbit camera (reads the pivot live, §6.7) **follows the rocket** with zero extra code.
 - **Engine fire:** `launch` lights the `Fire` inside the rocket's `NitroParticles` part(s);
@@ -734,19 +740,18 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `RISK_RAMP_DURATION` | `shared/RocketGameConfig.ts` | 17s | Risk/progress full ramp |
 | `MULTIPLIER_TICK_RATE` | `shared/RocketGameConfig.ts` | 1s | Multiplier tick interval |
 | `STARTING_MULTIPLIER` | `shared/RocketGameConfig.ts` | 1 | Base payout multiplier (start) |
-| `MULTIPLIER_START_INCREMENT` | `shared/RocketGameConfig.ts` | 0.05 | First-tick multiplier increment |
-| `MULTIPLIER_INCREMENT_GROWTH` | `shared/RocketGameConfig.ts` | 0.05 | Increment growth per tick (accelerating) |
-| `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 6 | Rocket acceleration (studs/s²), ×speedFactor |
-| `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 60 | Rocket top speed (studs/s), ×speedFactor |
+| `MULTIPLIER_PER_STUD` | `shared/RocketGameConfig.ts` | 0.01 | Multiplier gained per stud the rocket climbs (velocity-driven) |
+| `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 1 | Rocket acceleration per RocketSpeed unit (studs/s²), ×stat value |
+| `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 10 | Rocket top speed per RocketSpeed unit (studs/s), ×stat value |
 | `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
 | `MAX_RISK` | `ButtonInGameModule.ts` | 0.8 | Risk ceiling |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on loss (rocket explodes) |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
-| Default `BaseCash` / `Multiplier` | `PlayerProgressionService.ts` | 100 / 0.1 | New-player progression (level 0) |
-| Value growth (BaseCash / Multiplier) | `shared/ShopBalance.ts` | ×1.2 / ×1.18 per level | Per-level stat multiplier (must stay < price growth) |
+| Default `BaseCash` / `RocketSpeed` | `PlayerProgressionService.ts` | 100 / 1 | New-player progression (level 0) |
+| Value curves (BaseCash / RocketSpeed) | `shared/ShopBalance.ts` | ×1.2 per level / +1 per level | BaseCash exponential; RocketSpeed integer linear |
 | Price growth | `shared/ShopBalance.ts` | ×1.5 / level | Per-level price multiplier |
-| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 500 | BaseCash / Multiplier / Safety lvl 1 |
+| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 500 | BaseCash / RocketSpeed / Safety lvl 1 |
 | `Safety` cap (shop) | `shared/ShopBalance.ts` | 10 lvls → 50% | Max shop risk reduction (×5% per level) |
 | `SAFETY_PASS` | `shared/ShopBalance.ts` | +0.20 | Additional safety from the safety game-pass |
 | `SAFETY_TOTAL_CAP` | `shared/ShopBalance.ts` | 0.70 | Hard cap on `AdditionalSecurity` (shop 0.50 + pass 0.20) |

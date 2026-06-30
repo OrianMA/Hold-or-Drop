@@ -3,18 +3,18 @@ import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
 import { ShopStat, STATS, rebirthMult, moneyMult, effectiveSafety } from "shared/ShopConfig";
 
 // Per-player progression. The LEVELS are the persisted source of truth; the
-// effective values (BaseCash, Multiplier, AdditionalSecurity) are *derived* from
+// effective values (BaseCash, RocketSpeed, AdditionalSecurity) are *derived* from
 // the levels via shared/ShopConfig and mirrored to attributes so the owning
 // client, the game loop and the room billboard read them directly (replication).
 //
-// Stored per player (DataStore): BaseCashLevel, MultiplierLevel, SafetyLevel.
+// Stored per player (DataStore): BaseCashLevel, RocketSpeedLevel, SafetyLevel.
 // Mirrored attributes: the three level attributes AND the three value attributes.
 //
 // DataStore access requires API Services enabled in Studio:
 // Game Settings → Security → "Enable Studio Access to API Services".
 
 // The three stats, in a stable iteration order.
-const STAT_LIST: readonly ShopStat[] = ["BaseCash", "Multiplier", "Safety"];
+const STAT_LIST: readonly ShopStat[] = ["BaseCash", "RocketSpeed", "Safety"];
 
 // Persisted alongside the stat levels (same store table). The reward multiplier
 // is derived from it like the stat values are derived from their levels.
@@ -31,12 +31,12 @@ const MONEY_MULT_ATTR = "MoneyMult";
 const EFFECTIVE_BASE_CASH_ATTR = "EffectiveBaseCash";
 
 // Value attributes the rest of the game reads (names unchanged from before).
-export type ProgressionKey = "BaseCash" | "Multiplier" | "AdditionalSecurity" | "EffectiveBaseCash" | "MoneyMult";
+export type ProgressionKey = "BaseCash" | "RocketSpeed" | "AdditionalSecurity" | "EffectiveBaseCash" | "MoneyMult";
 
 // Fallback values if a value attribute is somehow missing (matches level 0).
 const DEFAULT_VALUES: { readonly [K in ProgressionKey]: number } = {
 	BaseCash: 100,
-	Multiplier: 0.1,
+	RocketSpeed: 1,
 	AdditionalSecurity: 0,
 	EffectiveBaseCash: 100,
 	MoneyMult: 1,
@@ -170,7 +170,7 @@ export const PlayerProgressionService = {
 		});
 	},
 
-	// Reads a derived value (BaseCash / Multiplier / AdditionalSecurity / EffectiveBaseCash / MoneyMult).
+	// Reads a derived value (BaseCash / RocketSpeed / AdditionalSecurity / EffectiveBaseCash / MoneyMult).
 	get(player: Player, key: ProgressionKey): number {
 		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_VALUES[key];
 	},

@@ -3,9 +3,9 @@ import {
 	BASE_CASH,
 	COMMUNITY,
 	MONEY_TIERS,
-	MULTIPLIER,
 	PRICE_GROWTH,
 	REBIRTH,
+	ROCKET_SPEED,
 	SAFETY,
 	SAFETY_PASS,
 	SAFETY_TOTAL_CAP,
@@ -20,10 +20,10 @@ import {
 
 // A stat is one upgradeable progression value. Multiple shop buttons may target
 // the same stat (BaseCash is sold both as +1 and +5).
-export type ShopStat = "BaseCash" | "Multiplier" | "Safety";
+export type ShopStat = "BaseCash" | "RocketSpeed" | "Safety";
 
 // One per shop button under InGameUI/ShopMenu/Body.
-export type ShopItemId = "BaseCash" | "BaseCashX5" | "Multiplier" | "Safety";
+export type ShopItemId = "BaseCash" | "BaseCashX5" | "RocketSpeed" | "Safety";
 
 export interface StatConfig {
 	// Attribute the rest of the game reads (unchanged names — game loop, billboard).
@@ -56,13 +56,13 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		valueFor: (level) => math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ** level),
 		display: (value) => FormatNumber(value),
 	},
-	Multiplier: {
-		valueAttribute: "Multiplier",
-		levelAttribute: "MultiplierLevel",
-		startPrice: MULTIPLIER.startPrice,
-		valueFor: (level) => MULTIPLIER.baseValue * MULTIPLIER.valueGrowth ** level,
-		// Small values keep decimals (0.1, 2.65); large values abbreviate.
-		display: (value) => (value < 1000 ? trimDecimals(value) : FormatNumber(value)),
+	RocketSpeed: {
+		valueAttribute: "RocketSpeed",
+		levelAttribute: "RocketSpeedLevel",
+		startPrice: ROCKET_SPEED.startPrice,
+		valueFor: (level) => ROCKET_SPEED.baseValue + level,
+		// Plain integer speed (1, 2, 3…).
+		display: (value) => tostring(value),
 	},
 	Safety: {
 		valueAttribute: "AdditionalSecurity",
@@ -91,18 +91,18 @@ export const ITEMS: { readonly [K in ShopItemId]: ShopItem } = {
 		frameName: "BX5ButtonMoney",
 		title: "+5 lvl Button money",
 	},
-	Multiplier: {
-		id: "Multiplier",
-		stat: "Multiplier",
+	RocketSpeed: {
+		id: "RocketSpeed",
+		stat: "RocketSpeed",
 		quantity: 1,
-		frameName: "CMultiplier",
-		title: "Multiplier speed",
+		frameName: "CRocketSpeed",
+		title: "Rocket speed",
 	},
 	Safety: { id: "Safety", stat: "Safety", quantity: 1, frameName: "DSafety", title: "Additionnal safety" },
 };
 
 // Iteration order for the client (matches the A/B/C/D frame ordering).
-export const ITEM_ORDER: readonly ShopItemId[] = ["BaseCash", "BaseCashX5", "Multiplier", "Safety"];
+export const ITEM_ORDER: readonly ShopItemId[] = ["BaseCash", "BaseCashX5", "RocketSpeed", "Safety"];
 
 // Price to go from `level` → `level + 1` for a stat. Deterministic integer so
 // client and server always agree.
