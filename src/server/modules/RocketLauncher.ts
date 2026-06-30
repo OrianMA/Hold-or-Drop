@@ -27,9 +27,13 @@ const ROCKET_MODEL = "RocketLvl1";
 const SPACE_HEIGHT = 95;
 const GROUND_HEIGHT = 50;
 // Outward burst applied to every debris part the instant the rocket bursts apart.
-const BURST_SPEED = 45; // base radial speed (studs/s)
+// The radial spread is horizontal-only and the vertical kick scales with the part's
+// height inside the rocket, so every part is flung UP (never any -Y velocity): the
+// nose is launched hardest, the lowest parts barely lift.
+const BURST_SPEED = 45; // base horizontal radial speed (studs/s)
 const BURST_SPEED_VARIANCE = 25; // added 0..n at random per part
-const BURST_UP_BIAS = 20; // extra upward kick so it reads as "blown up"
+const BURST_UP_MIN = 5; // upward kick for the lowest part (barely lifts, never -Y)
+const BURST_UP_MAX = 95; // upward kick for the highest part (nose flung hardest)
 const BURST_SPIN = 18; // random angular velocity magnitude (rad/s)
 
 // One rocket body part with the data needed to fully restore it after a physical
@@ -172,9 +176,22 @@ export const RocketLauncher = {
 		const center = (model ?? room.movableModel).GetPivot().Position;
 		const gravity = Workspace.Gravity;
 
-		// Unanchor each body part and fling it radially outward from the rocket centre
-		// (with an upward bias + random spin) so the rocket reads as blown apart. Debris
-		// is non-collidable while flying so it can't snag on room geometry or jitter.
+		// Vertical extent of the rocket so the upward kick can scale by height: the
+		// lowest part lifts by BURST_UP_MIN, the nose by BURST_UP_MAX. No part ever
+		// gets a downward (-Y) velocity.
+		let minY = math.huge;
+		let maxY = -math.huge;
+		for (const rp of parts) {
+			const y = rp.part.Position.Y;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+		const span = math.max(maxY - minY, 0.05);
+
+		// Unanchor each body part and fling it outward: horizontal-only radial spread
+		// (so the burst never pushes anything down) plus a height-scaled upward kick and
+		// random spin, so the rocket reads as blown apart and launched up. Debris is
+		// non-collidable while flying so it can't snag on room geometry or jitter.
 		for (const rp of parts) {
 			const part = rp.part;
 			if (!part.Parent) continue;
@@ -182,12 +199,15 @@ export const RocketLauncher = {
 			part.CanCollide = false;
 
 			const away = part.Position.sub(center);
+			const flat = new Vector3(away.X, 0, away.Z); // radial spread, horizontal only
 			const dir =
-				away.Magnitude > 0.05
-					? away.Unit
-					: new Vector3(math.random() * 2 - 1, 1, math.random() * 2 - 1).Unit;
+				flat.Magnitude > 0.05
+					? flat.Unit
+					: new Vector3(math.random() * 2 - 1, 0, math.random() * 2 - 1).Unit;
 			const speed = BURST_SPEED + math.random() * BURST_SPEED_VARIANCE;
-			part.AssemblyLinearVelocity = dir.mul(speed).add(new Vector3(0, BURST_UP_BIAS, 0));
+			const heightFactor = (part.Position.Y - minY) / span; // 0 = lowest, 1 = nose
+			const up = BURST_UP_MIN + heightFactor * (BURST_UP_MAX - BURST_UP_MIN);
+			part.AssemblyLinearVelocity = dir.mul(speed).add(new Vector3(0, up, 0));
 			part.AssemblyAngularVelocity = new Vector3(
 				(math.random() * 2 - 1) * BURST_SPIN,
 				(math.random() * 2 - 1) * BURST_SPIN,

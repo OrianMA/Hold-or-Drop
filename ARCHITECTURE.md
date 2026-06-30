@@ -670,8 +670,10 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
 - **Physical explosion (loss path).** `explode` unanchors every body part of the `RocketLvl1`
   model (the `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps
-  holding on the blast site), flings each one **radially outward from the rocket centre** with
-  an upward bias and a random spin, then runs a Heartbeat applying **height-based gravity**:
+  holding on the blast site), flings each one outward with a **horizontal-only radial spread**
+  (X/Z, so the burst never pushes a part down) plus a **height-scaled upward kick** (lowest part
+  lifts by `BURST_UP_MIN`, the nose by `BURST_UP_MAX` — every part is launched up, never any -Y
+  burst velocity) and a random spin, then runs a Heartbeat applying **height-based gravity**:
   weightless above `SPACE_HEIGHT` (world-Y 95, "space"), gravity fading in through the 95→50
   band, full earth gravity below `GROUND_HEIGHT` (50). It cancels the appropriate fraction of
   `Workspace.Gravity` each frame (`+gravity*(1-scale)` upward → net pull `gravity*scale`) rather
@@ -681,7 +683,7 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   velocities, re-anchors, restores collision, and re-poses every part to `padPivot * offset` — so
   the next launch starts from a pristine rocket no matter how the debris scattered. Tunables at
   the top of `RocketLauncher.ts`: `SPACE_HEIGHT`, `GROUND_HEIGHT`, `BURST_SPEED`,
-  `BURST_SPEED_VARIANCE`, `BURST_UP_BIAS`, `BURST_SPIN`.
+  `BURST_SPEED_VARIANCE`, `BURST_UP_MIN`, `BURST_UP_MAX`, `BURST_SPIN`.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
