@@ -316,7 +316,9 @@ local function startButtonGame(player, session)
 						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
 					else
 						-- Perte : la FUSÉE explose, pas le joueur. Pas de fling, pas de mort.
-						RocketLauncher:stop(room)
+						-- explode() stoppe lui-même l'ascension après avoir capturé sa vitesse,
+						-- pour que les débris conservent l'élan vers le haut (la fusée continue
+						-- de monter en explosant) avant que la gravité ne les rattrape.
 						local rocketPos = room.movableModel:GetPivot().Position
 						RocketLauncher:explode(room)
 						playExplosionSoundAt(rocketPos)

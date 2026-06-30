@@ -310,9 +310,11 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 					} else {
 						// Perte : la FUSÉE explose, pas le joueur. Pas de fling, pas de mort.
-						RocketLauncher.stop(room); // stoppe l'ascension — la fusée explose en l'air
+						// explode() stoppe lui-même l'ascension après avoir capturé sa vitesse,
+						// pour que les débris conservent l'élan vers le haut (la fusée continue
+						// de monter en explosant) avant que la gravité ne les rattrape.
 						const rocketPos = room.movableModel.GetPivot().Position;
-						RocketLauncher.explode(room); // particules dans ParticlesParentPart
+						RocketLauncher.explode(room); // unanchor + burst, hérite de l'élan de montée
 						playExplosionSoundAt(rocketPos); // boom 3D entendu par tous
 
 						// Le joueur reste en vie : on lui rend sa mobilité (figée pendant la fenêtre).
