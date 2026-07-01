@@ -22,6 +22,9 @@ local CAMERA_PIVOT_PART = "CameraParentPart"
 -- keeps its own fixed description instead of showing the cash gain.
 local ROCKET_PROMPT_PART = "RocketProximityPromptPart"
 local ROCKET_PROMPT_TEXT = "Launch the rocket"
+-- Invisible marker the rocket is positioned onto (RocketPlacer seats the cloned
+-- rocket here on assign — see RocketPlacer).
+local ROCKET_SPAWN_POINT = "RocketSpawnPoint"
 local UI_PART = "UiPart"
 local BILLBOARD = "BillboardGui"
 local GAIN_LABEL = "GainText"
@@ -114,24 +117,36 @@ do
 		-- rocket keeps its own fixed description.
 		self.rocketProximityPrompt.Enabled = false
 		self.rocketProximityPrompt.ObjectText = ROCKET_PROMPT_TEXT
+		-- Rocket spawn marker (optional). RocketPlacer seats the cloned rocket
+		-- onto it when the room is assigned.
+		local spawnPoint = movableModel:FindFirstChild(ROCKET_SPAWN_POINT)
+		local _result = spawnPoint
+		if _result ~= nil then
+			_result = _result:IsA("BasePart")
+		end
+		if _result then
+			self.rocketSpawnPoint = spawnPoint
+		else
+			warn(`Room {self.name}: {MOVABLE_MODEL} missing {ROCKET_SPAWN_POINT} — no rocket will be placed`)
+		end
 		-- Billboard is optional — gameplay still works without it.
 		local _billboard = buttonModel:FindFirstChild(UI_PART)
 		if _billboard ~= nil then
 			_billboard = _billboard:FindFirstChild(BILLBOARD)
 		end
 		local billboard = _billboard
-		local _result = billboard
-		if _result ~= nil then
-			_result = _result:IsA("BillboardGui")
+		local _result_1 = billboard
+		if _result_1 ~= nil then
+			_result_1 = _result_1:IsA("BillboardGui")
 		end
-		if _result then
+		if _result_1 then
 			self.billboardGui = billboard
 			local label = billboard:FindFirstChild(GAIN_LABEL, true)
-			local _result_1 = label
-			if _result_1 ~= nil then
-				_result_1 = _result_1:IsA("TextLabel")
+			local _result_2 = label
+			if _result_2 ~= nil then
+				_result_2 = _result_2:IsA("TextLabel")
 			end
-			if _result_1 then
+			if _result_2 then
 				self.gainLabel = label
 			end
 		end
@@ -139,11 +154,11 @@ do
 		-- (any of SPAWN_PART_NAMES) so a regular Part works.
 		for _, partName in SPAWN_PART_NAMES do
 			local part = folder:FindFirstChild(partName, true)
-			local _result_1 = part
-			if _result_1 ~= nil then
-				_result_1 = _result_1:IsA("BasePart")
+			local _result_2 = part
+			if _result_2 ~= nil then
+				_result_2 = _result_2:IsA("BasePart")
 			end
-			if _result_1 then
+			if _result_2 then
 				self.spawnPart = part
 				break
 			end
@@ -157,11 +172,11 @@ do
 		local ownerDisplay = folder:FindFirstChild(OWNER_DISPLAY)
 		if ownerDisplay then
 			local nameLabel = ownerDisplay:FindFirstChild(NAME_TEXT_LABEL, true)
-			local _result_1 = nameLabel
-			if _result_1 ~= nil then
-				_result_1 = _result_1:IsA("TextLabel")
+			local _result_2 = nameLabel
+			if _result_2 ~= nil then
+				_result_2 = _result_2:IsA("TextLabel")
 			end
-			if _result_1 then
+			if _result_2 then
 				self.ownerNameLabel = nameLabel
 				self.ownerNameLabel.Text = EMPTY_BASE_TEXT
 			else

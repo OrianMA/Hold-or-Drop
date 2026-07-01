@@ -22,6 +22,9 @@ const CAMERA_PIVOT_PART = "CameraParentPart";
 // keeps its own fixed description instead of showing the cash gain.
 const ROCKET_PROMPT_PART = "RocketProximityPromptPart";
 const ROCKET_PROMPT_TEXT = "Launch the rocket";
+// Invisible marker the rocket is positioned onto (RocketPlacer seats the cloned
+// rocket here on assign — see RocketPlacer).
+const ROCKET_SPAWN_POINT = "RocketSpawnPoint";
 const UI_PART = "UiPart";
 const BILLBOARD = "BillboardGui";
 const GAIN_LABEL = "GainText";
@@ -49,6 +52,9 @@ export class Room {
 	readonly playerPosPart!: BasePart;
 	readonly cameraPosPart!: BasePart;
 	readonly cameraPivotPart!: BasePart;
+	// Where RocketPlacer seats the rocket on assign. Optional: a room without it
+	// simply gets no rocket (warned), rather than being invalidated entirely.
+	readonly rocketSpawnPoint: BasePart | undefined;
 	readonly billboardGui: BillboardGui | undefined;
 	// The room's spawn marker — the occupant is teleported here on every spawn.
 	// A plain Part is fine (it's not used as a real SpawnLocation). Optional.
@@ -128,6 +134,15 @@ export class Room {
 		// rocket keeps its own fixed description.
 		this.rocketProximityPrompt.Enabled = false;
 		this.rocketProximityPrompt.ObjectText = ROCKET_PROMPT_TEXT;
+
+		// Rocket spawn marker (optional). RocketPlacer seats the cloned rocket
+		// onto it when the room is assigned.
+		const spawnPoint = movableModel.FindFirstChild(ROCKET_SPAWN_POINT);
+		if (spawnPoint?.IsA("BasePart")) {
+			this.rocketSpawnPoint = spawnPoint;
+		} else {
+			warn(`Room ${this.name}: ${MOVABLE_MODEL} missing ${ROCKET_SPAWN_POINT} — no rocket will be placed`);
+		}
 
 		// Billboard is optional — gameplay still works without it.
 		const billboard = buttonModel.FindFirstChild(UI_PART)?.FindFirstChild(BILLBOARD);

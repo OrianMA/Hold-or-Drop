@@ -3,6 +3,7 @@ import { Room } from "./Room";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { NeonPipeColors } from "server/modules/NeonPipeColors";
 import { RoomSpotlights } from "server/modules/RoomSpotlights";
+import { RocketPlacer } from "server/modules/RocketPlacer";
 
 // Owns the player ↔ room mapping (the "player-only" domain).
 //
@@ -23,6 +24,26 @@ const roomByPlayer = new Map<Player, Room>();
 const baseCashConns = new Map<Player, RBXScriptConnection>();
 // Teleport the occupant onto their room's spawn part on every (re)spawn.
 const spawnConns = new Map<Player, RBXScriptConnection>();
+// Deferred rocket placement: if progression hasn't loaded when the room is assigned
+// (Rebirths attribute still nil), we wait for it once, then place — tracked so it can
+// be cleaned up if the player leaves before the load lands.
+const rocketConns = new Map<Player, RBXScriptConnection>();
+
+// Place the rocket matching the player's rebirth level. The Rebirths attribute is
+// loaded asynchronously by PlayerProgressionService, so it may not be set yet at
+// assign time; if so, defer the placement until the attribute first appears.
+function placeRocketWhenReady(room: Room, player: Player): void {
+	if (player.GetAttribute("Rebirths") !== undefined) {
+		RocketPlacer.place(room);
+		return;
+	}
+	const conn = player.GetAttributeChangedSignal("Rebirths").Connect(() => {
+		conn.Disconnect();
+		rocketConns.delete(player);
+		if (room.owns(player)) RocketPlacer.place(room);
+	});
+	rocketConns.set(player, conn);
+}
 
 // "P2" → 2. Numeric-aware so P10 sorts after P9, not after P1.
 function roomOrder(name: string): number {
@@ -54,6 +75,9 @@ function assign(player: Player): void {
 	NeonPipeColors.setOccupied(room.name);
 	RoomSpotlights.setOccupied(room.name);
 
+	// Drop the right rocket onto the pad for this player's rebirth level.
+	placeRocketWhenReady(room, player);
+
 	// Teleport the player onto their room's spawn part on every (re)spawn, and move
 	// an already-spawned character now (service init with players already in-game).
 	const spawnPart = room.spawnPart;
@@ -82,9 +106,17 @@ function release(player: Player): void {
 		spawnConns.delete(player);
 	}
 
+	const rocketConn = rocketConns.get(player);
+	if (rocketConn) {
+		rocketConn.Disconnect();
+		rocketConns.delete(player);
+	}
+
 	const room = roomByPlayer.get(player);
 	if (!room) return;
 	room.release();
+	// Empty room → no rocket on the pad.
+	RocketPlacer.clear(room);
 	roomByPlayer.delete(player);
 	player.SetAttribute("AssignedRoom", "");
 	// Slot freed — grey its neon pipe + turn the spotlight off.

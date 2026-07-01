@@ -133,11 +133,14 @@ once a server event fires.
 ### 6.1 Rooms (`rooms/Room.ts`, `rooms/RoomService.ts`)
 - A **Room** wraps one `Workspace/PlayerZones/P{n}` folder containing a `ButtonModel`
   (`ButtonPart` + `ProximityPrompt`, `PlayerPosPlaceHolder`, optional
-  `UiPart/BillboardGui/GainText`) and a `MovableModel` (the rocket rig: `RocketLvl1`
-  plus `CameraParentPart` = the rocket-follow camera's `CameraSubject` (see §6.7;
-  `CameraPosPart` is now unused), `ParticlesParentPart` holding a disabled
-  `ExplosionParticles` emitter burst on a loss (§6.17), and `RocketProximityPromptPart`
-  carrying the rocket's own `ProximityPrompt`), optional `CommunityJoinPart`.
+  `UiPart/BillboardGui/GainText`) and a `MovableModel` (the rocket rig). The rocket body
+  itself is **not** authored in the rig — it is instantiated at assign time by `RocketPlacer`
+  (§6.18) from `ReplicatedStorage/RocketModels` and pivoted onto the rig's `RocketSpawnPoint`
+  marker (an invisible, anchored, non-collidable Part). The rig also holds `CameraParentPart`
+  = the rocket-follow camera's `CameraSubject` (see §6.7; `CameraPosPart` is now unused),
+  `ParticlesParentPart` holding a disabled `ExplosionParticles` emitter burst on a loss (§6.17),
+  and `RocketProximityPromptPart` carrying the rocket's own `ProximityPrompt`), optional
+  `CommunityJoinPart`.
   Invalid layouts are skipped with a warning.
 - **Ownership is the access rule:** only the assigned occupant may trigger the button.
 - `RoomService` assigns the first free room on join (numeric-aware `P1<P2<…<P10` sort),
@@ -352,7 +355,7 @@ server credits `Money` and hides the popup.
     subject back to the player's Humanoid on quit/release/death (tweening only when returning
     from a `Scriptable` cinematic), and `RocketLaunchBehavior` calls `StopOrbit` before the
     parry camera takes over. The shake (Camera±1 bindings) layers on top of the native camera's
-    `Camera`-priority CFrame with no change. The rocket body parts (`RocketLvl1`) are set
+    `Camera`-priority CFrame with no change. The rocket body parts (the placed `Rocket` model) are set
     `CanQuery = false` in `RocketLauncher` so the camera's occlusion raycasts ignore them and
     never pull the camera into the rocket.
 - `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
@@ -679,7 +682,12 @@ cleanly client-side; a small random phase keeps the rooms from bobbing in lockst
 
 ### 6.17 Rocket launch (`server/modules/RocketLauncher.ts`)
 Server-driven rocket flight for a room's `MovableModel`. **Single source of truth** (replicates
-to everyone, ties to the server-side game loop), no RemoteEvent.
+to everyone, ties to the server-side game loop), no RemoteEvent. The rocket body it drives is the
+child Model named **`Rocket`** (the stable name `RocketPlacer` renames every placed rocket to, see
+§6.18) — exported as `ROCKET_MODEL`. Because the rocket is swapped per occupant, `RocketPlacer`
+calls **`clearRocketCache(room)`** on each (re)placement to drop the per-room caches (pad pivot,
+captured body parts, launch sound, active flight) that referenced the destroyed model; they are
+recaptured on the next `launch`.
 - **`launch(room, speedFactor=1)`** — captures the model's launch-pad pivot once (per room),
   resets to it, then a `RunService.Heartbeat` loop ramps `velocity` from 0 by `ROCKET_ACCEL`
   up to `ROCKET_MAX_SPEED` and rises the model via `PivotTo` each frame (slow, accelerating,
@@ -690,9 +698,13 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   tracks the rocket's speed (§6.3).
 - Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
   the client orbit camera (reads the pivot live, §6.7) **follows the rocket** with zero extra code.
-- **Engine fire:** `launch` lights the `Fire` inside the rocket's `NitroParticles` part(s);
-  `stop`/`reset` extinguish it — so the nitro burns only while the rocket is moving. (Authored
-  `Enabled=false` at rest in Studio on every room.)
+- **Engine fire:** `launch` lights **every** engine emitter (`Fire`/`ParticleEmitter`/`Smoke`)
+  inside the rocket's `NitroParticles` part(s); `stop`/`reset` extinguish them — so the nitro burns
+  only while the rocket is moving. A rocket may carry **several** `NitroParticles` parts (multi-engine
+  rockets, e.g. Lvl4/Lvl5 have 5 each), now authored as **direct children of the rocket model**;
+  `setNitroEnabled` iterates the whole `MovableModel` so it toggles them all. The **at-rest off**
+  state is enforced by `RocketPlacer` (§6.18) when it clones the rocket — the templates' authored
+  `Enabled` is inconsistent, so it no longer matters.
 - **Launch sound:** `launch` also plays a **looped 3D** "engine roar"
   (`AudioConfig.sfx.rocketLaunch`) — a `Sound` created once per room and parented to the
   `NitroParticles` engine part (so it emanates from the rocket and rises with it; server-authored
@@ -704,11 +716,13 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   the rocket's `ParticlesParentPart` (authored disabled in Studio, like `UpgradeButtonParticles`)
   **and physically breaks the rocket apart** (see below).
 - The rocket parts are all **anchored** (no PrimaryPart needed — `PivotTo` uses the model pivot).
-  The non-body helpers (`CameraPosPart`, `CameraParentPart`, `ParticlesParentPart`,
-  `RocketProximityPromptPart`) are anchored + non-collidable too, so they ride with the rig and
-  never fall — `explode` only unanchors `RocketLvl1` body parts.
+  `RocketPlacer` force-anchors every body part of the placed rocket (some `RocketModels` templates
+  ship with unanchored parts that would otherwise fall — see §6.18). The non-body helpers
+  (`CameraPosPart`, `CameraParentPart`, `ParticlesParentPart`, `RocketProximityPromptPart`,
+  `RocketSpawnPoint`) are anchored + non-collidable too, so they ride with the rig and never fall
+  — `explode` only unanchors the `Rocket` body parts.
   `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
-- **Physical explosion (loss path).** `explode` unanchors every body part of the `RocketLvl1`
+- **Physical explosion (loss path).** `explode` unanchors every body part of the `Rocket`
   model (the `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps
   holding on the blast site), flings each one outward with a **horizontal-only radial spread**
   (X/Z, so the burst never pushes a part down) plus a **height-scaled upward kick** (lowest part
@@ -716,7 +730,7 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   burst velocity) and a random spin, then runs a Heartbeat applying **height-based gravity**:
 - **Physical explosion (loss path).** `explode` first reads the rocket's current ascent speed
   then **halts the ascent loop itself** (the loss path no longer pre-calls `stop`), so the speed
-  survives to be inherited. It unanchors every body part of the `RocketLvl1` model (the
+  survives to be inherited. It unanchors every body part of the `Rocket` model (the
   `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps holding on the
   blast site), and flings each one **radially outward from the rocket centre** with an upward
   bias, a random spin, **and the inherited ascent momentum** — so the rocket **keeps climbing as
@@ -732,6 +746,28 @@ to everyone, ties to the server-side game loop), no RemoteEvent.
   the next launch starts from a pristine rocket no matter how the debris scattered. Tunables at
   the top of `RocketLauncher.ts`: `SPACE_HEIGHT`, `GROUND_HEIGHT`, `BURST_SPEED`,
   `BURST_SPEED_VARIANCE`, `BURST_UP_MIN`, `BURST_UP_MAX`, `BURST_SPIN`.
+
+### 6.18 Rocket selection & placement (`server/modules/RocketPlacer.ts`)
+Chooses and instantiates the rocket that sits on a room's pad, matched to the occupant's
+**rebirth level**. The rocket bodies are authored in **`ReplicatedStorage/RocketModels`** as
+`RocketLvl1..RocketLvlN` (currently 5); none lives in the rig by default — `RocketPlacer.place(room)`
+clones the right one onto the rig's `RocketSpawnPoint` (§6.1).
+- **Level mapping:** `level = clamp(Rebirths, 1, N_rockets)` — `Rebirths` directly indexes the
+  rocket level; rebirth 0 falls back to `RocketLvl1` (there is no Lvl0) and any rebirth count above
+  the number of rockets gets the highest one. (Read via `PlayerProgressionService.getRebirths`.)
+- **Placement:** removes any rocket already on the pad, calls `RocketLauncher.clearRocketCache(room)`
+  (rooms are reused across occupants — see §6.17), then clones the template, renames it to the stable
+  **`Rocket`** (`ROCKET_MODEL`), **force-anchors every body part** (some templates ship with
+  unanchored parts that would otherwise fall), parents it to the `MovableModel`, and `PivotTo`s it
+  onto the `RocketSpawnPoint`.
+- **Trigger / async load:** `RoomService.assign` calls it via `placeRocketWhenReady`. Because
+  `PlayerProgressionService` loads `Rebirths` asynchronously, the attribute may still be nil at
+  assign; if so the placement is deferred until the attribute first appears (a one-shot
+  `GetAttributeChangedSignal`, cleaned up on leave). Re-placement after a played round / on rebirth
+  is **not wired yet** (the rocket only refreshes when the room is (re)assigned).
+- **Authoring note:** only `RocketLvl1`/`RocketLvl2` currently carry a `NitroParticles` engine part,
+  so Lvl3–Lvl5 launch without an engine flame (no error — the launcher just finds no `Fire`); add a
+  `NitroParticles` part (with a `Fire`) to those templates to restore the effect.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 

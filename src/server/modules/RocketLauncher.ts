@@ -14,14 +14,18 @@ import { AudioConfig } from "shared/AudioConfig";
 const EXPLOSION_EMITTER = "ExplosionParticles";
 const PARTICLES_PARENT = "ParticlesParentPart";
 const EXPLOSION_PARTICLE_COUNT = 60;
-// Part inside the rocket holding the engine Fire(s) — lit while the rocket moves.
-const NITRO_PART = "NitroParticles";
+// Part(s) inside the rocket holding the engine emitter(s) — lit while the rocket moves.
+// A rocket can carry several NitroParticles parts (multi-engine rockets), each with one
+// or more Fire/ParticleEmitter/Smoke. Shared with RocketPlacer (engine off at rest).
+export const NITRO_PART = "NitroParticles";
 // 3D rolloff (studs) for the looped launch roar, server-authored like the explosion boom.
 const LAUNCH_SOUND_ROLLOFF = 150;
 // The rocket body model inside the MovableModel — these are the parts that physically
 // break apart on an explosion (the Camera*/Particles helper parts stay anchored so the
-// orbit camera keeps holding on the blast site).
-const ROCKET_MODEL = "RocketLvl1";
+// orbit camera keeps holding on the blast site). The actual rocket is instantiated by
+// RocketPlacer from ReplicatedStorage/RocketModels (level chosen by rebirth) and always
+// renamed to this stable name, so the launcher finds it regardless of which level it is.
+export const ROCKET_MODEL = "Rocket";
 
 // ── Physical explosion tuning ───────────────────────────────────────────────────
 // Height-based gravity (world-space Y, studs): above SPACE_HEIGHT the debris is in
@@ -142,10 +146,17 @@ function restoreRocketParts(room: Room): void {
 	}
 }
 
-// Light/extinguish the engine Fire(s) inside the rocket's NitroParticles part(s).
+// Light/extinguish every engine emitter (Fire/ParticleEmitter/Smoke) inside the rocket's
+// NitroParticles part(s). Rockets can have several NitroParticles parts (multi-engine), so
+// we toggle them all — iterating the whole MovableModel catches every one.
 function setNitroEnabled(room: Room, enabled: boolean): void {
 	for (const d of room.movableModel.GetDescendants()) {
-		if (d.IsA("Fire") && d.FindFirstAncestor(NITRO_PART) !== undefined) d.Enabled = enabled;
+		if (
+			(d.IsA("Fire") || d.IsA("ParticleEmitter") || d.IsA("Smoke")) &&
+			d.FindFirstAncestor(NITRO_PART) !== undefined
+		) {
+			d.Enabled = enabled;
+		}
 	}
 }
 
@@ -208,6 +219,23 @@ export const RocketLauncher = {
 	// Stop and snap the rocket back to its launch pad, ready for the next run.
 	reset(room: Room): void {
 		resetRoom(room);
+	},
+
+	// Drop every cache tied to the room's current rocket instance. RocketPlacer calls
+	// this whenever it (re)places the rocket — rooms are reused across occupants, so the
+	// cached body parts / pad pivot would otherwise point at a destroyed model and the
+	// next launch would operate on stale instances. Cleared here, they are recaptured
+	// fresh on the following launch (from the new rocket sitting on the pad).
+	clearRocketCache(room: Room): void {
+		stopRoom(room); // disconnect any active ascent + stop the looped roar
+		const dconn = debrisConns.get(room);
+		if (dconn) {
+			dconn.Disconnect();
+			debrisConns.delete(room);
+		}
+		rocketParts.delete(room);
+		originalPivots.delete(room);
+		launchSounds.delete(room); // the old sound lived on the destroyed rocket; recreate next launch
 	},
 
 	// Physical rocket explosion: burst the ExplosionParticles emitter, then unanchor

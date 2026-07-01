@@ -7,6 +7,7 @@ local Room = TS.import(script, game:GetService("ServerScriptService"), "TS", "ro
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 local RoomSpotlights = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RoomSpotlights").RoomSpotlights
+local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
 -- Owns the player ↔ room mapping (the "player-only" domain).
 --
 -- At server start it scans Workspace/PlayerZones for P{n} folders (one Button
@@ -24,6 +25,30 @@ local roomByPlayer = {}
 local baseCashConns = {}
 -- Teleport the occupant onto their room's spawn part on every (re)spawn.
 local spawnConns = {}
+-- Deferred rocket placement: if progression hasn't loaded when the room is assigned
+-- (Rebirths attribute still nil), we wait for it once, then place — tracked so it can
+-- be cleaned up if the player leaves before the load lands.
+local rocketConns = {}
+-- Place the rocket matching the player's rebirth level. The Rebirths attribute is
+-- loaded asynchronously by PlayerProgressionService, so it may not be set yet at
+-- assign time; if so, defer the placement until the attribute first appears.
+local function placeRocketWhenReady(room, player)
+	if player:GetAttribute("Rebirths") ~= nil then
+		RocketPlacer:place(room)
+		return nil
+	end
+	local conn
+	conn = player:GetAttributeChangedSignal("Rebirths"):Connect(function()
+		conn:Disconnect()
+		local _player = player
+		rocketConns[_player] = nil
+		if room:owns(player) then
+			RocketPlacer:place(room)
+		end
+	end)
+	local _player = player
+	rocketConns[_player] = conn
+end
 -- "P2" → 2. Numeric-aware so P10 sorts after P9, not after P1.
 local function roomOrder(name)
 	local digits = string.match(name, "%d+")
@@ -77,6 +102,8 @@ local function assign(player)
 	-- Light this slot's neon pipe + spotlight in the room's colour.
 	NeonPipeColors:setOccupied(room.name)
 	RoomSpotlights:setOccupied(room.name)
+	-- Drop the right rocket onto the pad for this player's rebirth level.
+	placeRocketWhenReady(room, player)
 	-- Teleport the player onto their room's spawn part on every (re)spawn, and move
 	-- an already-spawned character now (service init with players already in-game).
 	local spawnPart = room.spawnPart
@@ -112,13 +139,22 @@ local function release(player)
 		spawnConns[_player_2] = nil
 	end
 	local _player_2 = player
-	local room = roomByPlayer[_player_2]
+	local rocketConn = rocketConns[_player_2]
+	if rocketConn then
+		rocketConn:Disconnect()
+		local _player_3 = player
+		rocketConns[_player_3] = nil
+	end
+	local _player_3 = player
+	local room = roomByPlayer[_player_3]
 	if not room then
 		return nil
 	end
 	room:release()
-	local _player_3 = player
-	roomByPlayer[_player_3] = nil
+	-- Empty room → no rocket on the pad.
+	RocketPlacer:clear(room)
+	local _player_4 = player
+	roomByPlayer[_player_4] = nil
 	player:SetAttribute("AssignedRoom", "")
 	-- Slot freed — grey its neon pipe + turn the spotlight off.
 	NeonPipeColors:setEmpty(room.name)

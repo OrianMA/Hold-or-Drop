@@ -17,14 +17,18 @@ local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 local EXPLOSION_EMITTER = "ExplosionParticles"
 local PARTICLES_PARENT = "ParticlesParentPart"
 local EXPLOSION_PARTICLE_COUNT = 60
--- Part inside the rocket holding the engine Fire(s) — lit while the rocket moves.
+-- Part(s) inside the rocket holding the engine emitter(s) — lit while the rocket moves.
+-- A rocket can carry several NitroParticles parts (multi-engine rockets), each with one
+-- or more Fire/ParticleEmitter/Smoke. Shared with RocketPlacer (engine off at rest).
 local NITRO_PART = "NitroParticles"
 -- 3D rolloff (studs) for the looped launch roar, server-authored like the explosion boom.
 local LAUNCH_SOUND_ROLLOFF = 150
 -- The rocket body model inside the MovableModel — these are the parts that physically
 -- break apart on an explosion (the Camera*/Particles helper parts stay anchored so the
--- orbit camera keeps holding on the blast site).
-local ROCKET_MODEL = "RocketLvl1"
+-- orbit camera keeps holding on the blast site). The actual rocket is instantiated by
+-- RocketPlacer from ReplicatedStorage/RocketModels (level chosen by rebirth) and always
+-- renamed to this stable name, so the launcher finds it regardless of which level it is.
+local ROCKET_MODEL = "Rocket"
 -- ── Physical explosion tuning ───────────────────────────────────────────────────
 -- Height-based gravity (world-space Y, studs): above SPACE_HEIGHT the debris is in
 -- space and weightless; through the SPACE_HEIGHT→GROUND_HEIGHT band gravity fades in;
@@ -157,10 +161,12 @@ local function restoreRocketParts(room)
 		part.CFrame = padPivot * _offset
 	end
 end
--- Light/extinguish the engine Fire(s) inside the rocket's NitroParticles part(s).
+-- Light/extinguish every engine emitter (Fire/ParticleEmitter/Smoke) inside the rocket's
+-- NitroParticles part(s). Rockets can have several NitroParticles parts (multi-engine), so
+-- we toggle them all — iterating the whole MovableModel catches every one.
 local function setNitroEnabled(room, enabled)
 	for _, d in room.movableModel:GetDescendants() do
-		if d:IsA("Fire") and d:FindFirstAncestor(NITRO_PART) ~= nil then
+		if (d:IsA("Fire") or d:IsA("ParticleEmitter") or d:IsA("Smoke")) and d:FindFirstAncestor(NITRO_PART) ~= nil then
 			d.Enabled = enabled
 		end
 	end
@@ -242,6 +248,22 @@ local RocketLauncher = {
 	end,
 	reset = function(self, room)
 		resetRoom(room)
+	end,
+	clearRocketCache = function(self, room)
+		stopRoom(room)
+		local _room = room
+		local dconn = debrisConns[_room]
+		if dconn then
+			dconn:Disconnect()
+			local _room_1 = room
+			debrisConns[_room_1] = nil
+		end
+		local _room_1 = room
+		rocketParts[_room_1] = nil
+		local _room_2 = room
+		originalPivots[_room_2] = nil
+		local _room_3 = room
+		launchSounds[_room_3] = nil
 	end,
 	explode = function(self, room)
 		-- Inherit the rocket's current ascent speed before halting the ascent loop, so the
@@ -347,5 +369,7 @@ local RocketLauncher = {
 	end,
 }
 return {
+	NITRO_PART = NITRO_PART,
+	ROCKET_MODEL = ROCKET_MODEL,
 	RocketLauncher = RocketLauncher,
 }
