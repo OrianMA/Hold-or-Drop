@@ -51,6 +51,14 @@ local EndGameButtonModule = {
 			Events.EndGameStartEvent:FireClient(player, baseCash, multiplier, lossMultiplier)
 		end)
 	end,
+	enterRewardOnly = function(self, player, reward)
+		ButtonSessionService:cleanup(player)
+		UiService:HideCurrent(player)
+		local _player = player
+		local _reward = reward
+		pendingEarned[_player] = _reward
+		Events.LossRewardEvent:FireClient(player, reward)
+	end,
 	init = function(self)
 		Events.EndGameFinishedEvent.OnServerEvent:Connect(function(player)
 			local _player = player

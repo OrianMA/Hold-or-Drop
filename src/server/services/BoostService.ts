@@ -1,7 +1,7 @@
 import { GroupService, MarketplaceService, Players } from "@rbxts/services";
-import { COMMUNITY, MONEY_TIERS, SAFETY_PASS } from "shared/ShopBalance";
+import { COMMUNITY, MONEY_TIERS, RESISTANCE_PASS } from "shared/ShopBalance";
 import { Events } from "shared/Event";
-import { simulateGamePasses, simulatedOwnedPassIds } from "server/modules/CheatConfig";
+import { ignoreGamePasses, simulateGamePasses, simulatedOwnedPassIds } from "server/modules/CheatConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 
 // HUD flash colours for the community-join feedback (see refreshCommunity).
@@ -22,7 +22,7 @@ const HINT_COLOR = new Color3(0.6, 0.8, 1);
 
 const IN_COMMUNITY_ATTR = "InCommunity";
 const MONEY_TIER_MULT_ATTR = "MoneyTierMult";
-const HAS_SAFETY_PASS_ATTR = "HasSafetyPass";
+const HAS_RESISTANCE_PASS_ATTR = "HasResistancePass";
 
 // Per-player set of owned game-pass ids — the session source of truth.
 const ownedPasses = new Map<Player, Set<number>>();
@@ -40,7 +40,7 @@ function getOwned(player: Player): Set<number> {
 function configuredPassIds(): number[] {
 	const ids: number[] = [];
 	for (const tier of MONEY_TIERS) if (tier.gamePassId > 0) ids.push(tier.gamePassId);
-	if (SAFETY_PASS.gamePassId > 0) ids.push(SAFETY_PASS.gamePassId);
+	if (RESISTANCE_PASS.gamePassId > 0) ids.push(RESISTANCE_PASS.gamePassId);
 	return ids;
 }
 
@@ -65,7 +65,7 @@ function isInCommunity(player: Player): boolean {
 }
 
 // Re-derive the boost attributes from the player's owned-pass set (highest money
-// tier wins; safety pass flat add), then fold them into the money multiplier.
+// tier wins; resistance pass flat add), then fold them into the money multiplier.
 function recount(player: Player): void {
 	const set = getOwned(player);
 
@@ -74,7 +74,7 @@ function recount(player: Player): void {
 		if (tier.gamePassId > 0 && set.has(tier.gamePassId)) tierMult = math.max(tierMult, tier.mult);
 	}
 	player.SetAttribute(MONEY_TIER_MULT_ATTR, tierMult);
-	player.SetAttribute(HAS_SAFETY_PASS_ATTR, SAFETY_PASS.gamePassId > 0 && set.has(SAFETY_PASS.gamePassId));
+	player.SetAttribute(HAS_RESISTANCE_PASS_ATTR, RESISTANCE_PASS.gamePassId > 0 && set.has(RESISTANCE_PASS.gamePassId));
 	PlayerProgressionService.recompute(player);
 }
 
@@ -83,7 +83,7 @@ function recount(player: Player): void {
 function setDefaults(player: Player): void {
 	player.SetAttribute(IN_COMMUNITY_ATTR, false);
 	player.SetAttribute(MONEY_TIER_MULT_ATTR, 1);
-	player.SetAttribute(HAS_SAFETY_PASS_ATTR, false);
+	player.SetAttribute(HAS_RESISTANCE_PASS_ATTR, false);
 	PlayerProgressionService.recompute(player);
 }
 
@@ -94,7 +94,10 @@ function resolve(player: Player): void {
 
 	const set = getOwned(player);
 	set.clear();
-	if (simulateGamePasses) {
+	if (ignoreGamePasses) {
+		// CHEAT — start like a player who never owned any game pass: seed nothing,
+		// so the set stays empty regardless of real Roblox ownership.
+	} else if (simulateGamePasses) {
 		// TEST MODE — ignore real Roblox ownership, use the configured simulation.
 		for (const id of simulatedOwnedPassIds) set.add(id);
 	} else {

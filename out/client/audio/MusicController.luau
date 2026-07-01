@@ -6,10 +6,14 @@ local Players = _services.Players
 local SoundService = _services.SoundService
 local TweenService = _services.TweenService
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
--- Musique client : BGM (nouvelle API audio, pour exposer un spectre au visualiser) +
--- musique du bouton (Sound classique, inchangée). SFX restent à leurs call sites.
--- La BGM ducke vite au début d'un hold puis revient lentement une fois le run terminé.
-local BGM_FADE_OUT = 0.4
+-- Musique client : BGM de base (nouvelle API audio, pour exposer un spectre au visualiser)
+-- qui joue en permanence + piste "haute altitude" (Sound classique) crossfadée par-dessus
+-- quand la fusée dépasse le seuil d'altitude. SFX restent à leurs call sites.
+-- Crossfade BGM de base -> piste haute altitude au passage du seuil.
+local CROSSFADE_TO_HIGH = 0.8
+-- Coupe rapide de la musique du run au moment de l'explosion (l'explosion est brutale).
+local RUN_CUT = 0.25
+-- Retour lent de la BGM de base une fois le run terminé.
 local BGM_RESUME = 3
 -- BGM via la nouvelle API audio : AudioPlayer -> AudioFader -> AudioDeviceOutput (audible)
 -- et AudioPlayer -> AudioAnalyzer (analyse spectre, tap AVANT le fader). Le duck agit sur
@@ -21,8 +25,9 @@ local bgmAnalyzer
 local bgmIndex = 0
 local bgmFadeTween
 local bgmDucked = false
--- Musique du bouton — Sound classique, créée/jouée à la demande.
-local buttonMusic
+-- Piste "haute altitude" — Sound classique bouclée, crossfadée par-dessus la BGM de base.
+local highTrack
+local highTrackFadeTween
 local function createSound(id, volume, name, looped)
 	local sound = Instance.new("Sound")
 	sound.Name = name
@@ -56,8 +61,37 @@ local function fadeBgm(targetVolume, duration)
 	})
 	bgmFadeTween:Play()
 end
--- Fin du run — ramène la BGM lentement. No-op si elle n'est pas duckée.
+-- Fait fondre le volume de la piste haute altitude (Sound classique) vers une cible.
+-- Annule tout fade en cours pour éviter deux tweens concurrents sur Volume.
+local function fadeHighTrack(targetVolume, duration)
+	if not highTrack then
+		return nil
+	end
+	local _result = highTrackFadeTween
+	if _result ~= nil then
+		_result:Cancel()
+	end
+	highTrackFadeTween = TweenService:Create(highTrack, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Volume = targetVolume,
+	})
+	highTrackFadeTween:Play()
+end
+-- Coupe net la piste haute altitude (annule son fade et la stoppe).
+local function stopHighTrack()
+	local _result = highTrackFadeTween
+	if _result ~= nil then
+		_result:Cancel()
+	end
+	highTrackFadeTween = nil
+	local _result_1 = highTrack
+	if _result_1 ~= nil then
+		_result_1:Stop()
+	end
+end
+-- Fin du run — ramène la BGM de base lentement et s'assure que la piste haute altitude
+-- est coupée. No-op sur la BGM si elle n'est pas duckée.
 local function resumeBgm()
+	stopHighTrack()
 	if not bgmDucked then
 		return nil
 	end
@@ -123,30 +157,36 @@ local MusicController = {
 			end)
 			playBgmTrack(0)
 		end
-		-- Musique du bouton — créée + préchargée maintenant (pas de stall au 1er hold), bouclée.
-		buttonMusic = createSound(AudioConfig.buttonGame.id, AudioConfig.buttonGame.volume, "ButtonGameMusic", true)
+		-- Piste haute altitude — créée + préchargée maintenant (pas de stall au 1er crossfade), bouclée.
+		highTrack = createSound(AudioConfig.highAltitude.id, AudioConfig.highAltitude.volume, "HighAltitudeMusic", true)
 		task.spawn(function()
-			return ContentProvider:PreloadAsync({ buttonMusic })
+			return ContentProvider:PreloadAsync({ highTrack })
 		end)
 		-- Un respawn (typiquement après explosion mortelle) termine le run -> ramène la BGM.
 		Players.LocalPlayer.CharacterAdded:Connect(function()
 			return resumeBgm()
 		end)
 	end,
-	playButtonMusic = function(self)
-		fadeBgm(0, BGM_FADE_OUT)
-		bgmDucked = true
-		if not buttonMusic then
+	startRun = function(self)
+		stopHighTrack()
+		bgmDucked = false
+		fadeBgm(1, 0.3)
+	end,
+	enterHighAltitude = function(self)
+		if not highTrack then
 			return nil
 		end
-		buttonMusic.TimePosition = 0
-		buttonMusic:Play()
+		fadeBgm(0, CROSSFADE_TO_HIGH)
+		bgmDucked = true
+		highTrack.Volume = 0
+		highTrack.TimePosition = 0
+		highTrack:Play()
+		fadeHighTrack(AudioConfig.highAltitude.volume, CROSSFADE_TO_HIGH)
 	end,
-	stopButtonMusic = function(self)
-		local _result = buttonMusic
-		if _result ~= nil then
-			_result:Stop()
-		end
+	stopRunMusic = function(self)
+		stopHighTrack()
+		fadeBgm(0, RUN_CUT)
+		bgmDucked = true
 	end,
 	resumeBgm = resumeBgm,
 	getBgmAnalyzer = function(self)

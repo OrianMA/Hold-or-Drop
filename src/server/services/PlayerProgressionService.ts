@@ -1,20 +1,20 @@
 import { DataStoreService, Players } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
-import { ShopStat, STATS, rebirthMult, moneyMult, effectiveSafety } from "shared/ShopConfig";
+import { ShopStat, STATS, rebirthMult, moneyMult, effectiveResistance } from "shared/ShopConfig";
 
 // Per-player progression. The LEVELS are the persisted source of truth; the
-// effective values (BaseCash, RocketSpeed, AdditionalSecurity) are *derived* from
+// effective values (BaseCash, RocketSpeed, Resistance) are *derived* from
 // the levels via shared/ShopConfig and mirrored to attributes so the owning
 // client, the game loop and the room billboard read them directly (replication).
 //
-// Stored per player (DataStore): BaseCashLevel, RocketSpeedLevel, SafetyLevel.
+// Stored per player (DataStore): BaseCashLevel, RocketSpeedLevel, ResistanceLevel.
 // Mirrored attributes: the three level attributes AND the three value attributes.
 //
 // DataStore access requires API Services enabled in Studio:
 // Game Settings → Security → "Enable Studio Access to API Services".
 
 // The three stats, in a stable iteration order.
-const STAT_LIST: readonly ShopStat[] = ["BaseCash", "RocketSpeed", "Safety"];
+const STAT_LIST: readonly ShopStat[] = ["BaseCash", "RocketSpeed", "Resistance"];
 
 // Persisted alongside the stat levels (same store table). The reward multiplier
 // is derived from it like the stat values are derived from their levels.
@@ -25,19 +25,19 @@ const MULT_REBIRTH_ATTR = "MultRebirth";
 // is safe before BoostService resolves). game.ts reads the derived attrs below.
 const IN_COMMUNITY_ATTR = "InCommunity";
 const MONEY_TIER_MULT_ATTR = "MoneyTierMult";
-const HAS_SAFETY_PASS_ATTR = "HasSafetyPass";
+const HAS_RESISTANCE_PASS_ATTR = "HasResistancePass";
 // Derived, replicated for the game loop / billboard / shop readout.
 const MONEY_MULT_ATTR = "MoneyMult";
 const EFFECTIVE_BASE_CASH_ATTR = "EffectiveBaseCash";
 
-// Value attributes the rest of the game reads (names unchanged from before).
-export type ProgressionKey = "BaseCash" | "RocketSpeed" | "AdditionalSecurity" | "EffectiveBaseCash" | "MoneyMult";
+// Value attributes the rest of the game reads.
+export type ProgressionKey = "BaseCash" | "RocketSpeed" | "Resistance" | "EffectiveBaseCash" | "MoneyMult";
 
 // Fallback values if a value attribute is somehow missing (matches level 0).
 const DEFAULT_VALUES: { readonly [K in ProgressionKey]: number } = {
 	BaseCash: 100,
 	RocketSpeed: 1,
-	AdditionalSecurity: 0,
+	Resistance: 0,
 	EffectiveBaseCash: 100,
 	MoneyMult: 1,
 };
@@ -78,8 +78,8 @@ function applyLevels(player: Player, levels: LevelData): void {
 }
 
 // Folds the boost inputs into the replicated derived values. Additive money
-// multiplier (shared/ShopConfig.moneyMult) → EffectiveBaseCash; safety pass →
-// AdditionalSecurity. Reads level/rebirth/input attributes already set on the
+// multiplier (shared/ShopConfig.moneyMult) → EffectiveBaseCash; resistance pass →
+// Resistance. Reads level/rebirth/input attributes already set on the
 // player. Called after every state change (load, purchase, rebirth, boost
 // resolve) so the billboard / game loop / shop read one source of truth.
 function deriveValues(player: Player): void {
@@ -93,10 +93,10 @@ function deriveValues(player: Player): void {
 	player.SetAttribute(MONEY_MULT_ATTR, mMult);
 	player.SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult));
 
-	const safetyLevel = (player.GetAttribute(STATS.Safety.levelAttribute) as number | undefined) ?? 0;
-	const rawSafety = STATS.Safety.valueFor(safetyLevel);
-	const hasPass = player.GetAttribute(HAS_SAFETY_PASS_ATTR) === true;
-	player.SetAttribute(STATS.Safety.valueAttribute, effectiveSafety(rawSafety, hasPass));
+	const resistanceLevel = (player.GetAttribute(STATS.Resistance.levelAttribute) as number | undefined) ?? 0;
+	const rawResistance = STATS.Resistance.valueFor(resistanceLevel);
+	const hasPass = player.GetAttribute(HAS_RESISTANCE_PASS_ATTR) === true;
+	player.SetAttribute(STATS.Resistance.valueAttribute, effectiveResistance(rawResistance, hasPass));
 }
 
 function loadLevels(player: Player): LevelData | undefined {
@@ -170,7 +170,7 @@ export const PlayerProgressionService = {
 		});
 	},
 
-	// Reads a derived value (BaseCash / RocketSpeed / AdditionalSecurity / EffectiveBaseCash / MoneyMult).
+	// Reads a derived value (BaseCash / RocketSpeed / Resistance / EffectiveBaseCash / MoneyMult).
 	get(player: Player, key: ProgressionKey): number {
 		return (player.GetAttribute(key) as number | undefined) ?? DEFAULT_VALUES[key];
 	},
@@ -227,7 +227,7 @@ export const PlayerProgressionService = {
 		deriveValues(player);
 	},
 
-	// Re-derives MoneyMult / EffectiveBaseCash / AdditionalSecurity from the
+	// Re-derives MoneyMult / EffectiveBaseCash / Resistance from the
 	// current level + rebirth + boost-input attributes. Called by BoostService
 	// after it writes the input attributes (group / game-pass ownership).
 	recompute(player: Player): void {

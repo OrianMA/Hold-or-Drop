@@ -7,7 +7,7 @@
 --
 -- Two curve shapes (defined in ShopConfig, fed by the numbers here):
 --   • exponential value : baseValue * valueGrowth ^ level   (BaseCash)
---   • linear value      : baseValue + level / level * perLevel (RocketSpeed / Safety)
+--   • linear value      : baseValue + level                 (RocketSpeed / Resistance)
 --   • price (all stats) : startPrice * PRICE_GROWTH ^ level
 -- Price multiplier applied per level for every stat. Higher = steeper grind wall.
 --   1.5 → each level costs +50% of the previous.
@@ -32,14 +32,17 @@ local ROCKET_SPEED = {
 	baseValue = 1,
 	startPrice = 100,
 }
--- Safety — risk reduction, capped. The cap value is perLevel * maxLevel.
---   value = min(level * perLevel, perLevel * maxLevel)   (L10 = 50%)
---   price = startPrice * PRICE_GROWTH ^ level             (L0→1 = 500)
---   startPrice lowered to 500: Safety resets each rebirth cycle, so it must be
---   reachable within a single early cycle.
-local SAFETY = {
-	perLevel = 0.05,
-	maxLevel = 10,
+-- Resistance — explosion-risk reduction, 0..100. Bought +1 per level like Rocket
+-- Speed (plain integer, +1 each purchase). The number itself is NOT a percentage:
+-- it feeds a curve applied in the risk loop (ButtonInGameModule.resistanceRiskParams).
+-- The curve is front-loaded — the FIRST levels hugely raise average survival, the
+-- LAST levels barely change it but push out the guaranteed-safe window toward ~15s.
+--   value = level (plain 0..100)
+--   price = startPrice * PRICE_GROWTH ^ level   (L0→1 = 500)
+--   startPrice 500: Resistance resets each rebirth cycle, so early levels (the ones
+--   that matter most) must be reachable within a single early cycle.
+local RESISTANCE = {
+	maxLevel = 100,
 	startPrice = 500,
 }
 -- ── Rebirth ──────────────────────────────────────────────────────────────────
@@ -96,21 +99,19 @@ local MONEY_TIERS = { {
 	mult = 1024,
 	gamePassId = 1890592911,
 } }
--- Safety game pass — flat risk reduction added on top of the shop Safety.
-local SAFETY_PASS = {
-	add = 0.2,
+-- Resistance game pass — flat bonus resistance LEVELS added on top of the shop
+-- Resistance (id 0 = inert until authored on the dashboard). Capped at maxLevel.
+local RESISTANCE_PASS = {
+	addLevels = 20,
 	gamePassId = 0,
 }
--- Cumulative safety cap: shop (0.50) + pass (0.20). Keeps risk floored at ×0.30.
-local SAFETY_TOTAL_CAP = 0.7
 return {
 	PRICE_GROWTH = PRICE_GROWTH,
 	BASE_CASH = BASE_CASH,
 	ROCKET_SPEED = ROCKET_SPEED,
-	SAFETY = SAFETY,
+	RESISTANCE = RESISTANCE,
 	REBIRTH = REBIRTH,
 	COMMUNITY = COMMUNITY,
 	MONEY_TIERS = MONEY_TIERS,
-	SAFETY_PASS = SAFETY_PASS,
-	SAFETY_TOTAL_CAP = SAFETY_TOTAL_CAP,
+	RESISTANCE_PASS = RESISTANCE_PASS,
 }

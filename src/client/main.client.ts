@@ -2,6 +2,7 @@ import { StarterGui } from "@rbxts/services";
 import { init as initButtonMenu } from "./behaviors/ButtonMenuBehavior";
 import { init as initRocketLaunch, setup as setupRocketLaunch } from "./behaviors/RocketLaunchBehavior";
 import { init as initEndGameButton } from "./behaviors/EndGameButtonBehavior";
+import { init as initLossReward } from "./behaviors/LossRewardBehavior";
 import { MoneyDisplay } from "./ui/MoneyDisplay";
 import { init as initInformationText } from "./ui/InformationText";
 import { init as initRoomPrompts } from "./rooms/RoomPromptController";
@@ -35,6 +36,7 @@ StarterGui.ResetPlayerGuiOnSpawn = false;
 
 initRocketLaunch();
 initEndGameButton();
+initLossReward();
 MoneyDisplay.init();
 initInformationText();
 initRoomPrompts();

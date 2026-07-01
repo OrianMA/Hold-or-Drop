@@ -30,9 +30,10 @@ function waitForRespawn(player: Player): void {
 export const EndGameButtonModule = {
 	// Called from ButtonInGameModule once an outcome is determined.
 	// baseCash + multiplier drive the popup animation client-side; earned is the
-	// amount we credit when the animation finishes. lossMultiplier (1 for wins,
-	// LOOSE_WIN_MULTIPLIER for kills) is the factor applied to baseCash by the
-	// client-side penalty animation before the multiplier drain.
+	// amount we credit when the animation finishes. lossMultiplier is the factor
+	// applied to baseCash by the client-side penalty animation before the multiplier
+	// drain — always 1 now (a losing explosion uses enterRewardOnly, no popup), but
+	// kept so the client penalty branch (lossMultiplier < 1) stays supported.
 	enter(
 		player: Player,
 		mode: EndGameMode,
@@ -62,6 +63,19 @@ export const EndGameButtonModule = {
 			UiService.Show(player, PopupType.ButtonFinishGame);
 			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier, lossMultiplier);
 		});
+	},
+
+	// Losing explosion: no ButtonFinishGame popup. The player gets a flat consolation
+	// (baseCash / 3) shown as a single jumping text that flies into the money HUD
+	// (client LossRewardBehavior). We reuse the same pending-credit path as the popup:
+	// the client fires EndGameFinishedEvent once the text lands, and the init() handler
+	// below credits `reward` and reconciles the HUD counter — no double count.
+	enterRewardOnly(player: Player, reward: number): void {
+		ButtonSessionService.cleanup(player);
+		UiService.HideCurrent(player); // hide the RocketLaunch popup (no finish popup opens)
+
+		pendingEarned.set(player, reward);
+		Events.LossRewardEvent.FireClient(player, reward);
 	},
 
 	// Wired by services/index.ts so the popup hides once the client animation finishes

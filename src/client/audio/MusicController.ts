@@ -1,11 +1,15 @@
 import { ContentProvider, Players, SoundService, TweenService } from "@rbxts/services";
 import { AudioConfig } from "shared/AudioConfig";
 
-// Musique client : BGM (nouvelle API audio, pour exposer un spectre au visualiser) +
-// musique du bouton (Sound classique, inchangée). SFX restent à leurs call sites.
+// Musique client : BGM de base (nouvelle API audio, pour exposer un spectre au visualiser)
+// qui joue en permanence + piste "haute altitude" (Sound classique) crossfadée par-dessus
+// quand la fusée dépasse le seuil d'altitude. SFX restent à leurs call sites.
 
-// La BGM ducke vite au début d'un hold puis revient lentement une fois le run terminé.
-const BGM_FADE_OUT = 0.4;
+// Crossfade BGM de base -> piste haute altitude au passage du seuil.
+const CROSSFADE_TO_HIGH = 0.8;
+// Coupe rapide de la musique du run au moment de l'explosion (l'explosion est brutale).
+const RUN_CUT = 0.25;
+// Retour lent de la BGM de base une fois le run terminé.
 const BGM_RESUME = 3;
 
 // BGM via la nouvelle API audio : AudioPlayer -> AudioFader -> AudioDeviceOutput (audible)
@@ -19,8 +23,9 @@ let bgmIndex = 0;
 let bgmFadeTween: Tween | undefined;
 let bgmDucked = false;
 
-// Musique du bouton — Sound classique, créée/jouée à la demande.
-let buttonMusic: Sound | undefined;
+// Piste "haute altitude" — Sound classique bouclée, crossfadée par-dessus la BGM de base.
+let highTrack: Sound | undefined;
+let highTrackFadeTween: Tween | undefined;
 
 function createSound(id: string, volume: number, name: string, looped: boolean): Sound {
 	const sound = new Instance("Sound");
@@ -55,8 +60,30 @@ function fadeBgm(targetVolume: number, duration: number): void {
 	bgmFadeTween.Play();
 }
 
-// Fin du run — ramène la BGM lentement. No-op si elle n'est pas duckée.
+// Fait fondre le volume de la piste haute altitude (Sound classique) vers une cible.
+// Annule tout fade en cours pour éviter deux tweens concurrents sur Volume.
+function fadeHighTrack(targetVolume: number, duration: number): void {
+	if (!highTrack) return;
+	highTrackFadeTween?.Cancel();
+	highTrackFadeTween = TweenService.Create(
+		highTrack,
+		new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ Volume: targetVolume },
+	);
+	highTrackFadeTween.Play();
+}
+
+// Coupe net la piste haute altitude (annule son fade et la stoppe).
+function stopHighTrack(): void {
+	highTrackFadeTween?.Cancel();
+	highTrackFadeTween = undefined;
+	highTrack?.Stop();
+}
+
+// Fin du run — ramène la BGM de base lentement et s'assure que la piste haute altitude
+// est coupée. No-op sur la BGM si elle n'est pas duckée.
 function resumeBgm(): void {
+	stopHighTrack();
 	if (!bgmDucked) return;
 	bgmDucked = false;
 	fadeBgm(1, BGM_RESUME);
@@ -122,26 +149,40 @@ export const MusicController = {
 			playBgmTrack(0);
 		}
 
-		// Musique du bouton — créée + préchargée maintenant (pas de stall au 1er hold), bouclée.
-		buttonMusic = createSound(AudioConfig.buttonGame.id, AudioConfig.buttonGame.volume, "ButtonGameMusic", true);
-		task.spawn(() => ContentProvider.PreloadAsync([buttonMusic!]));
+		// Piste haute altitude — créée + préchargée maintenant (pas de stall au 1er crossfade), bouclée.
+		highTrack = createSound(AudioConfig.highAltitude.id, AudioConfig.highAltitude.volume, "HighAltitudeMusic", true);
+		task.spawn(() => ContentProvider.PreloadAsync([highTrack!]));
 
 		// Un respawn (typiquement après explosion mortelle) termine le run -> ramène la BGM.
 		Players.LocalPlayer.CharacterAdded.Connect(() => resumeBgm());
 	},
 
-	// Début d'un hold — ducke la BGM et joue la musique de bouton bouclée.
-	playButtonMusic(): void {
-		fadeBgm(0, BGM_FADE_OUT);
-		bgmDucked = true;
-		if (!buttonMusic) return;
-		buttonMusic.TimePosition = 0;
-		buttonMusic.Play();
+	// Début d'un hold — la fusée est sur le pad, sous le seuil : on garde la BGM de base.
+	// On s'assure juste que la piste haute altitude est coupée et la BGM à plein volume
+	// (au cas où une coupe d'explosion précédente l'aurait laissée duckée).
+	startRun(): void {
+		stopHighTrack();
+		bgmDucked = false;
+		fadeBgm(1, 0.3);
 	},
 
-	// Release ou explosion — stoppe seulement la musique de bouton. Idempotent.
-	stopButtonMusic(): void {
-		buttonMusic?.Stop();
+	// La fusée dépasse le seuil d'altitude — crossfade BGM de base -> piste haute altitude.
+	enterHighAltitude(): void {
+		if (!highTrack) return;
+		fadeBgm(0, CROSSFADE_TO_HIGH);
+		bgmDucked = true;
+		highTrack.Volume = 0;
+		highTrack.TimePosition = 0;
+		highTrack.Play();
+		fadeHighTrack(AudioConfig.highAltitude.volume, CROSSFADE_TO_HIGH);
+	},
+
+	// Explosion / fin du run — coupe la piste haute altitude et ducke la BGM de base pour
+	// finir sur du silence. resumeBgm la ramènera au retour sur le joueur. Idempotent.
+	stopRunMusic(): void {
+		stopHighTrack();
+		fadeBgm(0, RUN_CUT);
+		bgmDucked = true;
 	},
 
 	// Fin du run — respawn après mort, ou fin de l'animation de payout.

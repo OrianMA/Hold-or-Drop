@@ -41,7 +41,7 @@ function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDecision 
 		if (player.GetAttribute(STATS[grant.stat].levelAttribute) === undefined) {
 			return Enum.ProductPurchaseDecision.NotProcessedYet;
 		}
-		// addLevel clamps to the stat's cap (e.g. Safety) — a max-level buy is a no-op
+		// addLevel clamps to the stat's cap (e.g. Resistance) — a max-level buy is a no-op
 		// gain but still granted (the client prevents prompting at the cap).
 		PlayerProgressionService.addLevel(player, grant.stat, grant.levels);
 		return Enum.ProductPurchaseDecision.PurchaseGranted;

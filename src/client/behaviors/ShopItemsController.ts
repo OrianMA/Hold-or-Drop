@@ -61,8 +61,7 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 	const cfg = STATS[item.stat];
 	titleText.Text = item.title;
 
-	// Robux dev product (grants `levels` of this stat). Same product backs both
-	// BaseCash frames (+1 and +5) via the shared stat.
+	// Robux dev product (grants `levels` of this stat).
 	const robuxButton = buttons.WaitForChild("RobuxButton") as TextButton;
 	const robuxGainLabel = robuxButton.WaitForChild("GainQuantityText") as TextLabel;
 	const robuxPriceLabel = robuxButton.WaitForChild("RobuxQuantityText") as TextLabel;
@@ -71,7 +70,7 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 		robuxGainLabel.Text = `+${product.levels} niv.`;
 		fetchRobuxPrice(product.productId, robuxPriceLabel);
 		robuxButton.Activated.Connect(() => {
-			// Refuse at the cap (Safety): no prompt, just inform the player.
+			// Refuse at the cap (Resistance): no prompt, just inform the player.
 			if (isAtCap(item.stat, getLevel(cfg.levelAttribute))) {
 				InformationText.show("Niveau maximum atteint", DENIED_COLOR);
 				return;
@@ -101,7 +100,7 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 		const price = priceForItem(item, level);
 		priceLabel.Text = `${FormatNumber(price)}$`;
 		setAffordable(buyButton, priceLabel, getMoney() >= price);
-		// Restore the Robux button (e.g. Safety dropped back below cap on rebirth).
+		// Restore the Robux button (e.g. Resistance dropped back below cap on rebirth).
 		if (product) {
 			robuxGainLabel.Text = `+${product.levels} niv.`;
 			robuxButton.AutoButtonColor = true;
@@ -138,5 +137,5 @@ export function init(): void {
 	player.GetAttributeChangedSignal("Money").Connect(refreshAll);
 	player.GetAttributeChangedSignal("BaseCashLevel").Connect(refreshAll);
 	player.GetAttributeChangedSignal("RocketSpeedLevel").Connect(refreshAll);
-	player.GetAttributeChangedSignal("SafetyLevel").Connect(refreshAll);
+	player.GetAttributeChangedSignal("ResistanceLevel").Connect(refreshAll);
 }

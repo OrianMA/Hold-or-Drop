@@ -69,10 +69,10 @@ src/
 │   └── main.server.ts
 ├── client/                  # StarterPlayerScripts — visuals, input, camera
 │   ├── main.client.ts       # Entry: wires up all client behaviors
-│   ├── behaviors/           # ButtonMenu / RocketLaunch / EndGameButton / Shop behaviors
+│   ├── behaviors/           # ButtonMenu / RocketLaunch / EndGameButton / LossReward / Shop behaviors
 │   │   └── ShopBehavior (open/close), ShopItemsController (4 upgrade buttons), ShopMoneyBuyBehavior (Robux money popup)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
-│   ├── audio/MusicController.ts  # BGM playlist + button-hold music
+│   ├── audio/MusicController.ts  # BGM playlist + high-altitude ascent track
 │   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, etc.)
 └── shared/                  # ReplicatedStorage — code/data used by both sides
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
@@ -108,11 +108,11 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 3. `MoneyProductService` — set `MarketplaceService.ProcessReceipt`; credit `Money` for the 9
    Robux "buy money" developer products (needs PlayerData ready — see §6.15)
 4. `PlayerProgressionService` — load/persist the progression **levels** + `Rebirths`, derive
-   `BaseCash`, `Multiplier`, `AdditionalSecurity`, `MultRebirth` (must run before RoomService
+   `BaseCash`, `Multiplier`, `Resistance`, `MultRebirth` (must run before RoomService
    so the `BaseCash` attribute exists at room assignment)
 5. `BoostService` — resolve group + game-pass ownership into input attributes (`InCommunity`,
-   `MoneyTierMult`, `HasSafetyPass`), then call `PlayerProgressionService.recompute` to
-   fold them into `MoneyMult` / `EffectiveBaseCash` / `AdditionalSecurity`; needs
+   `MoneyTierMult`, `HasResistancePass`), then call `PlayerProgressionService.recompute` to
+   fold them into `MoneyMult` / `EffectiveBaseCash` / `Resistance`; needs
    Progression's `recompute`, runs before `RoomService`
 6. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
 7. `RebirthService` — handle `RebirthEvent`: validate `Money ≥ rebirthCost(Rebirths)`, reset
@@ -234,9 +234,17 @@ the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17
   number continuously** between ticks (RenderStepped) so it passes through every intermediate
   value (1.01, 1.02, …) rather than jumping. No floating labels (removed).
 - **Risk loop** (`TICK_RATE` = 0.5s): `getRisk(t)` is `MAX_RISK * (t/TOTAL_DURATION)²`
-  (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s), then scaled by
-  the player's **Safety**: `risk = getRisk(t) * (1 - safety)` (safety 0..0.70, read once at
-  session start — see §6.6). Each tick rolls `math.random() < risk`.
+  (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s), then reshaped by
+  the player's **Resistance** (0..100, read once at session start — see §6.6) via
+  `resistanceRiskParams` → a `{riskScale, safeWindow}` profile: `riskAt(t)` is `0` while
+  `t ≤ safeWindow`, else `getRisk(t − safeWindow) * riskScale`. `riskScale` is FRONT-loaded
+  (first levels cut risk hugely, last levels barely — so level 20 already averages ~20s) and
+  `safeWindow` is BACK-loaded (≈0 until high resistance, ~15s at level 100 — a max rocket
+  can't blow before ~15s). At resistance 0 both are neutral → identical to the base curve.
+  The exact explosion instant is precomputed once at launch (`rollExplosionTime`, same
+  distribution); each tick just refreshes the bar with `riskAt(t)`. Tunables live at the top
+  of `ButtonInGameModule.ts` (`RESISTANCE_MAX_REDUCTION`, `RESISTANCE_REDUCTION_CURVE`,
+  `RESISTANCE_MAX_SAFE_WINDOW`, `RESISTANCE_SAFE_WINDOW_CURVE`).
 
 Every ending **stops + resets the rocket** to its launch pad (`RocketLauncher`, §6.17).
 
@@ -274,19 +282,23 @@ Endings:
     client (`PlayerKilledEvent`) keeps the orbit camera on the exploding rocket for
     `EXPLOSION_VIEW_DELAY` (impact FOV punch + shake) before swinging back, then
     `RocketLauncher.reset` snaps the rig back to the pad and **`RocketPlacer.place` swaps in a
-    brand-new rocket** (the exploded one is destroyed, not reassembled) before the partial payout
-    `floor(EffectiveBaseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)` runs. (No
-    `Humanoid.Health=0` / Motor6D disable anymore.) The `ClaimButton` does **not** disappear on a
-    loss — it turns red and `Interactable=false` (reset to normal at the next launch). There is
-    **no pre-explosion "cling" sound** (removed).
+    brand-new rocket** (the exploded one is destroyed, not reassembled). A loss pays **no
+    ButtonFinishGame popup**: instead a **flat consolation `floor(EffectiveBaseCash / 3)`**
+    (`LOSS_CONSOLATION_DIVISOR`, **no multiplier** — holding longer doesn't raise it) is granted
+    via `EndGameButtonModule.enterRewardOnly` → `LossRewardEvent`, shown client-side by
+    `LossRewardBehavior` as a single "+amount" text that jumps then flies into the money HUD
+    (§6.4). (No `Humanoid.Health=0` / Motor6D disable anymore.) The `ClaimButton` does **not**
+    disappear on a loss — it turns red and `Interactable=false` (reset to normal at the next
+    launch). There is **no pre-explosion "cling" sound** (removed).
 
-> All payout paths (claimed-win, parry-success, loss) are floored and use `EffectiveBaseCash` —
-> the rebirth multiplier and all boosts are already folded into it (see §6.6). `EffectiveBaseCash`
-> is read once at session start so a mid-run boost change can't affect an in-progress hold. A
-> **claimed** run pays the locked `claimedMultiplier` (captured at claim time, so the EndGame
-> popup uses that exact value); the other paths pay the live `currentMultiplier`. There is no
-> separate `MultRebirth` factor at payout time. The old grace-period "release to cancel" is gone
-> (the button now claims, not releases).
+> All payout paths are floored and use `EffectiveBaseCash` — the rebirth multiplier and all
+> boosts are already folded into it (see §6.6). `EffectiveBaseCash` is read once at session start
+> so a mid-run boost change can't affect an in-progress hold. A **claimed** run pays the locked
+> `claimedMultiplier` (captured at claim time, so the EndGame popup uses that exact value);
+> **parry-success** pays the live `currentMultiplier`; a **loss** pays a flat `EffectiveBaseCash / 3`
+> **with no multiplier at all** (a longer, greedier hold you then lose is worth no more than a
+> short one). There is no separate `MultRebirth` factor at payout time. The old grace-period
+> "release to cancel" is gone (the button now claims, not releases).
 
 `triggerExplosionAt` is now used **only** for the parry-success visual (a `blastPressure=0`
 `Explosion` at the button — no fling). The 3D boom (used by both parry-success and the rocket
@@ -302,6 +314,12 @@ exactly. `multRebirth` was removed from the payload; the client animation no lon
 gold rebirth phase. The client signals `EndGameFinishedEvent` when the animation ends →
 server credits `Money` and hides the popup.
 **Money is credited only after the client animation completes** (single source of truth).
+- `enterRewardOnly(player, reward)` is the **losing-explosion** path (§6.3): no popup — it
+  cleans up the session, hides the `RocketLaunch` popup, stashes `reward` in the **same
+  `pendingEarned` map**, and fires `LossRewardEvent(reward)`. The client (`LossRewardBehavior`)
+  re-enables the HUD, jumps a single "+reward" text into the money display, then fires the
+  **shared** `EndGameFinishedEvent` on arrival → the same handler credits `reward` and the HUD
+  counter reconciles with no jump. One new server→client event, and no duplicate credit logic.
 
 ### 6.5 Popups (`UI/Popup.ts`, `UI/PopupConfig.ts`, `services/UiService.ts`)
 - `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `RocketLaunch`, `ButtonFinishGame`.
@@ -320,12 +338,14 @@ server credits `Money` and hides the popup.
 - `PlayerDataService` → `Money` **and `Playtime`** (total seconds played, accumulated across
   sessions; defaults 0 for existing saves — no version bump) (store `PlayerData_v1`).
 - `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `RocketSpeedLevel`,
-  `SafetyLevel` **and the `Rebirths` count** (store `PlayerProgression_v2`). The effective
-  values `BaseCash`, `RocketSpeed`, `AdditionalSecurity` are **derived** from the levels, and
+  `ResistanceLevel` **and the `Rebirths` count** (store `PlayerProgression_v2`). The effective
+  values `BaseCash`, `RocketSpeed`, `Resistance` are **derived** from the levels, and
   `MultRebirth` is derived from `Rebirths`, all via `shared/ShopConfig` and mirrored to
   attributes (levels, values, `Rebirths` and `MultRebirth` all replicate). Storing levels/count
   means the curves can be retuned later with **zero save migration** — and `Rebirths` is a new
-  field that defaults to 0 for existing saves (no version bump).
+  field that defaults to 0 for existing saves (no version bump). The old `SafetyLevel` key was
+  renamed to `ResistanceLevel` (no version bump): existing saves have no `ResistanceLevel`, so
+  those players simply start at Resistance 0 — acceptable since Resistance resets every rebirth.
   - **Derived boost attributes** (`deriveValues` / `recompute`): `MoneyMult` and
     `EffectiveBaseCash` are also derived and mirrored to attributes on every recompute.
     `MoneyMult` uses the **additive bonus model**: `MoneyMult = 1 + Σ(mᵢ − 1)`, i.e.
@@ -333,18 +353,17 @@ server credits `Money` and hides the popup.
     start at 1 and contribute their excess above 1, so a solo factor of ×2 gives ×2 total.
     `EffectiveBaseCash = floor(BaseCash × MoneyMult)` — this is the value used by the
     billboard, HUD, and payout (§6.3).
-    `AdditionalSecurity` now includes the safety pass:
-    `AdditionalSecurity = min(shopSafety + (HasSafetyPass ? 0.20 : 0), 0.70)` (cap raised
-    from 0.50 to 0.70).
+    `Resistance` folds in the resistance pass (flat bonus LEVELS):
+    `Resistance = min(shopResistance + (HasResistancePass ? RESISTANCE_PASS.addLevels : 0), 100)`.
 - **`BoostService`** resolves the three live input attributes each session (not persisted,
   no DataStore key, no migration needed):
   - `InCommunity` — `true` if the player is a member of group `963505568`; re-checked
     server-side via `BoostService.refreshCommunity` when the player uses `CommunityJoinPart`.
   - `MoneyTierMult` — the multiplier of the highest money-tier game-pass the player owns
     (table `MONEY_TIERS` in `shared/ShopBalance.ts` — ids configured ×2…×1024); defaults to 1.
-  - `HasSafetyPass` — `true` if the player owns the safety game-pass (id 0 = inert).
+  - `HasResistancePass` — `true` if the player owns the resistance game-pass (id 0 = inert).
   After writing these attributes `BoostService` calls `PlayerProgressionService.recompute`
-  so `MoneyMult` / `EffectiveBaseCash` / `AdditionalSecurity` update immediately.
+  so `MoneyMult` / `EffectiveBaseCash` / `Resistance` update immediately.
   - **Game-pass ownership is a per-player SET** of owned ids, seeded once on join (real
     `UserOwnsGamePassAsync`, or the `CheatConfig` simulation — §9) and updated **directly**
     from `PromptGamePassPurchaseFinished` using the purchased id (then `recount` → `recompute`).
@@ -362,9 +381,10 @@ server credits `Money` and hides the popup.
 - `get/set/add(player, key, …)` are the public accessors. Bump `STORE_NAME` (`_v2`) to wipe
   everyone. **API Services must be enabled** in Studio for DataStores to work.
 
-> `AdditionalSecurity` (0..0.70, sold as **Safety** in the shop + optionally boosted by the
-> safety game-pass) scales the explosion risk: the risk loop reads it once at session start and
-> applies `risk *= (1 - safety)` (see §6.3). The cap is 0.70 = shop 0.50 + pass 0.20.
+> `Resistance` (0..100, sold as **Resistance** in the shop + optionally boosted by the
+> resistance game-pass) reshapes the explosion risk: the risk loop reads it once at session
+> start and maps it to a `{riskScale, safeWindow}` profile (see §6.3). The cap is 100 =
+> shop 100 (+ pass levels, clamped).
 
 ### 6.7 Camera & HUD (client)
 - `CameraController` (shared): `SetCinematic` (Scriptable), `AnimateTo` (tween CFrame),
@@ -427,17 +447,21 @@ server credits `Money` and hides the popup.
 - The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `InGameUI/ShopMenu`,
   open/close handled by `ShopBehavior`). Four buttons map to the upgrades:
   `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CRocketSpeed` = RocketSpeed +1,
-  `DSafety` = Safety +1.
+  `DSafety` = Resistance +1 (the Studio frame is still named `DSafety`; only the code stat and
+  the player-facing title changed to Resistance).
 - **`ShopBalance` (shared)** holds every tunable economy number (start prices, value/price
-  growth, Safety cap) and nothing else — **the file to edit when rebalancing**.
+  growth, Resistance cap) and nothing else — **the file to edit when rebalancing**. (The
+  Resistance→risk *curve* constants live in `ButtonInGameModule.ts`, not here — see §6.3.)
 - **`ShopConfig` (shared)** is the structure + logic, fed by `ShopBalance`: `ITEMS`, per-stat
   `STATS` (value attribute, level attribute, `startPrice`, optional `maxLevel`, `valueFor`,
   `display`) and pure pricing helpers — `priceForLevel` = `floor(start * PRICE_GROWTH^level)`,
   `priceForItem` (strict sum of the next N levels), `isAtCap`. Imported by both sides so
   prices/stat previews computed on the client always match the server.
   - Curves: BaseCash `floor(100 * 1.2^level)`, RocketSpeed `1 + level` (integer, uncapped),
-    Safety `level * 0.05` capped at `0.5` (`maxLevel` 10). Start prices 25 / 100 / 500. The
+    Resistance `level` (plain integer, `maxLevel` 100). Start prices 25 / 100 / 500. The
     RocketSpeed value scales the rocket's ascent (and thus the multiplier) — see §6.3 / §6.17.
+    The Resistance *value* is just the level; its non-linear effect on risk is applied in the
+    risk loop (§6.3), not in the stat curve.
 - **`ShopService` (server)** owns the **cash** mutation path. On `ShopPurchaseEvent` it validates
   the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
   + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
@@ -447,20 +471,20 @@ server credits `Money` and hides the popup.
   `MoneyProductService.ProcessReceipt`, see §6.15.
 - **`ShopItemsController` (client)** binds the four frames. For each it renders current→next stat
   (`BoostLyout/CurrentStatText` → `NextStatText`) and the cash price (`BuyButton/TextLabel`),
-  greys unaffordable buttons, shows `MAX` at the Safety cap, and fires `ShopPurchaseEvent`. It
+  greys unaffordable buttons, shows `MAX` at the Resistance cap, and fires `ShopPurchaseEvent`. It
   **also wires each frame's `RobuxButton`** to the matching level dev product
   (`shared/LevelProducts.ts`, resolved by the frame's stat): sets the gain label
   (`GainQuantityText` = `"+{levels} niv."`) + the Robux price (`RobuxQuantityText` via cached
-  `GetProductInfo`) and prompts `MarketplaceService:PromptProductPurchase` on click. The Safety
-  RobuxButton is **refused at the cap** — no prompt, just an `InformationText` "Niveau maximum
-  atteint" (and the button greys with `MAX`). It refreshes purely from replicated attributes
-  (`Money` + the three level attributes) — no server→client response event.
+  `GetProductInfo`) and prompts `MarketplaceService:PromptProductPurchase` on click. The
+  Resistance RobuxButton is **refused at the cap** — no prompt, just an `InformationText` "Niveau
+  maximum atteint" (and the button greys with `MAX`). It refreshes purely from replicated
+  attributes (`Money` + the three level attributes) — no server→client response event.
 - **Multiplier readout** (`ShopMenu/Header/MultiplierText`): displays the current `MoneyMult`
   and its breakdown (rebirth factor, community bonus, money-tier bonus) so the player can see
   each factor at a glance.
 - **`BoostShopController` (client)**: now **read-only** — it just drives the multiplier readout
   above (refreshing on `MoneyMult` / `MultRebirth` / `MoneyTierMult` / `InCommunity`). The shop
-  RobuxButtons it used to wire (`AButtonMoney` money-tier upsell, `DSafety` safety pass) were
+  RobuxButtons it used to wire (`AButtonMoney` money-tier upsell, `DSafety` resistance pass) were
   repurposed for the level dev products (see `ShopItemsController` above); the money-tier
   game-pass upsell now lives only on the HUD `MultiplierBuyButton` (`MultiplierPassController`).
 - **`MultiplierPassController` (client)** — the HUD "buy multiplier pass" button
@@ -502,7 +526,7 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 
 ### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`, `client/audio/UiClickSound.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
-  the BGM `playlist`, the `buttonGame` hold music, and the `sfx` (server `explosion` +
+  the BGM `playlist`, the `highAltitude` ascent track, and the `sfx` (server `explosion` +
   `rocketLaunch` (looped 3D engine roar — see §6.17),
   client `parry` / `buttonUpgrade` / `moneyGain` / `uiClick`; `buttonExplode` is still defined
   but no longer played — the pre-explosion "cling" cue was removed). SFX still play
@@ -528,23 +552,26 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
     for the visualiser (§6.11): an `AudioPlayer` → `AudioFader` → `AudioDeviceOutput` (audible)
     plus a `Wire` branch from the **player** (before the fader) to an `AudioAnalyzer`
     (`SpectrumEnabled`, `WindowSize` Medium). A single track loops via `Looping`; multiple tracks
-    advance on `Ended` and wrap back to the first. Started in `main.client.ts`. It **ducks** for
-    the whole run: `playButtonMusic` tweens the **`AudioFader.Volume`** (multiplier 1=full / 0=mute)
-    to 0 fast (0.4s) — the player's own `Volume` stays constant, so the analyzer (tapped before the
-    fader) keeps reading the full spectrum and the **visualiser keeps running through the run**. The
-    audible BGM stays silent through the explosion/parry/payout, then `resumeBgm` eases it back in
-    slowly (3s) once the run is fully over — on **respawn** (death path, via
+    advance on `Ended` and wrap back to the first. Started in `main.client.ts`. The base BGM
+    **plays through the whole ascent** (no more duck at hold start): `startRun()` just makes sure
+    the high-altitude track is stopped and the `AudioFader.Volume` is at full. The fader ducks only
+    at two moments — the **altitude crossfade** and the **explosion cut** — and the player's own
+    `Volume` stays constant, so the analyzer (tapped before the fader) keeps reading the full
+    spectrum and the **visualiser keeps running through the run**. On any run end `resumeBgm` eases
+    the base BGM back in slowly (3s) once the run is fully over — on **respawn** (death path, via
     `CharacterAdded`) or at the **end of the payout animation** (survive path, fired from
     `EndGameButtonBehavior`). `resumeBgm` is a no-op unless ducked; a single stored tween is
     cancelled before each new fade. `getBgmAnalyzer()` exposes the analyzer to the visualiser
     (client-only — `GetSpectrum` returns empty server-side).
-  - **Button-hold music**: a **classic `Sound`** (unchanged by the audio-API migration), created
-    + preloaded at init (no CDN stall on first hold), looped. `RocketLaunchBehavior` drives it —
-    `playButtonMusic()` at hold start (`setup`) and `stopButtonMusic()` at the explosion —
-    on `ButtonExplodedEvent` (unclaimed, before the parry window) and on `PlayerKilledEvent`
-    (claimed win / loss, which has no `ButtonExplodedEvent`).
-    `stopButtonMusic()` only stops the music (it no longer touches the BGM); both it and
-    `resumeBgm` are idempotent.
+  - **High-altitude music**: a **classic `Sound`** (looped), created + preloaded at init (no CDN
+    stall on the first crossfade). `RocketLaunchBehavior` captures the rocket's Y at launch (the
+    camera's `CameraSubject` **is** the rocket part during a run) and, once it has climbed
+    `HIGH_ALTITUDE_MUSIC_THRESHOLD` (50) studs, calls `enterHighAltitude()` **once per run** — which
+    crossfades: `AudioFader.Volume` → 0 while the high track fades in (0.8s). At the explosion,
+    `stopRunMusic()` hard-cuts the high track and quickly ducks the base BGM to 0 (0.25s) so the run
+    ends on silence, then `resumeBgm` brings the base BGM back. Called on `ButtonExplodedEvent`
+    (unclaimed, before the parry window) and on `PlayerKilledEvent` (claimed win / loss, which has
+    no `ButtonExplodedEvent`). `startRun` / `stopRunMusic` / `resumeBgm` are all idempotent.
 
 ### 6.11 Audio Visualizer (`client/ui/AudioVisualizer.ts`)
 Lobby decoration, 100 % client / presentation — no server logic. Any part tagged
@@ -678,7 +705,7 @@ Three families of Robux developer products, all routed through one `ProcessRecei
   (separate from the upgrade `ShopMenu`, §6.8). Nine packs, opened from the HUD's
   `MoneyParent/PlusButton/TextButton`.
 - **Progression products** — 3 products sold on the upgrade `ShopMenu` **RobuxButtons** (§6.8):
-  BaseCash +10 levels (on both the +1 and +5 frames), RocketSpeed +10 levels, Safety +1 level.
+  BaseCash +10 levels (on both the +1 and +5 frames), RocketSpeed +10 levels, Resistance +1 level.
 - **Safe rebirth** — 1 product sold on the Rebirth menu's `SafeRebirthButton` (§6.9): a paid
   rebirth that **keeps all progression** (Money + stat levels) and only grows the permanent
   multiplier. `shared/RebirthProducts.ts` holds the id (`SAFE_REBIRTH_PRODUCT_ID`) +
@@ -702,7 +729,7 @@ Three families of Robux developer products, all routed through one `ProcessRecei
   (route any future developer products through it). On a receipt it looks the product up in **both**
   families: a money pack credits the mapped `amount` via `PlayerDataService.add(player, "Money", …)`;
   a progression product adds `levels` to its stat via `PlayerProgressionService.addLevel` (the
-  `addLevel` clamp handles the Safety cap — a max-level buy still grants but the client prevents
+  `addLevel` clamp handles the Resistance cap — a max-level buy still grants but the client prevents
   prompting at the cap); the safe-rebirth product delegates to `RebirthService.safeRebirth` (+1
   `Rebirths`, keeps Money + levels, swaps the pad rocket — §6.9). Each path returns `PurchaseGranted`;
   it returns `NotProcessedYet` (Roblox retries) when the buyer isn't in-game or their data is still
@@ -871,15 +898,18 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
 | `MAX_RISK` | `ButtonInGameModule.ts` | 0.8 | Risk ceiling |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
+| `RESISTANCE_MAX_REDUCTION` | `ButtonInGameModule.ts` | 0.99 | Risk floor at Resistance 100 (×0.01) — front-loaded curve |
+| `RESISTANCE_REDUCTION_CURVE` | `ButtonInGameModule.ts` | 12 | ↑ = earlier levels cut risk more (lvl 20 ≈ 20s avg) |
+| `RESISTANCE_MAX_SAFE_WINDOW` | `ButtonInGameModule.ts` | 15s | Guaranteed no-explosion head start at Resistance 100 |
+| `RESISTANCE_SAFE_WINDOW_CURVE` | `ButtonInGameModule.ts` | 2.5 | ↑ = safe window stays ~0 until high resistance |
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on loss (rocket explodes) |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
 | Default `BaseCash` / `RocketSpeed` | `PlayerProgressionService.ts` | 100 / 1 | New-player progression (level 0) |
 | Value curves (BaseCash / RocketSpeed) | `shared/ShopBalance.ts` | ×1.2 per level / +1 per level | BaseCash exponential; RocketSpeed integer linear |
 | Price growth | `shared/ShopBalance.ts` | ×1.5 / level | Per-level price multiplier |
-| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 500 | BaseCash / RocketSpeed / Safety lvl 1 |
-| `Safety` cap (shop) | `shared/ShopBalance.ts` | 10 lvls → 50% | Max shop risk reduction (×5% per level) |
-| `SAFETY_PASS` | `shared/ShopBalance.ts` | +0.20 | Additional safety from the safety game-pass |
-| `SAFETY_TOTAL_CAP` | `shared/ShopBalance.ts` | 0.70 | Hard cap on `AdditionalSecurity` (shop 0.50 + pass 0.20) |
+| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 500 | BaseCash / RocketSpeed / Resistance lvl 1 |
+| `Resistance` cap (shop) | `shared/ShopBalance.ts` | 100 lvls | Max resistance level (risk curve in §6.3) |
+| `RESISTANCE_PASS` | `shared/ShopBalance.ts` | +20 lvls | Bonus resistance levels from the resistance game-pass (id 0 = inert) |
 | `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to `MoneyMult` |
 | `MONEY_TIERS` | `shared/ShopBalance.ts` | ×2…×1024, highest owned wins | Game-pass money-tier multipliers (ids configured; sold via shop upsell + HUD MultiplierBuyButton) |
 | Rebirth base cost | `shared/ShopBalance.ts` | 2500 | Cash for the 1st rebirth |
@@ -894,6 +924,9 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 Dev-only flags — **must be `false`/disabled before publishing**:
 - `invincible` — button never explodes.
 - `resetData` — wipe persisted data on join (fresh default profile each time).
+- `ignoreGamePasses` — when on, `BoostService` seeds every player with an empty owned-pass set
+  on join, so you start exactly like a player who never bought any game pass even on an account
+  that owns every pass. Takes priority over `simulateGamePasses` (§6.6).
 - `simulateGamePasses` + `simulatedOwnedPassIds` — when on, `BoostService` ignores real
   game-pass ownership and treats only the listed ids as owned (empty = own nothing), so the
   buy flow can be tested from a not-owned state even on an account that owns every pass (§6.6).

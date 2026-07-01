@@ -7,18 +7,17 @@ local COMMUNITY = _ShopBalance.COMMUNITY
 local MONEY_TIERS = _ShopBalance.MONEY_TIERS
 local PRICE_GROWTH = _ShopBalance.PRICE_GROWTH
 local REBIRTH = _ShopBalance.REBIRTH
+local RESISTANCE = _ShopBalance.RESISTANCE
+local RESISTANCE_PASS = _ShopBalance.RESISTANCE_PASS
 local ROCKET_SPEED = _ShopBalance.ROCKET_SPEED
-local SAFETY = _ShopBalance.SAFETY
-local SAFETY_PASS = _ShopBalance.SAFETY_PASS
-local SAFETY_TOTAL_CAP = _ShopBalance.SAFETY_TOTAL_CAP
 -- ── Shop — structure + formulas ───────────────────────────────────────────────
 -- Pure logic, no side effects. Imported by both the server (purchase authority)
 -- and the client (display). Levels are the persisted source of truth
 -- (PlayerProgressionService); the effective values and prices are *derived* from
 -- the level here. All tunable numbers live in shared/ShopBalance.ts — edit there
 -- to rebalance.
--- A stat is one upgradeable progression value. Multiple shop buttons may target
--- the same stat (BaseCash is sold both as +1 and +5).
+-- A stat is one upgradeable progression value. A shop button targets exactly one
+-- stat (one button per stat for now — the BaseCash +5 button is disabled).
 -- One per shop button under InGameUI/ShopMenu/Body.
 -- Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
 -- number rendering used by NumberFormat without flooring sub-1 values to "0".
@@ -55,16 +54,16 @@ local STATS = {
 			return tostring(value)
 		end,
 	},
-	Safety = {
-		valueAttribute = "AdditionalSecurity",
-		levelAttribute = "SafetyLevel",
-		startPrice = SAFETY.startPrice,
-		maxLevel = SAFETY.maxLevel,
+	Resistance = {
+		valueAttribute = "Resistance",
+		levelAttribute = "ResistanceLevel",
+		startPrice = RESISTANCE.startPrice,
+		maxLevel = RESISTANCE.maxLevel,
 		valueFor = function(level)
-			return math.min(level * SAFETY.perLevel, SAFETY.perLevel * SAFETY.maxLevel)
+			return level
 		end,
 		display = function(value)
-			return string.format("%d%%", math.round(value * 100))
+			return tostring(value)
 		end,
 	},
 }
@@ -73,33 +72,26 @@ local ITEMS = {
 		id = "BaseCash",
 		stat = "BaseCash",
 		quantity = 1,
-		frameName = "AButtonMoney",
+		frameName = "BButtonMoney",
 		title = "Button money",
-	},
-	BaseCashX5 = {
-		id = "BaseCashX5",
-		stat = "BaseCash",
-		quantity = 5,
-		frameName = "BX5ButtonMoney",
-		title = "+5 lvl Button money",
 	},
 	RocketSpeed = {
 		id = "RocketSpeed",
 		stat = "RocketSpeed",
 		quantity = 1,
-		frameName = "CRocketSpeed",
+		frameName = "ARocketSpeed",
 		title = "Rocket speed",
 	},
-	Safety = {
-		id = "Safety",
-		stat = "Safety",
+	Resistance = {
+		id = "Resistance",
+		stat = "Resistance",
 		quantity = 1,
 		frameName = "DSafety",
-		title = "Additionnal safety",
+		title = "Resistance",
 	},
 }
--- Iteration order for the client (matches the A/B/C/D frame ordering).
-local ITEM_ORDER = { "BaseCash", "BaseCashX5", "RocketSpeed", "Safety" }
+-- Iteration order for the client (matches the A/B/D frame ordering).
+local ITEM_ORDER = { "RocketSpeed", "BaseCash", "Resistance" }
 -- Price to go from `level` → `level + 1` for a stat. Deterministic integer so
 -- client and server always agree.
 local function priceForLevel(stat, level)
@@ -158,11 +150,11 @@ local function moneyMult(multRebirth, moneyTierMult, inCommunity)
 	local tierBonus = moneyTierMult - 1
 	return multRebirth + communityBonus + tierBonus
 end
--- Effective safety used by the risk loop: shop Safety + the safety game pass,
--- capped (SAFETY_TOTAL_CAP) so the risk can never reach 0.
-local function effectiveSafety(shopSafety, hasSafetyPass)
-	local total = shopSafety + (if hasSafetyPass then SAFETY_PASS.add else 0)
-	return math.min(total, SAFETY_TOTAL_CAP)
+-- Effective resistance used by the risk loop: shop Resistance + the resistance
+-- game pass (flat bonus levels), capped at the max level.
+local function effectiveResistance(shopResistance, hasResistancePass)
+	local total = shopResistance + (if hasResistancePass then RESISTANCE_PASS.addLevels else 0)
+	return math.min(total, RESISTANCE.maxLevel)
 end
 -- The next money tier strictly above `currentMult` (for the shop upsell), or
 -- undefined if already at the top. Tiers are a ladder — the highest owned wins.
@@ -181,7 +173,7 @@ return {
 	rebirthCost = rebirthCost,
 	rebirthMult = rebirthMult,
 	moneyMult = moneyMult,
-	effectiveSafety = effectiveSafety,
+	effectiveResistance = effectiveResistance,
 	nextMoneyTier = nextMoneyTier,
 	STATS = STATS,
 	ITEMS = ITEMS,

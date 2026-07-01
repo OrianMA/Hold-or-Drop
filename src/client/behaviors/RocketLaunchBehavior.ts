@@ -21,6 +21,13 @@ import {
 let claimButton: TextButton | undefined;
 let multiplierText: TextLabel | undefined;
 let resultMultiplierText: TextLabel | undefined;
+// Popup "gain verrouillé" révélé au claim : CanvasGroup (fade) + Frame qui monte.
+let claimPopupGroup: CanvasGroup | undefined;
+let claimPopup: Frame | undefined;
+let claimPopupResult: TextLabel | undefined;
+let claimPopupOriginalPos: UDim2 | undefined; // position "affichée" (cible de la montée), lue une fois
+let claimPopupRevealId = 0; // jeton anti-collision : invalide un timer de disparition si un reset/reveal survient
+let claimPopupWarmed = false; // pré-chauffage de la texture du CanvasGroup fait une seule fois
 let buttonOriginalSize: UDim2 | undefined;
 let claimButtonOriginalColor: Color3 | undefined;
 let multiplierTextOriginalSize: number | undefined;
@@ -51,6 +58,15 @@ let baseFov = 70;
 let spaceConn: RBXScriptConnection | undefined;
 let activatedConn: RBXScriptConnection | undefined;
 let parryKnockbackCamConn: RBXScriptConnection | undefined;
+
+// Bascule musicale à l'altitude : on capture le Y de la fusée au décollage, puis une fois
+// qu'elle a grimpé HIGH_ALTITUDE_MUSIC_THRESHOLD studs, on crossfade la BGM vers la piste
+// haute altitude (une seule fois par run). Pendant un run la caméra suit la fusée, donc son
+// CameraSubject EST la part de la fusée : on lit son Y en direct, sans plomberie réseau.
+const HIGH_ALTITUDE_MUSIC_THRESHOLD = 50;
+let rocketMusicSubject: BasePart | undefined;
+let rocketBaselineY = 0;
+let highAltitudeReached = false;
 
 // Son de parry — id centralisé dans AudioConfig.
 const SOUND_PARRY_ID = AudioConfig.sfx.parry.id;
@@ -85,6 +101,55 @@ function playClaimCashSound(): void {
 	sound.Ended.Connect(() => sound.Destroy());
 }
 
+// Position "en bas" du popup : sa position d'origine décalée de CLAIM_POPUP_RISE px vers le bas.
+function claimPopupLoweredPos(): UDim2 {
+	const p = claimPopupOriginalPos ?? new UDim2();
+	return new UDim2(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + CLAIM_POPUP_RISE);
+}
+
+// Pré-chauffage : un CanvasGroup n'alloue sa texture interne qu'à son premier rendu
+// (GroupTransparency < 1) ; cette première frame est basse résolution → reveal flou. On force
+// donc un rendu invisible-à-l'oeil (0.99 = 1% d'opacité) au démarrage pour allouer la texture,
+// puis on recoupe le rendu (retour à 1) : aucun coût permanent. Fait une seule fois par session.
+function warmUpClaimPopup(): void {
+	if (claimPopupWarmed || !claimPopupGroup) return;
+	claimPopupWarmed = true;
+	const group = claimPopupGroup;
+	const id = claimPopupRevealId;
+	group.GroupTransparency = 0.99;
+	task.delay(0.3, () => {
+		// Si rien ne s'est affiché entre-temps (id inchangé), on coupe le rendu.
+		if (id === claimPopupRevealId) group.GroupTransparency = 1;
+	});
+}
+
+// État de repos : popup invisible (fade complet) et abaissé, prêt à monter au claim.
+// Bump du jeton pour qu'un timer de disparition en attente ne touche pas un futur reveal.
+function hideClaimPopup(): void {
+	claimPopupRevealId += 1;
+	if (claimPopupGroup) claimPopupGroup.GroupTransparency = 1;
+	if (claimPopup) claimPopup.Position = claimPopupLoweredPos();
+}
+
+// Reveal au claim : on écrit le gain verrouillé, fondu entrant + montée, puis après
+// CLAIM_POPUP_HOLD s le popup se refond (fade out) — sauf si un reset/reveal l'a invalidé.
+function revealClaimPopup(amount: number): void {
+	if (!claimPopupGroup || !claimPopup || !claimPopupResult || !claimPopupOriginalPos) return;
+	claimPopupRevealId += 1;
+	const myId = claimPopupRevealId;
+	claimPopupResult.Text = `$${FormatNumber(amount)}`;
+	// Repart de l'état de repos avant d'animer (au cas où un tween précédent traînerait).
+	claimPopupGroup.GroupTransparency = 1;
+	claimPopup.Position = claimPopupLoweredPos();
+	TweenService.Create(claimPopupGroup, ClaimPopupTI, { GroupTransparency: 0 }).Play();
+	TweenService.Create(claimPopup, ClaimPopupTI, { Position: claimPopupOriginalPos }).Play();
+
+	task.delay(CLAIM_POPUP_HOLD, () => {
+		if (myId !== claimPopupRevealId || !claimPopupGroup) return; // reset/reveal survenu entre-temps
+		TweenService.Create(claimPopupGroup, ClaimPopupFadeTI, { GroupTransparency: 1 }).Play();
+	});
+}
+
 // Live multiplier label text. 2 decimals below 100 ("1.00", "1.05") so the slow
 // early climb is readable, 1 decimal below 1000, then k/M/B suffixes so long holds
 // don't overflow the label.
@@ -117,6 +182,13 @@ const ResetPostProcessTI = new TweenInfo(0.8, Enum.EasingStyle.Quad, Enum.Easing
 const ZoomResetTI = new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const ExplodeFovPunchTI = new TweenInfo(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const EXPLODE_FOV_OVERSHOOT = 18;
+
+// Reveal du popup de gain au claim : le popup part un peu plus bas et transparent, puis
+// monte de CLAIM_POPUP_RISE px en fondu (fade via CanvasGroup) jusqu'à sa position d'origine.
+const CLAIM_POPUP_RISE = 45;
+const CLAIM_POPUP_HOLD = 3; // s d'affichage avant la disparition
+const ClaimPopupTI = new TweenInfo(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
+const ClaimPopupFadeTI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 
 const PerfectParrytime = 2;
 
@@ -196,6 +268,18 @@ export function init(): void {
 	// nombres intermédiaires (lent au début, de plus en plus vite).
 	RunService.RenderStepped.Connect((dt) => {
 		if (!isGameActive || !multiplierText) return;
+
+		// Une fois la fusée montée de HIGH_ALTITUDE_MUSIC_THRESHOLD studs au-dessus du pad,
+		// on crossfade vers la piste haute altitude (une seule fois par run).
+		if (
+			rocketMusicSubject &&
+			!highAltitudeReached &&
+			rocketMusicSubject.Position.Y - rocketBaselineY >= HIGH_ALTITUDE_MUSIC_THRESHOLD
+		) {
+			highAltitudeReached = true;
+			MusicController.enterHighAltitude();
+		}
+
 		if (multiplierElapsed < MULTIPLIER_TICK_RATE) {
 			multiplierElapsed = math.min(multiplierElapsed + dt, MULTIPLIER_TICK_RATE);
 			const a = multiplierElapsed / MULTIPLIER_TICK_RATE;
@@ -216,7 +300,7 @@ export function init(): void {
 			) {
 				lastResultMultiplier = displayedMultiplier;
 				resultUpdateElapsed = 0;
-				resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * displayedMultiplier))}$`;
+				resultMultiplierText.Text = `$${FormatNumber(math.floor(resultBaseCash * displayedMultiplier))}`;
 			}
 		}
 
@@ -270,7 +354,7 @@ export function init(): void {
 		// Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
 		// (vrai aussi bien après un claim qu'après une perte).
 		isGameActive = false;
-		MusicController.stopButtonMusic(); // coupe la musique du hold (cas claim : pas de ButtonExplodedEvent)
+		MusicController.stopRunMusic(); // coupe la musique du run (cas claim : pas de ButtonExplodedEvent)
 		spaceConn?.Disconnect();
 		spaceConn = undefined;
 		activatedConn?.Disconnect();
@@ -449,14 +533,18 @@ export function init(): void {
 	// floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
 	// La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
 	Events.ClaimAcceptedEvent.OnClientEvent.Connect((claimedMultiplier: number) => {
-		if (!resultMultiplierText) return;
-		resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * claimedMultiplier))}$`;
-		resultMultiplierText.Visible = true;
+		const claimedCash = math.floor(resultBaseCash * claimedMultiplier);
+		if (resultMultiplierText) {
+			resultMultiplierText.Text = `$${FormatNumber(claimedCash)}`;
+			resultMultiplierText.Visible = true;
+		}
+		// Popup de gain verrouillé : fondu entrant + montée avec le montant exact.
+		revealClaimPopup(claimedCash);
 	});
 
 	Events.ButtonExplodedEvent.OnClientEvent.Connect(() => {
 		if (!isGameActive) return;
-		MusicController.stopButtonMusic(); // la musique du hold s'arrête à l'instant de l'explosion
+		MusicController.stopRunMusic(); // la musique du run s'arrête à l'instant de l'explosion
 		// 0.2s grace period : release normal encore possible
 		task.delay(0.2, () => {
 			if (released) return;
@@ -473,6 +561,12 @@ export function setup(inGameUI: ScreenGui): void {
 	claimButton = claimButtonFrame.WaitForChild("ClaimButton") as TextButton;
 	multiplierText = popup.WaitForChild("MultiplierText") as TextLabel;
 	resultMultiplierText = popup.WaitForChild("ResultMultiplierText") as TextLabel;
+
+	// Popup de gain (fade + montée) révélé au claim.
+	claimPopupGroup = popup.WaitForChild("CanvasGroup") as CanvasGroup;
+	claimPopup = claimPopupGroup.WaitForChild("ClaimButtonPopup") as Frame;
+	claimPopupResult = claimPopup.WaitForChild("ResultText") as TextLabel;
+	if (!claimPopupOriginalPos) claimPopupOriginalPos = claimPopup.Position;
 
 	// Le ClaimButton joue son propre son (cash) au clic → on demande à UiClickSound de
 	// sauter le clic générique pour ce bouton (attribut lu au moment du clic).
@@ -494,7 +588,18 @@ export function setup(inGameUI: ScreenGui): void {
 	resultBaseCash = (Players.LocalPlayer.GetAttribute("EffectiveBaseCash") as number | undefined) ?? 100;
 	lastResultMultiplier = STARTING_MULTIPLIER;
 	resultUpdateElapsed = 0;
-	MusicController.playButtonMusic(); // début du hold → musique du bouton en boucle
+	// Bascule musicale à l'altitude : baseline = Y de la fusée maintenant (encore sur le pad).
+	// La caméra suit déjà la fusée (StartOrbit), donc son CameraSubject EST la part de la fusée ;
+	// on lit son Y en direct dans la boucle RenderStepped pour détecter le seuil.
+	highAltitudeReached = false;
+	const camSubject = Workspace.CurrentCamera?.CameraSubject;
+	if (camSubject && camSubject.IsA("BasePart")) {
+		rocketMusicSubject = camSubject;
+		rocketBaselineY = camSubject.Position.Y;
+	} else {
+		rocketMusicSubject = undefined;
+	}
+	MusicController.startRun(); // début du hold → la BGM de base continue de jouer
 	ButtonAnimations.playHold(); // remplace la pose "interact" : le perso appuie et reste sur le bouton
 	multiplierText.TextSize = multiplierTextOriginalSize;
 	multiplierText.TextColor3 = multiplierTextOriginalColor;
@@ -518,8 +623,13 @@ export function setup(inGameUI: ScreenGui): void {
 
 	// Aperçu de gain visible dès le décollage : "si je claim maintenant" = baseCash × 1.00x.
 	// Il grimpe ensuite (throttlé) dans la boucle RenderStepped, puis se fige au claim.
-	resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * STARTING_MULTIPLIER))}$`;
+	resultMultiplierText.Text = `$${FormatNumber(math.floor(resultBaseCash * STARTING_MULTIPLIER))}`;
 	resultMultiplierText.Visible = true;
+
+	// Popup de gain caché tant qu'on n'a pas claim (fade complet + abaissé).
+	hideClaimPopup();
+	// Pré-chauffe la texture du CanvasGroup (une seule fois) pour éviter un premier reveal flou.
+	warmUpClaimPopup();
 
 	// Reset UI
 	multiplierText.Text = `${formatMultiplier(STARTING_MULTIPLIER)}x`;

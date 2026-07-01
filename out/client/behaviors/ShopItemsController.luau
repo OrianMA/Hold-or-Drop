@@ -77,8 +77,7 @@ local function bindItem(body, item)
 	local priceLabel = buyButton:WaitForChild("TextLabel")
 	local cfg = STATS[item.stat]
 	titleText.Text = item.title
-	-- Robux dev product (grants `levels` of this stat). Same product backs both
-	-- BaseCash frames (+1 and +5) via the shared stat.
+	-- Robux dev product (grants `levels` of this stat).
 	local robuxButton = buttons:WaitForChild("RobuxButton")
 	local robuxGainLabel = robuxButton:WaitForChild("GainQuantityText")
 	local robuxPriceLabel = robuxButton:WaitForChild("RobuxQuantityText")
@@ -87,7 +86,7 @@ local function bindItem(body, item)
 		robuxGainLabel.Text = `+{product.levels} niv.`
 		fetchRobuxPrice(product.productId, robuxPriceLabel)
 		robuxButton.Activated:Connect(function()
-			-- Refuse at the cap (Safety): no prompt, just inform the player.
+			-- Refuse at the cap (Resistance): no prompt, just inform the player.
 			if isAtCap(item.stat, getLevel(cfg.levelAttribute)) then
 				InformationText:show("Niveau maximum atteint", DENIED_COLOR)
 				return nil
@@ -114,7 +113,7 @@ local function bindItem(body, item)
 		local price = priceForItem(item, level)
 		priceLabel.Text = `{FormatNumber(price)}$`
 		setAffordable(buyButton, priceLabel, getMoney() >= price)
-		-- Restore the Robux button (e.g. Safety dropped back below cap on rebirth).
+		-- Restore the Robux button (e.g. Resistance dropped back below cap on rebirth).
 		if product then
 			robuxGainLabel.Text = `+{product.levels} niv.`
 			robuxButton.AutoButtonColor = true
@@ -152,7 +151,7 @@ local function init()
 	player:GetAttributeChangedSignal("Money"):Connect(refreshAll)
 	player:GetAttributeChangedSignal("BaseCashLevel"):Connect(refreshAll)
 	player:GetAttributeChangedSignal("RocketSpeedLevel"):Connect(refreshAll)
-	player:GetAttributeChangedSignal("SafetyLevel"):Connect(refreshAll)
+	player:GetAttributeChangedSignal("ResistanceLevel"):Connect(refreshAll)
 end
 return {
 	init = init,

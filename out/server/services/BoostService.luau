@@ -7,9 +7,10 @@ local Players = _services.Players
 local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
 local COMMUNITY = _ShopBalance.COMMUNITY
 local MONEY_TIERS = _ShopBalance.MONEY_TIERS
-local SAFETY_PASS = _ShopBalance.SAFETY_PASS
+local RESISTANCE_PASS = _ShopBalance.RESISTANCE_PASS
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local _CheatConfig = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig")
+local ignoreGamePasses = _CheatConfig.ignoreGamePasses
 local simulateGamePasses = _CheatConfig.simulateGamePasses
 local simulatedOwnedPassIds = _CheatConfig.simulatedOwnedPassIds
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
@@ -29,7 +30,7 @@ local HINT_COLOR = Color3.new(0.6, 0.8, 1)
 -- the event's id is correct in production AND testable in Studio.
 local IN_COMMUNITY_ATTR = "InCommunity"
 local MONEY_TIER_MULT_ATTR = "MoneyTierMult"
-local HAS_SAFETY_PASS_ATTR = "HasSafetyPass"
+local HAS_RESISTANCE_PASS_ATTR = "HasResistancePass"
 -- Per-player set of owned game-pass ids — the session source of truth.
 local ownedPasses = {}
 local function getOwned(player)
@@ -52,8 +53,8 @@ local function configuredPassIds()
 			table.insert(ids, _gamePassId)
 		end
 	end
-	if SAFETY_PASS.gamePassId > 0 then
-		local _gamePassId = SAFETY_PASS.gamePassId
+	if RESISTANCE_PASS.gamePassId > 0 then
+		local _gamePassId = RESISTANCE_PASS.gamePassId
 		table.insert(ids, _gamePassId)
 	end
 	return ids
@@ -83,7 +84,7 @@ local function isInCommunity(player)
 	return ok and member == true
 end
 -- Re-derive the boost attributes from the player's owned-pass set (highest money
--- tier wins; safety pass flat add), then fold them into the money multiplier.
+-- tier wins; resistance pass flat add), then fold them into the money multiplier.
 local function recount(player)
 	local set = getOwned(player)
 	local tierMult = 1
@@ -99,12 +100,12 @@ local function recount(player)
 	end
 	player:SetAttribute(MONEY_TIER_MULT_ATTR, tierMult)
 	local _player = player
-	local _condition = SAFETY_PASS.gamePassId > 0
+	local _condition = RESISTANCE_PASS.gamePassId > 0
 	if _condition then
-		local _gamePassId = SAFETY_PASS.gamePassId
+		local _gamePassId = RESISTANCE_PASS.gamePassId
 		_condition = set[_gamePassId] ~= nil
 	end
-	_player:SetAttribute(HAS_SAFETY_PASS_ATTR, _condition)
+	_player:SetAttribute(HAS_RESISTANCE_PASS_ATTR, _condition)
 	PlayerProgressionService:recompute(player)
 end
 -- Synchronous defaults so the attributes exist immediately on join (before the
@@ -112,7 +113,7 @@ end
 local function setDefaults(player)
 	player:SetAttribute(IN_COMMUNITY_ATTR, false)
 	player:SetAttribute(MONEY_TIER_MULT_ATTR, 1)
-	player:SetAttribute(HAS_SAFETY_PASS_ATTR, false)
+	player:SetAttribute(HAS_RESISTANCE_PASS_ATTR, false)
 	PlayerProgressionService:recompute(player)
 end
 -- Full resolve — group membership + game-pass ownership. Yields (web calls); run
@@ -121,7 +122,10 @@ local function resolve(player)
 	player:SetAttribute(IN_COMMUNITY_ATTR, isInCommunity(player))
 	local set = getOwned(player)
 	table.clear(set)
-	if simulateGamePasses then
+	if ignoreGamePasses then
+		-- CHEAT — start like a player who never owned any game pass: seed nothing,
+		-- so the set stays empty regardless of real Roblox ownership.
+	elseif simulateGamePasses then
 		-- TEST MODE — ignore real Roblox ownership, use the configured simulation.
 		for _, id in simulatedOwnedPassIds do
 			set[id] = true

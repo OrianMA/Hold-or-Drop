@@ -6,6 +6,7 @@ local _RocketLaunchBehavior = TS.import(script, script.Parent, "behaviors", "Roc
 local initRocketLaunch = _RocketLaunchBehavior.init
 local setupRocketLaunch = _RocketLaunchBehavior.setup
 local initEndGameButton = TS.import(script, script.Parent, "behaviors", "EndGameButtonBehavior").init
+local initLossReward = TS.import(script, script.Parent, "behaviors", "LossRewardBehavior").init
 local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").MoneyDisplay
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
@@ -37,6 +38,7 @@ local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse"
 StarterGui.ResetPlayerGuiOnSpawn = false
 initRocketLaunch()
 initEndGameButton()
+initLossReward()
 MoneyDisplay:init()
 initInformationText()
 initRoomPrompts()

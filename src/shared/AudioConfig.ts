@@ -11,11 +11,12 @@ export const AudioConfig = {
 		playlist: ["rbxassetid://93145377732572"],
 		volume: 0.3,
 	},
-	// Music played while the player holds the button. Loops for the whole hold,
-	// stops on release or on explosion.
-	buttonGame: {
-		id: "rbxassetid://103902037806976",
-		volume: 0.5,
+	// High-altitude ascent track — crossfades in once the rocket climbs past the
+	// altitude threshold (HIGH_ALTITUDE_MUSIC_THRESHOLD in RocketLaunchBehavior),
+	// then crossfades back out to the base BGM when the run ends. Loops meanwhile.
+	highAltitude: {
+		id: "rbxassetid://104868013423076",
+		volume: 0.3,
 	},
 	// Sound effects — still played from their existing call sites; only the
 	// asset IDs/volumes are centralised here.

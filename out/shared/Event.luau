@@ -41,9 +41,17 @@ do
 	-- EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)
 	local EndGameStartEvent = DefineEvent("EndGameStartEvent", script)
 	_container.EndGameStartEvent = EndGameStartEvent
-	-- EndGameButton — client → server (animation finished, server hides the popup)
+	-- EndGameButton — client → server (animation finished, server hides the popup).
+	-- Also fired by LossRewardBehavior once the consolation text lands, so the same
+	-- pendingEarned credit path banks a losing-explosion reward.
 	local EndGameFinishedEvent = DefineEvent("EndGameFinishedEvent", script)
 	_container.EndGameFinishedEvent = EndGameFinishedEvent
+	-- Losing explosion — server → client (Arg: amount). No ButtonFinishGame popup:
+	-- the player gets a flat consolation (baseCash / 3) shown as a single "+amount"
+	-- text that jumps then flies into the money HUD (LossRewardBehavior). The client
+	-- banks it on arrival by firing EndGameFinishedEvent (shared credit path).
+	local LossRewardEvent = DefineEvent("LossRewardEvent", script)
+	_container.LossRewardEvent = LossRewardEvent
 	-- Generic info popup — server tells client to flash text in InGameUI's
 	-- InformationTextCanvasGroup. Used e.g. for "Not enough money".
 	-- Args: (text: string, color?: Color3).

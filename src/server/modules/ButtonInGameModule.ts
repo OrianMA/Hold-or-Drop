@@ -21,7 +21,9 @@ import { AudioConfig } from "shared/AudioConfig";
 
 const MAX_RISK = 0.8;
 const TICK_RATE = 0.5;
-const LOOSE_WIN_MULTIPLIER = 0.3;
+// Lot de consolation sur une perte (explosion sans claim / parade ratée) :
+// baseCash / 3 — FORFAITAIRE, sans le multiplicateur. Pas de popup de fin.
+const LOSS_CONSOLATION_DIVISOR = 3;
 
 const KNOCKBACK_DISTANCE = 15;
 const KNOCKBACK_DURATION = 0.5;
@@ -70,24 +72,63 @@ function getRisk(timeHeld: number): number {
 	return MAX_RISK * (t * t);
 }
 
+// ── Resistance → risk model ──────────────────────────────────────────────────────
+// Resistance is a 0..100 shop stat (see ShopConfig). It reshapes the explosion risk
+// in two independent ways, so a higher resistance both lasts longer on average AND
+// gets a longer guaranteed-safe head start:
+//   • riskScale  — scales the WHOLE risk curve down. FRONT-loaded (reduction =
+//     MAX_REDUCTION × (1 − (1 − n)^CURVE)): the first levels cut risk hugely, the
+//     last levels barely move it. This is what makes level 20 already ~20s average.
+//   • safeWindow — seconds at the start where risk is forced to 0. BACK-loaded
+//     (n^CURVE × MAX): it stays ~0 until high resistance and only reaches ~15s near
+//     level 100 — so a max rocket can't blow before ~15s, while a level-20 rocket
+//     still has a very small early chance.
+// After the safe window the base curve ramps from 0 (shifted by safeWindow), so the
+// post-window climb is gentle. At resistance 0 both terms are neutral → identical to
+// the un-upgraded curve.
+const RESISTANCE_MAX_LEVEL = 100;
+const RESISTANCE_MAX_REDUCTION = 0.99; // risk floored at ×0.01 at level 100
+const RESISTANCE_REDUCTION_CURVE = 12; // ↑ = more front-loaded (early levels matter more)
+const RESISTANCE_MAX_SAFE_WINDOW = 15; // seconds of guaranteed safety at level 100
+const RESISTANCE_SAFE_WINDOW_CURVE = 2.5; // ↑ = window stays near 0 until higher levels
+
+interface RiskParams {
+	readonly riskScale: number;
+	readonly safeWindow: number;
+}
+
+function resistanceRiskParams(resistance: number): RiskParams {
+	const n = math.clamp(resistance / RESISTANCE_MAX_LEVEL, 0, 1);
+	const reduction = RESISTANCE_MAX_REDUCTION * (1 - (1 - n) ** RESISTANCE_REDUCTION_CURVE);
+	const safeWindow = n ** RESISTANCE_SAFE_WINDOW_CURVE * RESISTANCE_MAX_SAFE_WINDOW;
+	return { riskScale: 1 - reduction, safeWindow };
+}
+
+// Effective per-tick risk at `timeHeld` for a resistance profile. Zero inside the
+// safe window; outside it the base curve ramps from the window's end, scaled down.
+function riskAt(timeHeld: number, params: RiskParams): number {
+	if (timeHeld <= params.safeWindow) return 0;
+	return getRisk(timeHeld - params.safeWindow) * params.riskScale;
+}
+
 // ── Explosion-time preload ──────────────────────────────────────────────────────
-// Safety cap on the precompute loop. Risk plateaus at MAX_RISK once timeHeld passes
-// TOTAL_DURATION, so even at max safety an explosion is statistically certain within a
-// few seconds — this only guards against a pathological never-ending loop.
+// Guard on the precompute loop. At max resistance the risk floor is tiny and the
+// safe window pushes the first roll to ~15s, so a run can last minutes — but never
+// forever. 2000 ticks (1000s) only guards against a pathological never-ending loop;
+// no real hold reaches it.
 const EXPLOSION_ROLL_CAP = 2000;
 
 // Precompute, once at launch, the exact moment the rocket will explode by running the
-// SAME per-tick risk roll the live loop used to do — but all at once, up front. This
-// "loads" the explosion time so the run can fire the explosion at that precise scheduled
-// moment instead of re-rolling RNG every tick and discovering it late (action/event delay).
-// The probability distribution is identical to the old per-tick model, so game balance is
-// unchanged. Returns the time-held (seconds, tick-aligned) at which the rocket explodes.
-function rollExplosionTime(safety: number): number {
+// SAME per-tick risk roll the live loop uses — but all at once, up front. This "loads"
+// the explosion time so the run can fire the explosion at that precise scheduled moment
+// instead of re-rolling RNG every tick and discovering it late (action/event delay).
+// The probability distribution is identical to the live per-tick model. Returns the
+// time-held (seconds, tick-aligned) at which the rocket explodes.
+function rollExplosionTime(params: RiskParams): number {
 	let timeHeld = 0;
 	for (let i = 0; i < EXPLOSION_ROLL_CAP; i++) {
 		timeHeld += TICK_RATE;
-		const risk = getRisk(timeHeld) * (1 - safety);
-		if (math.random() < risk) return timeHeld;
+		if (math.random() < riskAt(timeHeld, params)) return timeHeld;
 	}
 	return timeHeld;
 }
@@ -144,8 +185,10 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// a mid-run boost change can't alter an in-progress hold.
 	const baseCash = PlayerProgressionService.get(player, "EffectiveBaseCash");
 
-	// Safety (0..0.70 with the pass) scales the explosion risk down. Read once.
-	const safety = PlayerProgressionService.get(player, "AdditionalSecurity");
+	// Resistance (0..100, incl. the pass) reshapes the explosion risk — see
+	// resistanceRiskParams. Read once and resolved to its risk profile for the run.
+	const resistance = PlayerProgressionService.get(player, "Resistance");
+	const riskParams = resistanceRiskParams(resistance);
 
 	// Rocket Speed stat value (≥1) scales the rocket's ascent. Read once for the run.
 	const rocketSpeed = PlayerProgressionService.get(player, "RocketSpeed");
@@ -160,7 +203,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// explode (tick-aligned, same distribution as the old per-tick roll). The run then
 	// fires the explosion at this scheduled moment — no per-tick RNG, no discovery delay.
 	// invincible ⇒ never explodes.
-	const explosionAt = invincible ? math.huge : rollExplosionTime(safety);
+	const explosionAt = invincible ? math.huge : rollExplosionTime(riskParams);
 
 	Events.MultiplierUpdateEvent.FireClient(player, currentMultiplier);
 	Events.RiskUpdateEvent.FireClient(player, 0);
@@ -214,8 +257,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 			timeHeld = nextStep;
 
-			// Safety reduces the effective risk: at 50% safety the ceiling halves.
-			const risk = getRisk(timeHeld) * (1 - safety);
+			// Resistance reshapes the effective risk (scale + safe window) — same
+			// profile used to precompute explosionAt, so the bar matches the outcome.
+			const risk = riskAt(timeHeld, riskParams);
 			Events.RiskUpdateEvent.FireClient(player, risk);
 
 			if (!invincible && timeHeld >= explosionAt) {
@@ -340,21 +384,17 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						// Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
 						Events.PlayerKilledEvent.FireClient(player);
 
-						// On laisse l'explosion se jouer avant de ramener le rig + ouvrir le payout.
+						// On laisse l'explosion se jouer avant de ramener le rig.
 						task.wait(EXPLOSION_VIEW_DELAY);
 						RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
 						RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
 
-						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier);
-						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);
-						EndGameButtonModule.enter(
-							player,
-							"killed",
-							baseCash,
-							currentMultiplier,
-							earned,
-							LOOSE_WIN_MULTIPLIER,
-						);
+						// Perte : PAS de popup de fin. Lot de consolation forfaitaire
+						// (baseCash / 3, sans le multiplicateur) montré par un seul texte qui
+						// saute puis file vers l'argent du HUD (client LossRewardBehavior).
+						const reward = math.floor(baseCash / LOSS_CONSOLATION_DIVISOR);
+						Events.GameResultEvent.FireClient(player, true, reward, currentMultiplier);
+						EndGameButtonModule.enterRewardOnly(player, reward);
 					}
 				}
 				return;

@@ -9,9 +9,9 @@ local AudioConfig = {
 		playlist = { "rbxassetid://93145377732572" },
 		volume = 0.3,
 	},
-	buttonGame = {
-		id = "rbxassetid://103902037806976",
-		volume = 0.5,
+	highAltitude = {
+		id = "rbxassetid://104868013423076",
+		volume = 0.3,
 	},
 	sfx = {
 		explosion = {

@@ -8,19 +8,19 @@ local _ShopConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 local STATS = _ShopConfig.STATS
 local rebirthMult = _ShopConfig.rebirthMult
 local moneyMult = _ShopConfig.moneyMult
-local effectiveSafety = _ShopConfig.effectiveSafety
+local effectiveResistance = _ShopConfig.effectiveResistance
 -- Per-player progression. The LEVELS are the persisted source of truth; the
--- effective values (BaseCash, RocketSpeed, AdditionalSecurity) are *derived* from
+-- effective values (BaseCash, RocketSpeed, Resistance) are *derived* from
 -- the levels via shared/ShopConfig and mirrored to attributes so the owning
 -- client, the game loop and the room billboard read them directly (replication).
 --
--- Stored per player (DataStore): BaseCashLevel, RocketSpeedLevel, SafetyLevel.
+-- Stored per player (DataStore): BaseCashLevel, RocketSpeedLevel, ResistanceLevel.
 -- Mirrored attributes: the three level attributes AND the three value attributes.
 --
 -- DataStore access requires API Services enabled in Studio:
 -- Game Settings → Security → "Enable Studio Access to API Services".
 -- The three stats, in a stable iteration order.
-local STAT_LIST = { "BaseCash", "RocketSpeed", "Safety" }
+local STAT_LIST = { "BaseCash", "RocketSpeed", "Resistance" }
 -- Persisted alongside the stat levels (same store table). The reward multiplier
 -- is derived from it like the stat values are derived from their levels.
 local REBIRTHS_KEY = "Rebirths"
@@ -29,16 +29,16 @@ local MULT_REBIRTH_ATTR = "MultRebirth"
 -- is safe before BoostService resolves). game.ts reads the derived attrs below.
 local IN_COMMUNITY_ATTR = "InCommunity"
 local MONEY_TIER_MULT_ATTR = "MoneyTierMult"
-local HAS_SAFETY_PASS_ATTR = "HasSafetyPass"
+local HAS_RESISTANCE_PASS_ATTR = "HasResistancePass"
 -- Derived, replicated for the game loop / billboard / shop readout.
 local MONEY_MULT_ATTR = "MoneyMult"
 local EFFECTIVE_BASE_CASH_ATTR = "EffectiveBaseCash"
--- Value attributes the rest of the game reads (names unchanged from before).
+-- Value attributes the rest of the game reads.
 -- Fallback values if a value attribute is somehow missing (matches level 0).
 local DEFAULT_VALUES = {
 	BaseCash = 100,
 	RocketSpeed = 1,
-	AdditionalSecurity = 0,
+	Resistance = 0,
 	EffectiveBaseCash = 100,
 	MoneyMult = 1,
 }
@@ -82,8 +82,8 @@ local function applyLevels(player, levels)
 	deriveValues(player)
 end
 -- Folds the boost inputs into the replicated derived values. Additive money
--- multiplier (shared/ShopConfig.moneyMult) → EffectiveBaseCash; safety pass →
--- AdditionalSecurity. Reads level/rebirth/input attributes already set on the
+-- multiplier (shared/ShopConfig.moneyMult) → EffectiveBaseCash; resistance pass →
+-- Resistance. Reads level/rebirth/input attributes already set on the
 -- player. Called after every state change (load, purchase, rebirth, boost
 -- resolve) so the billboard / game loop / shop read one source of truth.
 function deriveValues(player)
@@ -107,14 +107,14 @@ function deriveValues(player)
 	local mMult = moneyMult(multRebirth, tierMult, inCommunity)
 	player:SetAttribute(MONEY_MULT_ATTR, mMult)
 	player:SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult))
-	local _condition_3 = (player:GetAttribute(STATS.Safety.levelAttribute))
+	local _condition_3 = (player:GetAttribute(STATS.Resistance.levelAttribute))
 	if _condition_3 == nil then
 		_condition_3 = 0
 	end
-	local safetyLevel = _condition_3
-	local rawSafety = STATS.Safety.valueFor(safetyLevel)
-	local hasPass = player:GetAttribute(HAS_SAFETY_PASS_ATTR) == true
-	player:SetAttribute(STATS.Safety.valueAttribute, effectiveSafety(rawSafety, hasPass))
+	local resistanceLevel = _condition_3
+	local rawResistance = STATS.Resistance.valueFor(resistanceLevel)
+	local hasPass = player:GetAttribute(HAS_RESISTANCE_PASS_ATTR) == true
+	player:SetAttribute(STATS.Resistance.valueAttribute, effectiveResistance(rawResistance, hasPass))
 end
 local function loadLevels(player)
 	if RESET_DATA_CHEAT then

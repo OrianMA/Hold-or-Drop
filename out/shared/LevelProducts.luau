@@ -20,7 +20,7 @@ local LEVEL_PRODUCTS = { {
 	levels = 10,
 }, {
 	productId = 3605484029,
-	stat = "Safety",
+	stat = "Resistance",
 	levels = 1,
 } }
 -- Level grant for a purchased productId, or undefined if it isn't one of ours.
