@@ -7,6 +7,7 @@ import { invincible } from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { ConfettiBurst } from "server/modules/ConfettiBurst";
 import { RocketLauncher } from "server/modules/RocketLauncher";
+import { RocketPlacer } from "server/modules/RocketPlacer";
 import {
 	RISK_RAMP_DURATION,
 	MULTIPLIER_TICK_RATE,
@@ -331,9 +332,10 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 						// Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
 						Events.PlayerKilledEvent.FireClient(player);
 
-						// On laisse l'explosion se jouer avant de ramener la fusée + ouvrir le payout.
+						// On laisse l'explosion se jouer avant de ramener le rig + ouvrir le payout.
 						task.wait(EXPLOSION_VIEW_DELAY);
-						RocketLauncher.reset(room);
+						RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
+						RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
 
 						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier);
 						Events.GameResultEvent.FireClient(player, true, earned, currentMultiplier);

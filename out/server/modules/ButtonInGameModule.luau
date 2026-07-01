@@ -12,6 +12,7 @@ local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
 local ConfettiBurst = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "ConfettiBurst").ConfettiBurst
 local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
+local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
 local RISK_RAMP_DURATION = _RocketGameConfig.RISK_RAMP_DURATION
 local MULTIPLIER_TICK_RATE = _RocketGameConfig.MULTIPLIER_TICK_RATE
@@ -335,9 +336,10 @@ local function startButtonGame(player, session)
 						end
 						-- Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
 						Events.PlayerKilledEvent:FireClient(player)
-						-- On laisse l'explosion se jouer avant de ramener la fusée + ouvrir le payout.
+						-- On laisse l'explosion se jouer avant de ramener le rig + ouvrir le payout.
 						task.wait(EXPLOSION_VIEW_DELAY)
 						RocketLauncher:reset(room)
+						RocketPlacer:place(room)
 						local earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)
 						Events.GameResultEvent:FireClient(player, true, earned, currentMultiplier)
 						EndGameButtonModule:enter(player, "killed", baseCash, currentMultiplier, earned, LOOSE_WIN_MULTIPLIER)

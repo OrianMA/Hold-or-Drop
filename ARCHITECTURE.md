@@ -250,11 +250,13 @@ Endings:
     bursts the `ExplosionParticles` in the rocket's `ParticlesParentPart` + a 3D boom; **no
     `Explosion` instance, no fling, no death**. The player's frozen movement is restored, the
     client (`PlayerKilledEvent`) keeps the orbit camera on the exploding rocket for
-    `EXPLOSION_VIEW_DELAY` (impact FOV punch + shake) before swinging back, then the rocket
-    resets and the partial payout `floor(EffectiveBaseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)`
-    runs. (No `Humanoid.Health=0` / Motor6D disable anymore.) The `ClaimButton` does **not**
-    disappear on a loss — it turns red and `Interactable=false` (reset to normal at the next launch).
-    There is **no pre-explosion "cling" sound** (removed).
+    `EXPLOSION_VIEW_DELAY` (impact FOV punch + shake) before swinging back, then
+    `RocketLauncher.reset` snaps the rig back to the pad and **`RocketPlacer.place` swaps in a
+    brand-new rocket** (the exploded one is destroyed, not reassembled) before the partial payout
+    `floor(EffectiveBaseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier)` runs. (No
+    `Humanoid.Health=0` / Motor6D disable anymore.) The `ClaimButton` does **not** disappear on a
+    loss — it turns red and `Interactable=false` (reset to normal at the next launch). There is
+    **no pre-explosion "cling" sound** (removed).
 
 > All four payout paths (release, grace-cancel, parry-success, loss) are floored and use
 > `EffectiveBaseCash` — the rebirth multiplier and all boosts are already folded into it (see
@@ -758,13 +760,17 @@ clones the right one onto the rig's `RocketSpawnPoint` (§6.1).
 - **Placement:** removes any rocket already on the pad, calls `RocketLauncher.clearRocketCache(room)`
   (rooms are reused across occupants — see §6.17), then clones the template, renames it to the stable
   **`Rocket`** (`ROCKET_MODEL`), **force-anchors every body part** (some templates ship with
-  unanchored parts that would otherwise fall), parents it to the `MovableModel`, and `PivotTo`s it
-  onto the `RocketSpawnPoint`.
+  unanchored parts that would otherwise fall), parents it to the `MovableModel`, and moves its pivot
+  by the delta to **`RocketSpawnPoint`**'s position (orientation kept as authored — the marker's
+  position is authoritative, no ground-snapping/bounding-box correction).
 - **Trigger / async load:** `RoomService.assign` calls it via `placeRocketWhenReady`. Because
   `PlayerProgressionService` loads `Rebirths` asynchronously, the attribute may still be nil at
   assign; if so the placement is deferred until the attribute first appears (a one-shot
-  `GetAttributeChangedSignal`, cleaned up on leave). Re-placement after a played round / on rebirth
-  is **not wired yet** (the rocket only refreshes when the room is (re)assigned).
+  `GetAttributeChangedSignal`, cleaned up on leave). It's also called by `ButtonInGameModule` on a
+  **loss** (rocket explosion) — after `RocketLauncher.reset(room)` snaps the rig back to the pad,
+  `RocketPlacer.place(room)` destroys the exploded rocket and clones a fresh one, so the occupant
+  never sees the blown-apart debris reassemble itself. Release/parry/quit endings just `reset`
+  (no explosion happened, so the same rocket instance is fine).
 - **Authoring note:** only `RocketLvl1`/`RocketLvl2` currently carry a `NitroParticles` engine part,
   so Lvl3–Lvl5 launch without an engine flame (no error — the launcher just finds no `Fire`); add a
   `NitroParticles` part (with a `Fire`) to those templates to restore the effect.
