@@ -169,18 +169,17 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
 	RocketLauncher.launch(room, rocketSpeed);
 
-	const releaseConn = Events.ReleaseButtonEvent.OnServerEvent.Connect((p) => {
-		if (p !== player || !isActive) return;
-		isActive = false;
-		releaseConn.Disconnect();
-
-		// Win : la fusée s'arrête et revient au pad pour la prochaine partie.
-		RocketLauncher.reset(room);
-
-		const earned = math.floor(baseCash * currentMultiplier);
-		Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-		ConfettiBurst.play(buttonModel);
-		EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
+	// Claim : le joueur VERROUILLE le multiplicateur courant en gain garanti. La fusée ne
+	// s'arrête PAS — elle continue de monter (le multiplicateur affiché grimpe encore,
+	// purement visuel) jusqu'à l'explosion, où le payout se fait au multiplicateur
+	// verrouillé EXACT (voir la boucle risque plus bas). Remplace l'ancien "release".
+	let claimed = false;
+	let claimedMultiplier = STARTING_MULTIPLIER;
+	const claimConn = Events.ClaimButtonEvent.OnServerEvent.Connect((p) => {
+		if (p !== player || !isActive || claimed) return;
+		claimed = true;
+		claimedMultiplier = currentMultiplier; // valeur autoritative exacte au moment du claim
+		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier);
 	});
 
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
@@ -221,28 +220,37 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 			if (!invincible && timeHeld >= explosionAt) {
 				isActive = false;
-				releaseConn.Disconnect();
+				claimConn.Disconnect();
 
+				if (claimed) {
+					// Le joueur a claim avant l'explosion → gain GARANTI au multiplicateur
+					// verrouillé. La fusée explose (spectacle), puis le payout se fait au
+					// claimedMultiplier EXACT — pas de fenêtre de parade, aucune pénalité.
+					const rocketPos = room.movableModel.GetPivot().Position;
+					RocketLauncher.explode(room);
+					playExplosionSoundAt(rocketPos); // boom 3D entendu par tous
+
+					// Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
+					Events.PlayerKilledEvent.FireClient(player);
+
+					task.wait(EXPLOSION_VIEW_DELAY);
+					RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
+					RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
+
+					const earned = math.floor(baseCash * claimedMultiplier);
+					// exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
+					Events.GameResultEvent.FireClient(player, true, earned, claimedMultiplier);
+					EndGameButtonModule.enter(player, "killed", baseCash, claimedMultiplier, earned, 1);
+					return;
+				}
+
+				// Pas de claim à temps : l'explosion tombe → dernière chance en parade (parry).
 				Events.ButtonExplodedEvent.FireClient(player);
 
-				// 0.2s grace period — player can still release to cancel the explosion
-				let cancelledByPlayer = false;
-				const gracePeriodConn = Events.ReleaseButtonEvent.OnServerEvent.Connect((p) => {
-					if (p !== player) return;
-					cancelledByPlayer = true;
-					gracePeriodConn.Disconnect();
-				});
-
+				// 0.2s de grâce avant la fenêtre de parade (le client attend 0.2s aussi).
 				task.wait(0.2);
-				gracePeriodConn.Disconnect();
 
-				if (cancelledByPlayer) {
-					RocketLauncher.reset(room);
-					const earned = math.floor(baseCash * currentMultiplier);
-					Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-					ConfettiBurst.play(buttonModel);
-					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
-				} else {
+				{
 					const character = player.Character;
 					const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 					const humanoid = character?.FindFirstChildOfClass("Humanoid");

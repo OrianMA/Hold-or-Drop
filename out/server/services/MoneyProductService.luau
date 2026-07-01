@@ -5,9 +5,11 @@ local MarketplaceService = _services.MarketplaceService
 local Players = _services.Players
 local amountForProduct = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MoneyProducts").amountForProduct
 local levelGrantForProduct = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "LevelProducts").levelGrantForProduct
+local isSafeRebirthProduct = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RebirthProducts").isSafeRebirthProduct
 local STATS = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").STATS
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+local RebirthService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "RebirthService").RebirthService
 -- Authoritative handler for ALL developer products. Owns the game's single
 -- MarketplaceService.ProcessReceipt callback. Two product families route through
 -- here:
@@ -45,6 +47,16 @@ local function processReceipt(receiptInfo)
 		-- addLevel clamps to the stat's cap (e.g. Safety) — a max-level buy is a no-op
 		-- gain but still granted (the client prevents prompting at the cap).
 		PlayerProgressionService:addLevel(player, grant.stat, grant.levels)
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+	if isSafeRebirthProduct(receiptInfo.ProductId) then
+		-- Safe rebirth increments Rebirths — guard on the Rebirths attribute (set by
+		-- PlayerProgressionService after its async load) so the grant never runs
+		-- before/over a fresh progression load and lands on the loaded count.
+		if player:GetAttribute("Rebirths") == nil then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		RebirthService:safeRebirth(player)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	warn(`MoneyProductService: unknown developer product {receiptInfo.ProductId}`)

@@ -240,12 +240,34 @@ the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17
 
 Every ending **stops + resets the rocket** to its launch pad (`RocketLauncher`, §6.17).
 
+**Claim** (`ClaimButtonEvent`, replaces the old instant "release"): pressing `ClaimButton`
+**locks in** the current multiplier as a guaranteed win but the **rocket does NOT stop** — it
+keeps flying (the `MultiplierText` keeps climbing on screen, now purely cosmetic) until it
+explodes. The server captures `claimedMultiplier = currentMultiplier` and fires
+`ClaimAcceptedEvent(claimedMultiplier)`. On claim the `ClaimButton` turns red (the explosion
+colour), plays the **cash SFX** (`AudioConfig.sfx.moneyGain`, not the generic UI click — the
+button carries a `NoUiClick` attribute so `UiClickSound` skips it), and is disabled (no
+double-claim). The strategic tension is now *claim before the rocket explodes*: claim too late
+and the explosion lands first (parry/loss); claim in time and the explosion just collects your
+locked win.
+
+**`ResultMultiplierText`** (a `RocketLaunch` label) is a **live "cash-out preview"**: it shows
+the money you'd bank if you claimed right now — `floor(EffectiveBaseCash × displayedMultiplier)`,
+formatted `"{n}$"` (`FormatNumber`). The client reads `EffectiveBaseCash` once per run (replicated
+attribute) and refreshes the label in the RenderStepped loop, **throttled** — only when the
+multiplier has moved ≥ `RESULT_UPDATE_MULT_STEP` (0.01) **and** ≥ `RESULT_UPDATE_MIN_DELAY`
+(0.2 s) since the last refresh. On claim it snaps immediately to the locked value
+(`floor(EffectiveBaseCash × claimedMultiplier)`, matching the server payout exactly) and freezes.
+
 Endings:
-- **Release** (`ReleaseButtonEvent`): pays `floor(EffectiveBaseCash * currentMultiplier)`, confetti, → EndGame.
-- **Explosion roll hits:** fire `ButtonExplodedEvent`, open a **0.2s grace** (player can
-  still release to cancel), then a **0.5s perfect-parry window** (`PerfectParryEvent`):
+- **Claimed → rocket explodes:** guaranteed win. The rocket bursts (`RocketLauncher.explode` +
+  3D boom + `PlayerKilledEvent` orbit-on-blast), then after `EXPLOSION_VIEW_DELAY`
+  `RocketLauncher.reset` + `RocketPlacer.place` swap in a fresh rocket and the **full** payout
+  `floor(EffectiveBaseCash * claimedMultiplier)` runs → EndGame (`lossMultiplier=1`, **no parry**).
+- **Explosion roll hits before any claim:** fire `ButtonExplodedEvent`, open a **0.2s grace**
+  (delay before the parry cue), then a **0.5s perfect-parry window** (`PerfectParryEvent`):
   - **Parry success:** visual-only explosion (`blastPressure=0`), sparkle effect, knockback
-    tween, full payout. Movement frozen during the window, restored after.
+    tween, full payout at `currentMultiplier`. Movement frozen during the window, restored after.
   - **Parry fail (loss):** the **rocket explodes, not the player** — `RocketLauncher.explode`
     bursts the `ExplosionParticles` in the rocket's `ParticlesParentPart` + a 3D boom; **no
     `Explosion` instance, no fling, no death**. The player's frozen movement is restored, the
@@ -258,10 +280,13 @@ Endings:
     loss — it turns red and `Interactable=false` (reset to normal at the next launch). There is
     **no pre-explosion "cling" sound** (removed).
 
-> All four payout paths (release, grace-cancel, parry-success, loss) are floored and use
-> `EffectiveBaseCash` — the rebirth multiplier and all boosts are already folded into it (see
-> §6.6). `EffectiveBaseCash` is read once at session start so a mid-run boost change can't
-> affect an in-progress hold. There is no separate `MultRebirth` factor at payout time.
+> All payout paths (claimed-win, parry-success, loss) are floored and use `EffectiveBaseCash` —
+> the rebirth multiplier and all boosts are already folded into it (see §6.6). `EffectiveBaseCash`
+> is read once at session start so a mid-run boost change can't affect an in-progress hold. A
+> **claimed** run pays the locked `claimedMultiplier` (captured at claim time, so the EndGame
+> popup uses that exact value); the other paths pay the live `currentMultiplier`. There is no
+> separate `MultRebirth` factor at payout time. The old grace-period "release to cancel" is gone
+> (the button now claims, not releases).
 
 `triggerExplosionAt` is now used **only** for the parry-success visual (a `blastPressure=0`
 `Explosion` at the button — no fling). The 3D boom (used by both parry-success and the rocket
@@ -280,8 +305,10 @@ server credits `Money` and hides the popup.
 
 ### 6.5 Popups (`UI/Popup.ts`, `UI/PopupConfig.ts`, `services/UiService.ts`)
 - `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `RocketLaunch`, `ButtonFinishGame`.
-  (The `RocketLaunch` popup — formerly `ButtonInGame` — holds the live `MultiplierText` + the
-  `ClaimButtonFrame/ClaimButton`; the old `Slider`/progress-bar was removed.)
+  (The `RocketLaunch` popup — formerly `ButtonInGame` — holds the live `MultiplierText`, the
+  `ClaimButtonFrame/ClaimButton`, and the `ResultMultiplierText` — a live "if you claim now"
+  cash-out preview (`"{n}$"`) that throttles as the multiplier climbs and freezes on claim
+  (§6.3); the old `Slider`/progress-bar was removed.)
 - Server `PopupConfig` maps each type to a behavior class; `UiService` shows/hides by type
   and tracks one current popup per player (showing a new one hides the previous).
 - A popup resolves `PlayerGui/InGameUI/<className>` Frame and toggles `Visible`.
@@ -461,11 +488,17 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   `ProgressionBar/BackgroundFrame/MoneyNeededText` = `"{Money}/{cost}"` via `FormatNumber`).
   The buy button (`ButtonsFrame/RebirthButton/Button`) fires `RebirthEvent` when affordable,
   else flashes the information panel client-side via `InformationText.show(...)`.
-  `SafeRebirthButton` (a Robux "keep your levels" variant) is present in Studio but **not wired
-  yet** (no Developer Product).
+  `SafeRebirthButton/Button` (a Robux "keep all your progression" variant) prompts the safe-rebirth
+  developer product — **no in-game money gate** (it's a paid convenience). The grant is server-side
+  via `RebirthService.safeRebirth` (see §6.15): +1 `Rebirths` while **Money AND stat levels are kept**,
+  then the pad rocket is swapped to the new level. The menu refreshes on the `Rebirths` attribute
+  change like any other rebirth.
 - **`RebirthService` (server)** re-validates (`Money ≥ rebirthCost`) and performs the reset —
   never trusts the client. After rebirth `MultRebirth` grows, which feeds into `MoneyMult` and
   therefore `EffectiveBaseCash` (re-derived by `PlayerProgressionService.recompute` — see §6.6).
+  It then **swaps the pad rocket immediately** via `RocketPlacer.place` on the player's room
+  (§6.18), so the new rebirth-level rocket appears at once. **`Playtime` is never touched by the
+  rebirth path** — it is the leaderboard's playtime source (§6.14) and must survive every rebirth.
 
 ### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`, `client/audio/UiClickSound.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
@@ -480,11 +513,14 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 - **`moneyGain`** (2D, client) plays the instant money is banked in the HUD:
   `MoneyDisplay.addVisual` clones a preloaded template on every positive deposit, so during the
   end-game payout it fires once per landing chunk (§6.4 / EndGameAnimation) — synced to the
-  count-up, no offset.
+  count-up, no offset. It is **also** played by `RocketLaunchBehavior` on **claim** (its own
+  preloaded template) as the button's cash sound (§6.3).
 - **`UiClickSound` (client, `audio/UiClickSound.ts`)** centralises the `uiClick` button sound:
   on init it hooks every `GuiButton` descendant of `PlayerGui` — those present at start **and**
   any added later (`DescendantAdded`) — connecting `Activated` to a 2D clone of a preloaded
-  template (`hooked` set guards against double-binding). Any new button authored in Studio gets
+  template (`hooked` set guards against double-binding). A button whose **`NoUiClick`** attribute
+  is `true` is skipped (checked at click time, so the attribute can be set after hooking) — used
+  by the `ClaimButton`, which plays the cash SFX instead. Any new button authored in Studio gets
   the click sound automatically, with no per-button wiring.
 - **Music is client presentation** (see §4). `MusicController` (client) owns two things,
   parented to `SoundService`:
@@ -504,8 +540,9 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
     (client-only — `GetSpectrum` returns empty server-side).
   - **Button-hold music**: a **classic `Sound`** (unchanged by the audio-API migration), created
     + preloaded at init (no CDN stall on first hold), looped. `RocketLaunchBehavior` drives it —
-    `playButtonMusic()` at hold start (`setup`), `stopButtonMusic()` on release (`endInput`) and
-    at the instant of explosion (`ButtonExplodedEvent`, before the parry window).
+    `playButtonMusic()` at hold start (`setup`) and `stopButtonMusic()` at the explosion —
+    on `ButtonExplodedEvent` (unclaimed, before the parry window) and on `PlayerKilledEvent`
+    (claimed win / loss, which has no `ButtonExplodedEvent`).
     `stopButtonMusic()` only stops the music (it no longer touches the BGM); both it and
     `resumeBgm` are idempotent.
 
@@ -591,8 +628,9 @@ Roblox's defaults on their own and a later `stop()` never cuts them short. `stop
 the held pose; `restoreDefault()` stops everything (held + in-flight one-shot) to force defaults.
 Tracks are lazily loaded against the current `Animator` and the cache is dropped on respawn.
 Call sites: `ButtonMenuBehavior` (`playInteract` on `ButtonTriggerEvent`, `playQuit` on Quit);
-`RocketLaunchBehavior` (`playHold` in `setup`, `playRelease` in `fireRelease`, `playParry` on
-`PerfectParryEffectEvent`, `stop` on `GameResultEvent` as a death-path safety net);
+`RocketLaunchBehavior` (`playHold` in `setup`, `playParry` on
+`PerfectParryEffectEvent`, `stop` on `GameResultEvent` as a safety net — the character keeps
+the hold pose through a claim, since claiming no longer releases the button);
 `EndGameButtonBehavior` (`restoreDefault` on `EndGameStartEvent` — the payout popup opening ends
 the parry projection / any still-playing release clip).
 
@@ -634,13 +672,17 @@ RemoteEvent, no client script**.
 - **Tunables** (`shared/LeaderboardConfig.ts`): `REFRESH_INTERVAL`, `TOP_N`, `VISIBLE_ROWS`,
   `ROW_HEIGHT`, `WRITE_SPACING`, store names, `WALK_ANIM_ID`/`IDLE_ANIM_ID`, instance names.
 
-### 6.15 Developer products (`shared/MoneyProducts.ts`, `shared/LevelProducts.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`, `client/behaviors/ShopItemsController.ts`)
-Two families of Robux developer products, both routed through one `ProcessReceipt`:
+### 6.15 Developer products (`shared/MoneyProducts.ts`, `shared/LevelProducts.ts`, `shared/RebirthProducts.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`, `client/behaviors/ShopItemsController.ts`)
+Three families of Robux developer products, all routed through one `ProcessReceipt`:
 - **Money packs** — Robux "buy money" packs sold from the **`InGameUI/ShopMoneyBuy`** popup
   (separate from the upgrade `ShopMenu`, §6.8). Nine packs, opened from the HUD's
   `MoneyParent/PlusButton/TextButton`.
 - **Progression products** — 3 products sold on the upgrade `ShopMenu` **RobuxButtons** (§6.8):
   BaseCash +10 levels (on both the +1 and +5 frames), RocketSpeed +10 levels, Safety +1 level.
+- **Safe rebirth** — 1 product sold on the Rebirth menu's `SafeRebirthButton` (§6.9): a paid
+  rebirth that **keeps all progression** (Money + stat levels) and only grows the permanent
+  multiplier. `shared/RebirthProducts.ts` holds the id (`SAFE_REBIRTH_PRODUCT_ID`) +
+  `isSafeRebirthProduct(id)` lookup, shared by the client prompt and the server grant.
 
 - **`MoneyProducts` (shared)** — single source of truth for the money packs: an **ordered** list
   of the 9 `{ productId, amount }` pairs. Index *i* maps to `Body/MoneyElement{i+1}`; `amount`
@@ -661,11 +703,14 @@ Two families of Robux developer products, both routed through one `ProcessReceip
   families: a money pack credits the mapped `amount` via `PlayerDataService.add(player, "Money", …)`;
   a progression product adds `levels` to its stat via `PlayerProgressionService.addLevel` (the
   `addLevel` clamp handles the Safety cap — a max-level buy still grants but the client prevents
-  prompting at the cap). Either path returns `PurchaseGranted`; it returns `NotProcessedYet` (Roblox
-  retries) when the buyer isn't in-game or their data is still loading (the relevant attribute —
-  `Money` for packs, the stat's level for progression — is unset), so a grant is never lost nor
-  written over a fresh load. The grant is a synchronous attribute write immediately followed by the
-  return — no double-grant window, so no DataStore receipt log is needed.
+  prompting at the cap); the safe-rebirth product delegates to `RebirthService.safeRebirth` (+1
+  `Rebirths`, keeps Money + levels, swaps the pad rocket — §6.9). Each path returns `PurchaseGranted`;
+  it returns `NotProcessedYet` (Roblox retries) when the buyer isn't in-game or their data is still
+  loading (the relevant attribute — `Money` for packs, the stat's level for progression, `Rebirths`
+  for safe rebirth — is unset), so a grant is never lost nor written over a fresh load. The grant is a
+  synchronous attribute write immediately followed by the return — no double-grant window, so no
+  DataStore receipt log is needed. (The safe-rebirth rocket swap is wrapped in `pcall` so a cosmetic
+  failure after the increment can't turn the granted receipt into a retry — see `RebirthService`.)
 
 ### 6.16 Community mascot idle (`client/rooms/CommunityMascotController.ts`)
 Cosmetic hover **and** per-player visibility for the community mascot — the
@@ -770,7 +815,10 @@ clones the right one onto the rig's `RocketSpawnPoint` (§6.1).
   **loss** (rocket explosion) — after `RocketLauncher.reset(room)` snaps the rig back to the pad,
   `RocketPlacer.place(room)` destroys the exploded rocket and clones a fresh one, so the occupant
   never sees the blown-apart debris reassemble itself. Release/parry/quit endings just `reset`
-  (no explosion happened, so the same rocket instance is fine).
+  (no explosion happened, so the same rocket instance is fine). Finally, `RebirthService`
+  (§6.9) calls it after a successful rebirth — the `Rebirths` count just changed, so the pad
+  rocket is swapped **instantly** for the new level rather than lingering until the next room
+  (re)assignment.
 - **Authoring note:** only `RocketLvl1`/`RocketLvl2` currently carry a `NitroParticles` engine part,
   so Lvl3–Lvl5 launch without an engine flame (no error — the launcher just finds no `Fire`); add a
   `NitroParticles` part (with a `Fire`) to those templates to restore the effect.
@@ -784,9 +832,10 @@ parented to the `Event` ModuleScript. Direction noted per event:
 |-------|-----|---------|
 | `ButtonTriggerEvent` | S→C | Start menu flow; passes `cameraPosPart` + `cameraPivotPart` (orbit camera) |
 | `StartButtonClickedEvent` | C→S | Player clicked Start |
-| `ReleaseButtonEvent` | C→S | Player released the button |
+| `ClaimButtonEvent` | C→S | Player claimed — lock in the current multiplier (rocket keeps flying) |
 | `QuitButtonClickedEvent` | C→S | Player quit the menu |
 | `PerfectParryEvent` | C→S | Player parried within the window |
+| `ClaimAcceptedEvent` | S→C | Confirms a claim with the authoritative locked multiplier |
 | `PerfectParryEffectEvent` | S→C | Trigger sparkle/knockback visuals |
 | `ButtonExplodedEvent` | S→C | Explosion roll hit — start grace/parry on client |
 | `PlayerKilledEvent` | S→C | Loss — rocket exploded; client lingers the camera on it then restores (no death anymore) |

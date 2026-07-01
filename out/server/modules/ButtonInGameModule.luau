@@ -152,19 +152,19 @@ local function startButtonGame(player, session)
 	-- La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
 	-- Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
 	RocketLauncher:launch(room, rocketSpeed)
-	local releaseConn
-	releaseConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
-		if p ~= player or not isActive then
+	-- Claim : le joueur VERROUILLE le multiplicateur courant en gain garanti. La fusée ne
+	-- s'arrête PAS — elle continue de monter (le multiplicateur affiché grimpe encore,
+	-- purement visuel) jusqu'à l'explosion, où le payout se fait au multiplicateur
+	-- verrouillé EXACT (voir la boucle risque plus bas). Remplace l'ancien "release".
+	local claimed = false
+	local claimedMultiplier = STARTING_MULTIPLIER
+	local claimConn = Events.ClaimButtonEvent.OnServerEvent:Connect(function(p)
+		if p ~= player or not isActive or claimed then
 			return nil
 		end
-		isActive = false
-		releaseConn:Disconnect()
-		-- Win : la fusée s'arrête et revient au pad pour la prochaine partie.
-		RocketLauncher:reset(room)
-		local earned = math.floor(baseCash * currentMultiplier)
-		Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-		ConfettiBurst:play(buttonModel)
-		EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
+		claimed = true
+		claimedMultiplier = currentMultiplier
+		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
 	-- Le multiplicateur suit la vitesse RÉELLE de la fusée : chaque tick on ajoute
@@ -202,27 +202,30 @@ local function startButtonGame(player, session)
 			Events.RiskUpdateEvent:FireClient(player, risk)
 			if not invincible and timeHeld >= explosionAt then
 				isActive = false
-				releaseConn:Disconnect()
-				Events.ButtonExplodedEvent:FireClient(player)
-				-- 0.2s grace period — player can still release to cancel the explosion
-				local cancelledByPlayer = false
-				local gracePeriodConn
-				gracePeriodConn = Events.ReleaseButtonEvent.OnServerEvent:Connect(function(p)
-					if p ~= player then
-						return nil
-					end
-					cancelledByPlayer = true
-					gracePeriodConn:Disconnect()
-				end)
-				task.wait(0.2)
-				gracePeriodConn:Disconnect()
-				if cancelledByPlayer then
+				claimConn:Disconnect()
+				if claimed then
+					-- Le joueur a claim avant l'explosion → gain GARANTI au multiplicateur
+					-- verrouillé. La fusée explose (spectacle), puis le payout se fait au
+					-- claimedMultiplier EXACT — pas de fenêtre de parade, aucune pénalité.
+					local rocketPos = room.movableModel:GetPivot().Position
+					RocketLauncher:explode(room)
+					playExplosionSoundAt(rocketPos)
+					-- Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
+					Events.PlayerKilledEvent:FireClient(player)
+					task.wait(EXPLOSION_VIEW_DELAY)
 					RocketLauncher:reset(room)
-					local earned = math.floor(baseCash * currentMultiplier)
-					Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-					ConfettiBurst:play(buttonModel)
-					EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
-				else
+					RocketPlacer:place(room)
+					local earned = math.floor(baseCash * claimedMultiplier)
+					-- exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
+					Events.GameResultEvent:FireClient(player, true, earned, claimedMultiplier)
+					EndGameButtonModule:enter(player, "killed", baseCash, claimedMultiplier, earned, 1)
+					return nil
+				end
+				-- Pas de claim à temps : l'explosion tombe → dernière chance en parade (parry).
+				Events.ButtonExplodedEvent:FireClient(player)
+				-- 0.2s de grâce avant la fenêtre de parade (le client attend 0.2s aussi).
+				task.wait(0.2)
+				do
 					local character = player.Character
 					local _result = character
 					if _result ~= nil then

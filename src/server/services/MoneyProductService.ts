@@ -1,9 +1,11 @@
 import { MarketplaceService, Players } from "@rbxts/services";
 import { amountForProduct } from "shared/MoneyProducts";
 import { levelGrantForProduct } from "shared/LevelProducts";
+import { isSafeRebirthProduct } from "shared/RebirthProducts";
 import { STATS } from "shared/ShopConfig";
 import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
+import { RebirthService } from "./RebirthService";
 
 // Authoritative handler for ALL developer products. Owns the game's single
 // MarketplaceService.ProcessReceipt callback. Two product families route through
@@ -42,6 +44,15 @@ function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDecision 
 		// addLevel clamps to the stat's cap (e.g. Safety) — a max-level buy is a no-op
 		// gain but still granted (the client prevents prompting at the cap).
 		PlayerProgressionService.addLevel(player, grant.stat, grant.levels);
+		return Enum.ProductPurchaseDecision.PurchaseGranted;
+	}
+
+	if (isSafeRebirthProduct(receiptInfo.ProductId)) {
+		// Safe rebirth increments Rebirths — guard on the Rebirths attribute (set by
+		// PlayerProgressionService after its async load) so the grant never runs
+		// before/over a fresh progression load and lands on the loaded count.
+		if (player.GetAttribute("Rebirths") === undefined) return Enum.ProductPurchaseDecision.NotProcessedYet;
+		RebirthService.safeRebirth(player);
 		return Enum.ProductPurchaseDecision.PurchaseGranted;
 	}
 

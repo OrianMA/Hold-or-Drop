@@ -38,7 +38,13 @@ function hook(instance: Instance): void {
 	if (!instance.IsA("GuiButton")) return;
 	if (hooked.has(instance)) return;
 	hooked.add(instance);
-	instance.Activated.Connect(playClick);
+	// Un bouton marqué NoUiClick joue son propre son (ex. ClaimButton → son de cash) :
+	// on saute le clic générique. Vérifié AU CLIC pour tolérer l'ordre de chargement
+	// (l'attribut peut être posé après l'accrochage du bouton).
+	instance.Activated.Connect(() => {
+		if (instance.GetAttribute("NoUiClick") === true) return;
+		playClick();
+	});
 }
 
 export function init(): void {

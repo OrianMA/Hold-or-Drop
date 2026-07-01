@@ -7,6 +7,7 @@ import { AudioConfig } from "shared/AudioConfig";
 import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import {
+	ContentProvider,
 	Lighting,
 	Players,
 	RunService,
@@ -19,6 +20,7 @@ import {
 // UI refs — assigned on first setup(), never change after
 let claimButton: TextButton | undefined;
 let multiplierText: TextLabel | undefined;
+let resultMultiplierText: TextLabel | undefined;
 let buttonOriginalSize: UDim2 | undefined;
 let claimButtonOriginalColor: Color3 | undefined;
 let multiplierTextOriginalSize: number | undefined;
@@ -30,7 +32,12 @@ let bloomEffect: BloomEffect | undefined;
 // Per-game state
 let isGameActive = false;
 let released = false;
+let hasClaimed = false; // le joueur a verrouillé son multiplicateur (claim) pour cette partie
 let multiplierTextSize = 0;
+// Aperçu live du gain "si je claim maintenant" (floor(EffectiveBaseCash × multiplicateur)).
+let resultBaseCash = 100; // EffectiveBaseCash du joueur, lu une fois au début de partie
+let lastResultMultiplier = STARTING_MULTIPLIER; // dernier multiplicateur pour lequel le texte a été rafraîchi
+let resultUpdateElapsed = 0; // temps écoulé depuis le dernier rafraîchissement (throttle)
 let shakeAmplitude = 0;
 // Continuous multiplier display: the server sends a discrete value each tick; we
 // lerp the shown number from the previous value to the new one over the tick so it
@@ -59,6 +66,25 @@ const parrySoundTemplate = (() => {
 	return sound;
 })();
 
+// Son de cash joué au moment du claim (au lieu du clic UI générique — le ClaimButton
+// porte l'attribut NoUiClick pour que UiClickSound le saute). Template préchargé, cloné
+// à chaque claim pour éviter tout fetch CDN.
+const claimCashSoundTemplate = (() => {
+	const sound = new Instance("Sound");
+	sound.Name = "ClaimCashSoundTemplate";
+	sound.SoundId = AudioConfig.sfx.moneyGain.id;
+	sound.Volume = AudioConfig.sfx.moneyGain.volume;
+	sound.Parent = SoundService;
+	return sound;
+})();
+
+function playClaimCashSound(): void {
+	const sound = claimCashSoundTemplate.Clone();
+	sound.Parent = SoundService;
+	sound.Play();
+	sound.Ended.Connect(() => sound.Destroy());
+}
+
 // Live multiplier label text. 2 decimals below 100 ("1.00", "1.05") so the slow
 // early climb is readable, 1 decimal below 1000, then k/M/B suffixes so long holds
 // don't overflow the label.
@@ -77,10 +103,15 @@ const LAUNCH_SHAKE_START = 0.06;
 const LAUNCH_SHAKE_DECAY = 0.6; // atténuation par seconde (multiplicative)
 const MAX_BLOOM_INTENSITY = 1.5;
 // Couleur du ClaimButton quand la fusée explose (il ne disparaît plus, il rougit).
+// Aussi appliquée au claim : le bouton devient rouge dès qu'on verrouille.
 const CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45);
 
+// Aperçu de gain : on ne rafraîchit le texte que si le multiplicateur a bougé d'au moins
+// RESULT_UPDATE_MULT_STEP ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé (anti-spam).
+const RESULT_UPDATE_MULT_STEP = 0.01;
+const RESULT_UPDATE_MIN_DELAY = 0.2;
+
 const UpgradeMultiplayerTI = new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
-const ReleaseButtonDesapearTI = new TweenInfo(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 const PostProcessTI = new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const ResetPostProcessTI = new TweenInfo(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const ZoomResetTI = new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
@@ -104,22 +135,6 @@ function resetPostProcess(instant = false, explode = false): void {
 		}
 	}
 	shakeAmplitude = 0;
-}
-
-function endInput(): void {
-	isGameActive = false;
-	released = true;
-	MusicController.stopButtonMusic(); // la musique du hold s'arrête à la release
-	spaceConn?.Disconnect();
-	spaceConn = undefined;
-	resetPostProcess();
-	if (claimButton) {
-		claimButton.Active = false;
-		const tween = TweenService.Create(claimButton, ReleaseButtonDesapearTI, { Size: new UDim2(0, 0, 0, 0) });
-		tween.Play();
-		tween.Completed.Wait();
-		claimButton.Visible = false;
-	}
 }
 
 function startParryWindow(): void {
@@ -170,6 +185,12 @@ function startParryWindow(): void {
 
 // Called once at startup — all event listeners live here, gated by isGameActive
 export function init(): void {
+	// Précharge le son de cash pour que même le TOUT premier claim de la session soit
+	// instantané (les suivants sont déjà en cache). 100 % client : aucune latence réseau.
+	task.spawn(() => {
+		pcall(() => ContentProvider.PreloadAsync([claimCashSoundTemplate]));
+	});
+
 	// Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
 	// valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
 	// nombres intermédiaires (lent au début, de plus en plus vite).
@@ -183,6 +204,21 @@ export function init(): void {
 			displayedMultiplier = multiplierTo;
 		}
 		multiplierText.Text = `${formatMultiplier(displayedMultiplier)}x`;
+
+		// Aperçu live du gain "si je claim maintenant" : floor(EffectiveBaseCash × mult).
+		// Rafraîchi seulement quand le multiplicateur a bougé d'au moins RESULT_UPDATE_MULT_STEP
+		// ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé. Figé une fois qu'on a claim.
+		if (resultMultiplierText && !hasClaimed) {
+			resultUpdateElapsed += dt;
+			if (
+				resultUpdateElapsed >= RESULT_UPDATE_MIN_DELAY &&
+				math.abs(displayedMultiplier - lastResultMultiplier) >= RESULT_UPDATE_MULT_STEP
+			) {
+				lastResultMultiplier = displayedMultiplier;
+				resultUpdateElapsed = 0;
+				resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * displayedMultiplier))}$`;
+			}
+		}
 
 		// Le tremblement de décollage s'atténue avec le temps (fort au début → calme).
 		shakeAmplitude = shakeAmplitude * math.max(0, 1 - LAUNCH_SHAKE_DECAY * dt);
@@ -231,6 +267,10 @@ export function init(): void {
 	Events.PlayerKilledEvent.OnClientEvent.Connect(() => {
 		// La fusée explose (le joueur ne meurt plus). Le bouton "claim" ne disparaît
 		// pas : il devient rouge et non-cliquable (remis à l'état normal au lancement).
+		// Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
+		// (vrai aussi bien après un claim qu'après une perte).
+		isGameActive = false;
+		MusicController.stopButtonMusic(); // coupe la musique du hold (cas claim : pas de ButtonExplodedEvent)
 		spaceConn?.Disconnect();
 		spaceConn = undefined;
 		activatedConn?.Disconnect();
@@ -347,24 +387,23 @@ export function init(): void {
 	Events.GameResultEvent.OnClientEvent.Connect((exploded: boolean, cashEarned: number, multiplier: number) => {
 		// The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
 		// EndGameButtonBehavior re-enables it on EndGameStartEvent.
-		// Safety net: stop the held pose if the game ended on death (no release/parry
-		// fired). After a normal release or a parry the loop is already stopped, so
-		// this is a no-op and never cuts the release/parry one-shot.
+		// Safety net: stop the held pose if the game ended on explosion (no parry fired).
+		// After a claim or a parry the loop is already stopped, so this is a no-op and
+		// never cuts the parry one-shot.
+		isGameActive = false;
 		ButtonAnimations.stop();
 		if (!exploded) {
 			const wasParry = parryKnockbackCamConn !== undefined;
 			parryKnockbackCamConn?.Disconnect();
 			parryKnockbackCamConn = undefined;
-			// Parry : reset instantané (la caméra trackait déjà le joueur, pas besoin de tween)
-			// Release normal : tween fluide depuis la position cinématique de jeu
+			// Parry réussie : reset instantané (la caméra trackait déjà le joueur, pas de tween).
 			if (wasParry) {
 				CameraController.BringBackPlayerCamera(0);
 			} else {
 				CameraController.BringBackPlayerCamera();
 			}
-			// resetPostProcess() retiré ici : déjà appelé dans endInput() pour la release,
-			// et la FOV est reset instantanément dans PerfectParryEffectEvent pour la parry.
-			// L'appel ici créait un double tween → zoom glitch.
+			// resetPostProcess() n'est pas appelé ici : la FOV est déjà reset instantanément
+			// dans PerfectParryEffectEvent pour la parry ; l'appeler créait un double tween → glitch.
 		}
 		print(`Game over — exploded: ${exploded} | cash: ${cashEarned} | ${multiplier}x`);
 	});
@@ -406,6 +445,15 @@ export function init(): void {
 		}
 	});
 
+	// Claim confirmé par le serveur : on FIGE le gain verrouillé EXACT (= payout serveur,
+	// floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
+	// La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
+	Events.ClaimAcceptedEvent.OnClientEvent.Connect((claimedMultiplier: number) => {
+		if (!resultMultiplierText) return;
+		resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * claimedMultiplier))}$`;
+		resultMultiplierText.Visible = true;
+	});
+
 	Events.ButtonExplodedEvent.OnClientEvent.Connect(() => {
 		if (!isGameActive) return;
 		MusicController.stopButtonMusic(); // la musique du hold s'arrête à l'instant de l'explosion
@@ -424,6 +472,11 @@ export function setup(inGameUI: ScreenGui): void {
 	const claimButtonFrame = popup.WaitForChild("ClaimButtonFrame") as Frame;
 	claimButton = claimButtonFrame.WaitForChild("ClaimButton") as TextButton;
 	multiplierText = popup.WaitForChild("MultiplierText") as TextLabel;
+	resultMultiplierText = popup.WaitForChild("ResultMultiplierText") as TextLabel;
+
+	// Le ClaimButton joue son propre son (cash) au clic → on demande à UiClickSound de
+	// sauter le clic générique pour ce bouton (attribut lu au moment du clic).
+	claimButton.SetAttribute("NoUiClick", true);
 
 	// Save original sizes/colors on first run so we can restore each game
 	if (!buttonOriginalSize) buttonOriginalSize = claimButton.Size;
@@ -435,6 +488,12 @@ export function setup(inGameUI: ScreenGui): void {
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	released = false;
+	hasClaimed = false;
+	// EffectiveBaseCash (attribut répliqué) : base du gain affiché dans ResultMultiplierText.
+	// Lu une fois par partie — comme côté serveur, il ne bouge pas en cours de hold.
+	resultBaseCash = (Players.LocalPlayer.GetAttribute("EffectiveBaseCash") as number | undefined) ?? 100;
+	lastResultMultiplier = STARTING_MULTIPLIER;
+	resultUpdateElapsed = 0;
 	MusicController.playButtonMusic(); // début du hold → musique du bouton en boucle
 	ButtonAnimations.playHold(); // remplace la pose "interact" : le perso appuie et reste sur le bouton
 	multiplierText.TextSize = multiplierTextOriginalSize;
@@ -457,6 +516,11 @@ export function setup(inGameUI: ScreenGui): void {
 	claimButton.Active = true;
 	claimButton.Visible = true;
 
+	// Aperçu de gain visible dès le décollage : "si je claim maintenant" = baseCash × 1.00x.
+	// Il grimpe ensuite (throttlé) dans la boucle RenderStepped, puis se fige au claim.
+	resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * STARTING_MULTIPLIER))}$`;
+	resultMultiplierText.Visible = true;
+
 	// Reset UI
 	multiplierText.Text = `${formatMultiplier(STARTING_MULTIPLIER)}x`;
 
@@ -464,12 +528,22 @@ export function setup(inGameUI: ScreenGui): void {
 	spaceConn?.Disconnect();
 	activatedConn?.Disconnect();
 
-	const fireRelease = () => {
-		if (!isGameActive || released) return;
-		endInput();
-		ButtonAnimations.playRelease(); // le perso relâche le bouton
-		Events.ReleaseButtonEvent.FireServer();
+	// Claim : le joueur VERROUILLE son multiplicateur. La partie NE s'arrête PAS —
+	// la fusée continue de monter (le multiplierText grimpe encore) jusqu'à l'explosion.
+	// Le bouton devient rouge (comme à l'explosion) et non-cliquable (pas de double claim) ;
+	// on joue le son de cash ; le serveur renvoie la valeur verrouillée exacte via
+	// ClaimAcceptedEvent (figée dans ResultMultiplierText).
+	const fireClaim = () => {
+		if (!isGameActive || hasClaimed) return;
+		hasClaimed = true;
+		if (claimButton) {
+			claimButton.Active = false;
+			claimButton.Interactable = false;
+			claimButton.BackgroundColor3 = CLAIM_BUTTON_EXPLODE_COLOR;
+		}
+		playClaimCashSound();
+		Events.ClaimButtonEvent.FireServer();
 	};
 
-	activatedConn = claimButton.Activated.Connect(fireRelease);
+	activatedConn = claimButton.Activated.Connect(fireClaim);
 }

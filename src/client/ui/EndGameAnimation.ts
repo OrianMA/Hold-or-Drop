@@ -55,8 +55,10 @@ const BASE_CASH_FLY_TI = new TweenInfo(0.5, Enum.EasingStyle.Quad, Enum.EasingDi
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
+// 2 décimales (0.01 près) — pas d'arrondi, pour afficher EXACTEMENT le multiplicateur
+// verrouillé au claim (la popup de fin reçoit `claimedMultiplier`, voir §6.3).
 function formatMultiplier(value: number): string {
-	return `${tostring(math.round(value * 10) / 10)}x`;
+	return `${string.format("%.2f", value)}x`;
 }
 
 function formatCash(value: number): string {

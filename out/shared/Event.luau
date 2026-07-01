@@ -12,13 +12,20 @@ do
 	local StartButtonClickedEvent = DefineEvent("StartButtonClickedEvent", script)
 	_container.StartButtonClickedEvent = StartButtonClickedEvent
 	-- RocketLaunch — client → server
-	local ReleaseButtonEvent = DefineEvent("ReleaseButtonEvent", script)
-	_container.ReleaseButtonEvent = ReleaseButtonEvent
+	-- Claim locks in the current multiplier as a guaranteed win; the rocket keeps
+	-- flying (multiplier keeps climbing on screen) until it explodes, then the payout
+	-- uses the locked value. Replaces the old ReleaseButtonEvent (instant bank).
+	local ClaimButtonEvent = DefineEvent("ClaimButtonEvent", script)
+	_container.ClaimButtonEvent = ClaimButtonEvent
 	local QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script)
 	_container.QuitButtonClickedEvent = QuitButtonClickedEvent
 	local PerfectParryEvent = DefineEvent("PerfectParryEvent", script)
 	_container.PerfectParryEvent = PerfectParryEvent
 	-- RocketLaunch — server → client
+	-- Server confirms a claim with the authoritative locked multiplier (Arg: multiplier)
+	-- so the client shows the exact value that will be paid out.
+	local ClaimAcceptedEvent = DefineEvent("ClaimAcceptedEvent", script)
+	_container.ClaimAcceptedEvent = ClaimAcceptedEvent
 	local PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script)
 	_container.PerfectParryEffectEvent = PerfectParryEffectEvent
 	local ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script)

@@ -1,10 +1,13 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
-local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Players
+local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local MarketplaceService = _services.MarketplaceService
+local Players = _services.Players
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local _ShopConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig")
 local rebirthCost = _ShopConfig.rebirthCost
 local rebirthMult = _ShopConfig.rebirthMult
+local SAFE_REBIRTH_PRODUCT_ID = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RebirthProducts").SAFE_REBIRTH_PRODUCT_ID
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
 -- Drives the Rebirth menu display (InGameUI/RebirthMenu) and the buy action.
@@ -46,7 +49,9 @@ local function init()
 	local progressionBar = menu:WaitForChild("ProgressionBar")
 	local fill = progressionBar:WaitForChild("CurrentProgressionFrame")
 	local moneyNeededText = progressionBar:WaitForChild("BackgroundFrame"):WaitForChild("MoneyNeededText")
-	local buyButton = menu:WaitForChild("ButtonsFrame"):WaitForChild("RebirthButton"):WaitForChild("Button")
+	local buttonsFrame = menu:WaitForChild("ButtonsFrame")
+	local buyButton = buttonsFrame:WaitForChild("RebirthButton"):WaitForChild("Button")
+	local safeRebirthButton = buttonsFrame:WaitForChild("SafeRebirthButton"):WaitForChild("Button")
 	local function refresh()
 		local rebirths = getRebirths()
 		local money = getMoney()
@@ -65,6 +70,13 @@ local function init()
 			return nil
 		end
 		Events.RebirthEvent:FireServer()
+	end)
+	-- Safe rebirth — paid Robux dev product. No in-game money gate (that's the point:
+	-- rebirth without losing any progression). The native purchase prompt shows the
+	-- price; on a successful receipt the server (RebirthService.safeRebirth) grants
+	-- +1 Rebirth while keeping Money + upgrades, and the menu refreshes on Rebirths.
+	safeRebirthButton.Activated:Connect(function()
+		MarketplaceService:PromptProductPurchase(player, SAFE_REBIRTH_PRODUCT_ID)
 	end)
 	player:GetAttributeChangedSignal("Money"):Connect(refresh)
 	player:GetAttributeChangedSignal("Rebirths"):Connect(refresh)

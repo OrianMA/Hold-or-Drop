@@ -216,6 +216,17 @@ export const PlayerProgressionService = {
 		deriveValues(player);
 	},
 
+	// Safe rebirth (paid via a Robux dev product): increments Rebirths WITHOUT
+	// resetting the stat levels, re-deriving every value. Keeps ALL progression —
+	// only the permanent money multiplier grows. Does NOT touch Money (nothing
+	// resets it here). Contrast with rebirth() above, which wipes levels.
+	safeRebirth(player: Player): void {
+		const nextRebirths = this.getRebirths(player) + 1;
+		player.SetAttribute(REBIRTHS_KEY, nextRebirths);
+		player.SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths));
+		deriveValues(player);
+	},
+
 	// Re-derives MoneyMult / EffectiveBaseCash / AdditionalSecurity from the
 	// current level + rebirth + boost-input attributes. Called by BoostService
 	// after it writes the input attributes (group / game-pass ownership).

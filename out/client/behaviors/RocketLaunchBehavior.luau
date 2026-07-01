@@ -12,6 +12,7 @@ local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local ContentProvider = _services.ContentProvider
 local Lighting = _services.Lighting
 local Players = _services.Players
 local RunService = _services.RunService
@@ -22,6 +23,7 @@ local Workspace = _services.Workspace
 -- UI refs — assigned on first setup(), never change after
 local claimButton
 local multiplierText
+local resultMultiplierText
 local buttonOriginalSize
 local claimButtonOriginalColor
 local multiplierTextOriginalSize
@@ -31,7 +33,12 @@ local bloomEffect
 -- Per-game state
 local isGameActive = false
 local released = false
+local hasClaimed = false
 local multiplierTextSize = 0
+-- Aperçu live du gain "si je claim maintenant" (floor(EffectiveBaseCash × multiplicateur)).
+local resultBaseCash = 100
+local lastResultMultiplier = STARTING_MULTIPLIER
+local resultUpdateElapsed = 0
 local shakeAmplitude = 0
 -- Continuous multiplier display: the server sends a discrete value each tick; we
 -- lerp the shown number from the previous value to the new one over the tick so it
@@ -57,6 +64,25 @@ local parrySoundTemplate = (function()
 	sound.Parent = SoundService
 	return sound
 end)()
+-- Son de cash joué au moment du claim (au lieu du clic UI générique — le ClaimButton
+-- porte l'attribut NoUiClick pour que UiClickSound le saute). Template préchargé, cloné
+-- à chaque claim pour éviter tout fetch CDN.
+local claimCashSoundTemplate = (function()
+	local sound = Instance.new("Sound")
+	sound.Name = "ClaimCashSoundTemplate"
+	sound.SoundId = AudioConfig.sfx.moneyGain.id
+	sound.Volume = AudioConfig.sfx.moneyGain.volume
+	sound.Parent = SoundService
+	return sound
+end)()
+local function playClaimCashSound()
+	local sound = claimCashSoundTemplate:Clone()
+	sound.Parent = SoundService
+	sound:Play()
+	sound.Ended:Connect(function()
+		return sound:Destroy()
+	end)
+end
 -- Live multiplier label text. 2 decimals below 100 ("1.00", "1.05") so the slow
 -- early climb is readable, 1 decimal below 1000, then k/M/B suffixes so long holds
 -- don't overflow the label.
@@ -78,9 +104,13 @@ local LAUNCH_SHAKE_START = 0.06
 local LAUNCH_SHAKE_DECAY = 0.6
 local MAX_BLOOM_INTENSITY = 1.5
 -- Couleur du ClaimButton quand la fusée explose (il ne disparaît plus, il rougit).
+-- Aussi appliquée au claim : le bouton devient rouge dès qu'on verrouille.
 local CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45)
+-- Aperçu de gain : on ne rafraîchit le texte que si le multiplicateur a bougé d'au moins
+-- RESULT_UPDATE_MULT_STEP ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé (anti-spam).
+local RESULT_UPDATE_MULT_STEP = 0.01
+local RESULT_UPDATE_MIN_DELAY = 0.2
 local UpgradeMultiplayerTI = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local ReleaseButtonDesapearTI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local PostProcessTI = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ResetPostProcessTI = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ZoomResetTI = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -114,26 +144,6 @@ local function resetPostProcess(instant, explode)
 		end
 	end
 	shakeAmplitude = 0
-end
-local function endInput()
-	isGameActive = false
-	released = true
-	MusicController:stopButtonMusic()
-	local _result = spaceConn
-	if _result ~= nil then
-		_result:Disconnect()
-	end
-	spaceConn = nil
-	resetPostProcess()
-	if claimButton then
-		claimButton.Active = false
-		local tween = TweenService:Create(claimButton, ReleaseButtonDesapearTI, {
-			Size = UDim2.new(0, 0, 0, 0),
-		})
-		tween:Play()
-		tween.Completed:Wait()
-		claimButton.Visible = false
-	end
 end
 local function startParryWindow()
 	isGameActive = false
@@ -202,6 +212,13 @@ local function startParryWindow()
 end
 -- Called once at startup — all event listeners live here, gated by isGameActive
 local function init()
+	-- Précharge le son de cash pour que même le TOUT premier claim de la session soit
+	-- instantané (les suivants sont déjà en cache). 100 % client : aucune latence réseau.
+	task.spawn(function()
+		pcall(function()
+			return ContentProvider:PreloadAsync({ claimCashSoundTemplate })
+		end)
+	end)
 	-- Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
 	-- valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
 	-- nombres intermédiaires (lent au début, de plus en plus vite).
@@ -217,6 +234,17 @@ local function init()
 			displayedMultiplier = multiplierTo
 		end
 		multiplierText.Text = `{formatMultiplier(displayedMultiplier)}x`
+		-- Aperçu live du gain "si je claim maintenant" : floor(EffectiveBaseCash × mult).
+		-- Rafraîchi seulement quand le multiplicateur a bougé d'au moins RESULT_UPDATE_MULT_STEP
+		-- ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé. Figé une fois qu'on a claim.
+		if resultMultiplierText and not hasClaimed then
+			resultUpdateElapsed += dt
+			if resultUpdateElapsed >= RESULT_UPDATE_MIN_DELAY and math.abs(displayedMultiplier - lastResultMultiplier) >= RESULT_UPDATE_MULT_STEP then
+				lastResultMultiplier = displayedMultiplier
+				resultUpdateElapsed = 0
+				resultMultiplierText.Text = `{FormatNumber(math.floor(resultBaseCash * displayedMultiplier))}$`
+			end
+		end
 		-- Le tremblement de décollage s'atténue avec le temps (fort au début → calme).
 		shakeAmplitude = shakeAmplitude * math.max(0, 1 - LAUNCH_SHAKE_DECAY * dt)
 	end)
@@ -269,6 +297,10 @@ local function init()
 	Events.PlayerKilledEvent.OnClientEvent:Connect(function()
 		-- La fusée explose (le joueur ne meurt plus). Le bouton "claim" ne disparaît
 		-- pas : il devient rouge et non-cliquable (remis à l'état normal au lancement).
+		-- Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
+		-- (vrai aussi bien après un claim qu'après une perte).
+		isGameActive = false
+		MusicController:stopButtonMusic()
 		local _result = spaceConn
 		if _result ~= nil then
 			_result:Disconnect()
@@ -395,9 +427,10 @@ local function init()
 	Events.GameResultEvent.OnClientEvent:Connect(function(exploded, cashEarned, multiplier)
 		-- The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
 		-- EndGameButtonBehavior re-enables it on EndGameStartEvent.
-		-- Safety net: stop the held pose if the game ended on death (no release/parry
-		-- fired). After a normal release or a parry the loop is already stopped, so
-		-- this is a no-op and never cuts the release/parry one-shot.
+		-- Safety net: stop the held pose if the game ended on explosion (no parry fired).
+		-- After a claim or a parry the loop is already stopped, so this is a no-op and
+		-- never cuts the parry one-shot.
+		isGameActive = false
 		ButtonAnimations.stop()
 		if not exploded then
 			local wasParry = parryKnockbackCamConn ~= nil
@@ -406,16 +439,14 @@ local function init()
 				_result:Disconnect()
 			end
 			parryKnockbackCamConn = nil
-			-- Parry : reset instantané (la caméra trackait déjà le joueur, pas besoin de tween)
-			-- Release normal : tween fluide depuis la position cinématique de jeu
+			-- Parry réussie : reset instantané (la caméra trackait déjà le joueur, pas de tween).
 			if wasParry then
 				CameraController.BringBackPlayerCamera(0)
 			else
 				CameraController.BringBackPlayerCamera()
 			end
-			-- resetPostProcess() retiré ici : déjà appelé dans endInput() pour la release,
-			-- et la FOV est reset instantanément dans PerfectParryEffectEvent pour la parry.
-			-- L'appel ici créait un double tween → zoom glitch.
+			-- resetPostProcess() n'est pas appelé ici : la FOV est déjà reset instantanément
+			-- dans PerfectParryEffectEvent pour la parry ; l'appeler créait un double tween → glitch.
 		end
 		print(`Game over — exploded: {exploded} | cash: {cashEarned} | {multiplier}x`)
 	end)
@@ -452,6 +483,16 @@ local function init()
 			}):Play()
 		end
 	end)
+	-- Claim confirmé par le serveur : on FIGE le gain verrouillé EXACT (= payout serveur,
+	-- floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
+	-- La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
+	Events.ClaimAcceptedEvent.OnClientEvent:Connect(function(claimedMultiplier)
+		if not resultMultiplierText then
+			return nil
+		end
+		resultMultiplierText.Text = `{FormatNumber(math.floor(resultBaseCash * claimedMultiplier))}$`
+		resultMultiplierText.Visible = true
+	end)
 	Events.ButtonExplodedEvent.OnClientEvent:Connect(function()
 		if not isGameActive then
 			return nil
@@ -473,6 +514,10 @@ local function setup(inGameUI)
 	local claimButtonFrame = popup:WaitForChild("ClaimButtonFrame")
 	claimButton = claimButtonFrame:WaitForChild("ClaimButton")
 	multiplierText = popup:WaitForChild("MultiplierText")
+	resultMultiplierText = popup:WaitForChild("ResultMultiplierText")
+	-- Le ClaimButton joue son propre son (cash) au clic → on demande à UiClickSound de
+	-- sauter le clic générique pour ce bouton (attribut lu au moment du clic).
+	claimButton:SetAttribute("NoUiClick", true)
 	-- Save original sizes/colors on first run so we can restore each game
 	if not buttonOriginalSize then
 		buttonOriginalSize = claimButton.Size
@@ -498,6 +543,16 @@ local function setup(inGameUI)
 	baseFov = _condition
 	isGameActive = true
 	released = false
+	hasClaimed = false
+	-- EffectiveBaseCash (attribut répliqué) : base du gain affiché dans ResultMultiplierText.
+	-- Lu une fois par partie — comme côté serveur, il ne bouge pas en cours de hold.
+	local _condition_1 = (Players.LocalPlayer:GetAttribute("EffectiveBaseCash"))
+	if _condition_1 == nil then
+		_condition_1 = 100
+	end
+	resultBaseCash = _condition_1
+	lastResultMultiplier = STARTING_MULTIPLIER
+	resultUpdateElapsed = 0
 	MusicController:playButtonMusic()
 	ButtonAnimations.playHold()
 	multiplierText.TextSize = multiplierTextOriginalSize
@@ -518,6 +573,10 @@ local function setup(inGameUI)
 	claimButton.Interactable = true
 	claimButton.Active = true
 	claimButton.Visible = true
+	-- Aperçu de gain visible dès le décollage : "si je claim maintenant" = baseCash × 1.00x.
+	-- Il grimpe ensuite (throttlé) dans la boucle RenderStepped, puis se fige au claim.
+	resultMultiplierText.Text = `{FormatNumber(math.floor(resultBaseCash * STARTING_MULTIPLIER))}$`
+	resultMultiplierText.Visible = true
 	-- Reset UI
 	multiplierText.Text = `{formatMultiplier(STARTING_MULTIPLIER)}x`
 	-- Clean up any leftover connections from a previous game
@@ -529,15 +588,25 @@ local function setup(inGameUI)
 	if _result_2 ~= nil then
 		_result_2:Disconnect()
 	end
-	local fireRelease = function()
-		if not isGameActive or released then
+	-- Claim : le joueur VERROUILLE son multiplicateur. La partie NE s'arrête PAS —
+	-- la fusée continue de monter (le multiplierText grimpe encore) jusqu'à l'explosion.
+	-- Le bouton devient rouge (comme à l'explosion) et non-cliquable (pas de double claim) ;
+	-- on joue le son de cash ; le serveur renvoie la valeur verrouillée exacte via
+	-- ClaimAcceptedEvent (figée dans ResultMultiplierText).
+	local fireClaim = function()
+		if not isGameActive or hasClaimed then
 			return nil
 		end
-		endInput()
-		ButtonAnimations.playRelease()
-		Events.ReleaseButtonEvent:FireServer()
+		hasClaimed = true
+		if claimButton then
+			claimButton.Active = false
+			claimButton.Interactable = false
+			claimButton.BackgroundColor3 = CLAIM_BUTTON_EXPLODE_COLOR
+		end
+		playClaimCashSound()
+		Events.ClaimButtonEvent:FireServer()
 	end
-	activatedConn = claimButton.Activated:Connect(fireRelease)
+	activatedConn = claimButton.Activated:Connect(fireClaim)
 end
 return {
 	init = init,

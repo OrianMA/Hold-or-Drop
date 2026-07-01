@@ -44,7 +44,15 @@ local function hook(instance)
 	end
 	local _instance_1 = instance
 	hooked[_instance_1] = true
-	instance.Activated:Connect(playClick)
+	-- Un bouton marqué NoUiClick joue son propre son (ex. ClaimButton → son de cash) :
+	-- on saute le clic générique. Vérifié AU CLIC pour tolérer l'ordre de chargement
+	-- (l'attribut peut être posé après l'accrochage du bouton).
+	instance.Activated:Connect(function()
+		if instance:GetAttribute("NoUiClick") == true then
+			return nil
+		end
+		playClick()
+	end)
 end
 local function init()
 	local gui = Players.LocalPlayer:WaitForChild("PlayerGui")

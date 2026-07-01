@@ -260,6 +260,12 @@ local PlayerProgressionService = {
 		player:SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths))
 		deriveValues(player)
 	end,
+	safeRebirth = function(self, player)
+		local nextRebirths = self:getRebirths(player) + 1
+		player:SetAttribute(REBIRTHS_KEY, nextRebirths)
+		player:SetAttribute(MULT_REBIRTH_ATTR, rebirthMult(nextRebirths))
+		deriveValues(player)
+	end,
 	recompute = function(self, player)
 		deriveValues(player)
 	end,

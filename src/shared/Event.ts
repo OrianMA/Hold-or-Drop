@@ -8,11 +8,17 @@ export namespace Events {
 	export const StartButtonClickedEvent = DefineEvent("StartButtonClickedEvent", script);
 
 	// RocketLaunch — client → server
-	export const ReleaseButtonEvent = DefineEvent("ReleaseButtonEvent", script);
+	// Claim locks in the current multiplier as a guaranteed win; the rocket keeps
+	// flying (multiplier keeps climbing on screen) until it explodes, then the payout
+	// uses the locked value. Replaces the old ReleaseButtonEvent (instant bank).
+	export const ClaimButtonEvent = DefineEvent("ClaimButtonEvent", script);
 	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
 	export const PerfectParryEvent = DefineEvent("PerfectParryEvent", script);
 
 	// RocketLaunch — server → client
+	// Server confirms a claim with the authoritative locked multiplier (Arg: multiplier)
+	// so the client shows the exact value that will be paid out.
+	export const ClaimAcceptedEvent = DefineEvent("ClaimAcceptedEvent", script);
 	export const PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script);
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script);

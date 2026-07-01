@@ -47,8 +47,10 @@ local FLOATING_HOLD = 0.12
 local FINAL_MOVE_DELAY = 0.45
 local BASE_CASH_FLY_TI = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 -- ── Formatting ────────────────────────────────────────────────────────────────
+-- 2 décimales (0.01 près) — pas d'arrondi, pour afficher EXACTEMENT le multiplicateur
+-- verrouillé au claim (la popup de fin reçoit `claimedMultiplier`, voir §6.3).
 local function formatMultiplier(value)
-	return `{tostring(math.round(value * 10) / 10)}x`
+	return `{string.format("%.2f", value)}x`
 end
 local function formatCash(value)
 	return FormatCash(value)

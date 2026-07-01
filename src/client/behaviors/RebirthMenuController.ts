@@ -1,6 +1,7 @@
-import { Players } from "@rbxts/services";
+import { MarketplaceService, Players } from "@rbxts/services";
 import { Events } from "shared/Event";
 import { rebirthCost, rebirthMult } from "shared/ShopConfig";
+import { SAFE_REBIRTH_PRODUCT_ID } from "shared/RebirthProducts";
 import { FormatNumber } from "shared/NumberFormat";
 import { InformationText } from "../ui/InformationText";
 
@@ -43,7 +44,9 @@ export function init(): void {
 	const fill = progressionBar.WaitForChild("CurrentProgressionFrame") as Frame;
 	const moneyNeededText = progressionBar.WaitForChild("BackgroundFrame").WaitForChild("MoneyNeededText") as TextLabel;
 
-	const buyButton = menu.WaitForChild("ButtonsFrame").WaitForChild("RebirthButton").WaitForChild("Button") as GuiButton;
+	const buttonsFrame = menu.WaitForChild("ButtonsFrame");
+	const buyButton = buttonsFrame.WaitForChild("RebirthButton").WaitForChild("Button") as GuiButton;
+	const safeRebirthButton = buttonsFrame.WaitForChild("SafeRebirthButton").WaitForChild("Button") as GuiButton;
 
 	function refresh(): void {
 		const rebirths = getRebirths();
@@ -66,6 +69,14 @@ export function init(): void {
 			return;
 		}
 		Events.RebirthEvent.FireServer();
+	});
+
+	// Safe rebirth — paid Robux dev product. No in-game money gate (that's the point:
+	// rebirth without losing any progression). The native purchase prompt shows the
+	// price; on a successful receipt the server (RebirthService.safeRebirth) grants
+	// +1 Rebirth while keeping Money + upgrades, and the menu refreshes on Rebirths.
+	safeRebirthButton.Activated.Connect(() => {
+		MarketplaceService.PromptProductPurchase(player, SAFE_REBIRTH_PRODUCT_ID);
 	});
 
 	player.GetAttributeChangedSignal("Money").Connect(refresh);
