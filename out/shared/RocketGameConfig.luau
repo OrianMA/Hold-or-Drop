@@ -23,6 +23,19 @@ local MULTIPLIER_PER_STUD = 0.01
 -- multiplier barely moves; each upgrade adds a full unit (e.g. 6 → accel 6 / max 60).
 local ROCKET_ACCEL = 1
 local ROCKET_MAX_SPEED = 10
+-- ── Rocket steering (RocketLauncher) ────────────────────────────────────────────
+-- In flight the rocket moves along its OWN up-axis. The player's native left/right
+-- movement input (keyboard A/D, mobile thumbstick, gamepad stick — the character is
+-- anchored so it doesn't walk, RocketSteerController) rolls the rocket left/right,
+-- tilting its up-axis so it drifts sideways. The roll rate is near-zero at liftoff
+-- and ramps to full once the rocket reaches "space" (STEER_SPACE_HEIGHT studs above
+-- the pad), so it stays centred in the room shaft early and only becomes steerable in
+-- open sky. The roll is UNCAPPED — it accumulates freely — and the rocket keeps
+-- whatever tilt it has when input is released (no auto-centre). The payout multiplier
+-- reads only the scalar velocity, so steering never affects it.
+local STEER_ROT_SPEED_GROUND = math.rad(4)
+local STEER_ROT_SPEED_SPACE = math.rad(30)
+local STEER_SPACE_HEIGHT = 50
 -- Seconds the camera lingers on the exploding rocket (loss) before swinging back
 -- to the player. Shared so the server reset and the client camera restore agree.
 local EXPLOSION_VIEW_DELAY = 1.5
@@ -33,5 +46,8 @@ return {
 	MULTIPLIER_PER_STUD = MULTIPLIER_PER_STUD,
 	ROCKET_ACCEL = ROCKET_ACCEL,
 	ROCKET_MAX_SPEED = ROCKET_MAX_SPEED,
+	STEER_ROT_SPEED_GROUND = STEER_ROT_SPEED_GROUND,
+	STEER_ROT_SPEED_SPACE = STEER_ROT_SPEED_SPACE,
+	STEER_SPACE_HEIGHT = STEER_SPACE_HEIGHT,
 	EXPLOSION_VIEW_DELAY = EXPLOSION_VIEW_DELAY,
 }

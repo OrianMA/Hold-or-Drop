@@ -171,6 +171,16 @@ function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
 
 // Used by the ButtonMenu Quit flow — release/explosion/parry endings transition
 // through EndGameButtonModule.enter() instead, which performs the same cleanup.
+// Native left/right movement redirected to the flying rocket. The client sends the
+// quantised steering intent (-1/0/+1) only when it changes; we resolve the player's
+// active room and forward it. setSteer is a no-op when the room isn't flying, so input
+// outside a run is harmless — no per-game connection to manage. Registered once on load.
+Events.RocketSteerEvent.OnServerEvent.Connect((player, dir) => {
+	const session = ButtonSessionService.getSession(player);
+	if (!session) return;
+	RocketLauncher.setSteer(session.room, typeIs(dir, "number") ? dir : 0);
+});
+
 export function endButtonGame(player: Player): void {
 	ButtonSessionService.cleanup(player);
 	UiService.HideCurrent(player);

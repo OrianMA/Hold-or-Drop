@@ -4,6 +4,7 @@ import { PlayerProgressionService } from "./PlayerProgressionService";
 import { PlayerDataService } from "./PlayerDataService";
 import { RoomService } from "server/rooms/RoomService";
 import { RocketPlacer } from "server/modules/RocketPlacer";
+import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 
 // Authoritative rebirth. The client pre-checks affordability for instant
 // feedback, but the reset is fully re-validated here — never trust the client.
@@ -23,6 +24,12 @@ function handleRebirth(player: Player): void {
 
 	PlayerDataService.set(player, "Money", 0);
 	PlayerProgressionService.rebirth(player);
+
+	// Drop any payout that was still animating: cancel the server credit so it can't
+	// land after the reset to 0, and tell the client to remove the in-flight floating
+	// texts flying toward the money HUD (FloatingCash).
+	EndGameButtonModule.cancelPending(player);
+	Events.RebirthResetEvent.FireClient(player);
 
 	// The rebirth level just changed → swap the pad rocket for the new one instantly
 	// (otherwise the old rocket would linger until the player leaves/rejoins the room).

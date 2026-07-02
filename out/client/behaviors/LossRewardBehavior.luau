@@ -7,6 +7,7 @@ local TweenService = _services.TweenService
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
 local MoneyDisplay = TS.import(script, script.Parent.Parent, "ui", "MoneyDisplay").MoneyDisplay
+local FloatingCash = TS.import(script, script.Parent.Parent, "ui", "FloatingCash").FloatingCash
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 -- ── Losing-explosion consolation ────────────────────────────────────────────────
@@ -53,18 +54,23 @@ local function getScreenGui()
 	return if _result then found else nil
 end
 -- Banks the cash and tells the server to credit it (shared with the popup path).
-local function bank(amount)
-	MoneyDisplay:addVisual(amount)
-	Events.EndGameFinishedEvent:FireServer()
+-- Skips banking if a rebirth cancelled this run (gen went stale) so nothing lands
+-- after the balance was reset to 0 — the server pending credit is cleared too.
+local function bank(amount, gen)
+	if not FloatingCash:isStale(gen) then
+		MoneyDisplay:addVisual(amount)
+		Events.EndGameFinishedEvent:FireServer()
+	end
 	MusicController.resumeBgm()
 end
 local function spawnJumpingText(amount)
 	local moneyParent = InGameUIController:getMoneyParent()
 	local template = getTemplate()
 	local screenGui = getScreenGui()
+	local runGen = FloatingCash:current()
 	-- No target / template / laid-out screen — still bank the cash so the credit lands.
 	if not moneyParent or not template or not screenGui or screenGui.AbsoluteSize.X == 0 then
-		bank(amount)
+		bank(amount, runGen)
 		return nil
 	end
 	local center = screenGui.AbsoluteSize / 2
@@ -94,7 +100,7 @@ local function spawnJumpingText(amount)
 			})
 			fly.Completed:Connect(function()
 				frame:Destroy()
-				bank(amount)
+				bank(amount, runGen)
 			end)
 			fly:Play()
 		end)

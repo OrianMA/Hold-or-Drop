@@ -11,6 +11,7 @@ local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
+local RocketSteerController = TS.import(script, script.Parent, "RocketSteerController").RocketSteerController
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local Lighting = _services.Lighting
@@ -391,6 +392,7 @@ local function init()
 		-- Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
 		-- (vrai aussi bien après un claim qu'après une perte).
 		isGameActive = false
+		RocketSteerController:stop()
 		MusicController:stopRunMusic()
 		local _result = spaceConn
 		if _result ~= nil then
@@ -522,6 +524,7 @@ local function init()
 		-- After a claim or a parry the loop is already stopped, so this is a no-op and
 		-- never cuts the parry one-shot.
 		isGameActive = false
+		RocketSteerController:stop()
 		ButtonAnimations.stop()
 		if not exploded then
 			local wasParry = parryKnockbackCamConn ~= nil
@@ -670,6 +673,7 @@ local function setup(inGameUI)
 	end
 	MusicController:startRun()
 	ButtonAnimations.playHold()
+	RocketSteerController:start()
 	multiplierText.TextSize = multiplierTextOriginalSize
 	multiplierText.TextColor3 = multiplierTextOriginalColor
 	multiplierTextSize = multiplierTextOriginalSize

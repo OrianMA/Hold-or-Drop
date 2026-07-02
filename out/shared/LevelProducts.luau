@@ -21,7 +21,7 @@ local LEVEL_PRODUCTS = { {
 }, {
 	productId = 3605484029,
 	stat = "Resistance",
-	levels = 1,
+	levels = 2,
 } }
 -- Level grant for a purchased productId, or undefined if it isn't one of ours.
 -- Server-side lookup (ProcessReceipt).

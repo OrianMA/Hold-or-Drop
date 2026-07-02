@@ -15,6 +15,13 @@ export namespace Events {
 	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
 	export const PerfectParryEvent = DefineEvent("PerfectParryEvent", script);
 
+	// RocketLaunch — client → server. The player's native left/right movement input
+	// (keyboard A/D, mobile thumbstick, gamepad), quantised to -1 (left) / 0 / +1
+	// (right) and sent ONLY when it changes. The server rolls the flying rocket toward
+	// that direction (RocketLauncher.setSteer), tilting its up-axis so it drifts
+	// sideways. Arg: dir (number). Movement never touches the payout multiplier.
+	export const RocketSteerEvent = DefineEvent("RocketSteerEvent", script);
+
 	// RocketLaunch — server → client
 	// Server confirms a claim with the authoritative locked multiplier (Arg: multiplier)
 	// so the client shows the exact value that will be paid out.
@@ -53,6 +60,13 @@ export namespace Events {
 	// Server validates Money >= rebirthCost(Rebirths), resets cash + the 3 stat
 	// levels, increments Rebirths and re-derives MultRebirth.
 	export const RebirthEvent = DefineEvent("RebirthEvent", script);
+
+	// Rebirth — server → client (no args). Fired ONLY on a normal rebirth (Money reset
+	// to 0), never on safe rebirth. Tells the client to drop any in-flight "flying cash"
+	// floating texts (end-game payout chunks + loss-reward text) so nothing lands in the
+	// money HUD after the balance was reset. The matching server pending payout is cleared
+	// via EndGameButtonModule.cancelPending so no money is credited either (FloatingCash).
+	export const RebirthResetEvent = DefineEvent("RebirthResetEvent", script);
 
 	// Community — client → server (no args). Fired after the client's native
 	// GroupService:PromptJoinAsync returns Joined/AlreadyMember (the player

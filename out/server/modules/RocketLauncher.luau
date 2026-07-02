@@ -6,6 +6,9 @@ local Workspace = _services.Workspace
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
 local ROCKET_ACCEL = _RocketGameConfig.ROCKET_ACCEL
 local ROCKET_MAX_SPEED = _RocketGameConfig.ROCKET_MAX_SPEED
+local STEER_ROT_SPEED_GROUND = _RocketGameConfig.STEER_ROT_SPEED_GROUND
+local STEER_ROT_SPEED_SPACE = _RocketGameConfig.STEER_ROT_SPEED_SPACE
+local STEER_SPACE_HEIGHT = _RocketGameConfig.STEER_SPACE_HEIGHT
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 -- Drives the per-room rocket (the MovableModel): it rises while the button is held
 -- with a slow, accelerating, real-rocket feel, lights its engine Fire (NitroParticles)
@@ -212,19 +215,49 @@ local RocketLauncher = {
 		captureRocketParts(room)
 		local maxSpeed = ROCKET_MAX_SPEED * speedFactor
 		local accel = ROCKET_ACCEL * speedFactor
+		-- Steering rolls the rocket relative to this upright pad pose; the climb position
+		-- starts here and integrates along the rocket's own (tilted) up-axis each frame.
+		local _room_1 = room
+		local _condition = originalPivots[_room_1]
+		if _condition == nil then
+			_condition = room.movableModel:GetPivot()
+		end
+		local basePivot = _condition
 		local state = {
 			conn = nil,
 			velocity = 0,
+			steer = 0,
+			tilt = 0,
+			basePivot = basePivot,
+			pos = basePivot.Position,
 		}
 		state.conn = RunService.Heartbeat:Connect(function(dt)
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed)
+			-- Roll authority ramps with altitude: near-zero at the pad (STEER_ROT_SPEED_GROUND),
+			-- full once the rocket reaches space (STEER_ROT_SPEED_SPACE at STEER_SPACE_HEIGHT).
+			local altitude = state.pos.Y - state.basePivot.Position.Y
+			local authority = math.clamp(altitude / STEER_SPACE_HEIGHT, 0, 1)
+			local rotSpeed = STEER_ROT_SPEED_GROUND + (STEER_ROT_SPEED_SPACE - STEER_ROT_SPEED_GROUND) * authority
+			-- Integrate the roll toward the held direction — NO cap, it rolls freely.
+			-- `steer = 0` (released) leaves the tilt untouched; the gradual integration is
+			-- what makes it read as a smooth tween rather than a brute snap.
+			state.tilt += state.steer * rotSpeed * dt
+			-- Move along the rocket's OWN up-axis (rolled by `tilt` about its forward axis),
+			-- so a roll makes it drift sideways instead of straight up. The `-tilt` inverts
+			-- the steering direction (left input leans right and vice-versa, as requested).
+			local _rotation = state.basePivot.Rotation
+			local _arg0 = CFrame.Angles(0, 0, -state.tilt)
+			local orientation = _rotation * _arg0
+			local _pos = state.pos
+			local _upVector = orientation.UpVector
+			local _arg0_1 = state.velocity * dt
+			state.pos = _pos + (_upVector * _arg0_1)
 			local _movableModel = room.movableModel
-			local _exp = room.movableModel:GetPivot()
-			local _vector3 = Vector3.new(0, state.velocity * dt, 0)
-			_movableModel:PivotTo(_exp + _vector3)
+			local _pos_1 = state.pos
+			_movableModel:PivotTo(orientation + _pos_1)
 		end)
-		local _room_1 = room
-		states[_room_1] = state
+		local _room_2 = room
+		states[_room_2] = state
 		setNitroEnabled(room, true)
 		local sound = getLaunchSound(room)
 		if sound then
@@ -242,6 +275,14 @@ local RocketLauncher = {
 			_condition = 0
 		end
 		return _condition
+	end,
+	setSteer = function(self, room, dir)
+		local _room = room
+		local state = states[_room]
+		if not state then
+			return nil
+		end
+		state.steer = if dir > 0 then 1 elseif dir < 0 then -1 else 0
 	end,
 	stop = function(self, room)
 		stopRoom(room)

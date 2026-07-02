@@ -8,6 +8,7 @@ local setupRocketLaunch = _RocketLaunchBehavior.setup
 local initEndGameButton = TS.import(script, script.Parent, "behaviors", "EndGameButtonBehavior").init
 local initLossReward = TS.import(script, script.Parent, "behaviors", "LossRewardBehavior").init
 local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").MoneyDisplay
+local FloatingCash = TS.import(script, script.Parent, "ui", "FloatingCash").FloatingCash
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
@@ -40,6 +41,7 @@ initRocketLaunch()
 initEndGameButton()
 initLossReward()
 MoneyDisplay:init()
+FloatingCash:init()
 initInformationText()
 initRoomPrompts()
 initOwnerIndicator()

@@ -28,6 +28,20 @@ export const MULTIPLIER_PER_STUD = 0.01;
 export const ROCKET_ACCEL = 1;
 export const ROCKET_MAX_SPEED = 10;
 
+// ── Rocket steering (RocketLauncher) ────────────────────────────────────────────
+// In flight the rocket moves along its OWN up-axis. The player's native left/right
+// movement input (keyboard A/D, mobile thumbstick, gamepad stick — the character is
+// anchored so it doesn't walk, RocketSteerController) rolls the rocket left/right,
+// tilting its up-axis so it drifts sideways. The roll rate is near-zero at liftoff
+// and ramps to full once the rocket reaches "space" (STEER_SPACE_HEIGHT studs above
+// the pad), so it stays centred in the room shaft early and only becomes steerable in
+// open sky. The roll is UNCAPPED — it accumulates freely — and the rocket keeps
+// whatever tilt it has when input is released (no auto-centre). The payout multiplier
+// reads only the scalar velocity, so steering never affects it.
+export const STEER_ROT_SPEED_GROUND = math.rad(4); // roll rate at the pad (rad/s) — extremely weak
+export const STEER_ROT_SPEED_SPACE = math.rad(30); // roll rate in space (rad/s) — responsive
+export const STEER_SPACE_HEIGHT = 50; // studs above the pad where roll authority reaches full
+
 // Seconds the camera lingers on the exploding rocket (loss) before swinging back
 // to the player. Shared so the server reset and the client camera restore agree.
 export const EXPLOSION_VIEW_DELAY = 1.5;

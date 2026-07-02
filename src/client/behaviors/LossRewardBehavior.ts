@@ -2,6 +2,7 @@ import { Players, ReplicatedStorage, TweenService } from "@rbxts/services";
 import { Events } from "shared/Event";
 import { InGameUIController } from "client/ui/InGameUIController";
 import { MoneyDisplay } from "client/ui/MoneyDisplay";
+import { FloatingCash } from "client/ui/FloatingCash";
 import { MusicController } from "client/audio/MusicController";
 import { FormatCash } from "shared/NumberFormat";
 
@@ -38,9 +39,13 @@ function getScreenGui(): ScreenGui | undefined {
 }
 
 // Banks the cash and tells the server to credit it (shared with the popup path).
-function bank(amount: number): void {
-	MoneyDisplay.addVisual(amount); // count-up + money SFX
-	Events.EndGameFinishedEvent.FireServer(); // server credits pendingEarned, reconciles HUD
+// Skips banking if a rebirth cancelled this run (gen went stale) so nothing lands
+// after the balance was reset to 0 — the server pending credit is cleared too.
+function bank(amount: number, gen: number): void {
+	if (!FloatingCash.isStale(gen)) {
+		MoneyDisplay.addVisual(amount); // count-up + money SFX
+		Events.EndGameFinishedEvent.FireServer(); // server credits pendingEarned, reconciles HUD
+	}
 	MusicController.resumeBgm(); // run fully over — ease the BGM back in
 }
 
@@ -48,10 +53,11 @@ function spawnJumpingText(amount: number): void {
 	const moneyParent = InGameUIController.getMoneyParent();
 	const template = getTemplate();
 	const screenGui = getScreenGui();
+	const runGen = FloatingCash.current();
 
 	// No target / template / laid-out screen — still bank the cash so the credit lands.
 	if (!moneyParent || !template || !screenGui || screenGui.AbsoluteSize.X === 0) {
-		bank(amount);
+		bank(amount, runGen);
 		return;
 	}
 
@@ -81,7 +87,7 @@ function spawnJumpingText(amount: number): void {
 			});
 			fly.Completed.Connect(() => {
 				frame.Destroy();
-				bank(amount);
+				bank(amount, runGen);
 			});
 			fly.Play();
 		});

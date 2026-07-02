@@ -78,6 +78,15 @@ export const EndGameButtonModule = {
 		Events.LossRewardEvent.FireClient(player, reward);
 	},
 
+	// Drop any queued payout for this player and hide the finish popup. Called on a
+	// NORMAL rebirth (RebirthService): a run whose floating texts are still animating
+	// would otherwise fire EndGameFinishedEvent and credit `earned` AFTER Money was
+	// reset to 0. Clearing the entry means that late credit adds nothing.
+	cancelPending(player: Player): void {
+		pendingEarned.delete(player);
+		UiService.Hide(player, PopupType.ButtonFinishGame);
+	},
+
 	// Wired by services/index.ts so the popup hides once the client animation finishes
 	init(): void {
 		Events.EndGameFinishedEvent.OnServerEvent.Connect((player) => {

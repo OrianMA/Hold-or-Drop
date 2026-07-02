@@ -2,6 +2,7 @@ import { ReplicatedStorage, TweenService } from "@rbxts/services";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { InGameUIController } from "client/ui/InGameUIController";
 import { MoneyDisplay } from "client/ui/MoneyDisplay";
+import { FloatingCash } from "client/ui/FloatingCash";
 import { InformationText } from "client/ui/InformationText";
 import { FormatCash } from "shared/NumberFormat";
 
@@ -279,6 +280,10 @@ export function runEndGameAnimation(
 	}
 	const { multiplierText, baseCashText, screenGui } = refs;
 
+	// Snapshot the cancellation generation: a rebirth mid-payout bumps it, and every
+	// deferred callback below bails so no chunk lands in the HUD after the reset to 0.
+	const runGen = FloatingCash.current();
+
 	if (initialBaseCashSize === undefined) initialBaseCashSize = baseCashText.TextSize;
 	if (initialBaseCashColor === undefined) initialBaseCashColor = baseCashText.TextColor3;
 	if (initialMultiplierPosition === undefined) initialMultiplierPosition = multiplierText.Position;
@@ -357,6 +362,7 @@ export function runEndGameAnimation(
 
 	let arrived = 0;
 	for (let i = 1; i <= n; i++) {
+		if (FloatingCash.isStale(runGen)) break; // rebirth cancelled the payout — stop spraying
 		const isLast = i === n;
 		const remaining = isLast ? 0 : totalEarn - i * chunk;
 		spawnFloatingChunk(screenGui, chunk, baseCashText, moneyParent, {
@@ -369,6 +375,7 @@ export function runEndGameAnimation(
 				if (isLast) baseCashText.Visible = false;
 			},
 			onArrived: () => {
+				if (FloatingCash.isStale(runGen)) return; // payout cancelled by a rebirth — don't bank
 				MoneyDisplay.addVisual(chunk);
 				arrived += 1;
 				if (arrived >= n) {

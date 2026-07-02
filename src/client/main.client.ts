@@ -4,6 +4,7 @@ import { init as initRocketLaunch, setup as setupRocketLaunch } from "./behavior
 import { init as initEndGameButton } from "./behaviors/EndGameButtonBehavior";
 import { init as initLossReward } from "./behaviors/LossRewardBehavior";
 import { MoneyDisplay } from "./ui/MoneyDisplay";
+import { FloatingCash } from "./ui/FloatingCash";
 import { init as initInformationText } from "./ui/InformationText";
 import { init as initRoomPrompts } from "./rooms/RoomPromptController";
 import { init as initOwnerIndicator } from "./rooms/OwnerIndicatorController";
@@ -38,6 +39,7 @@ initRocketLaunch();
 initEndGameButton();
 initLossReward();
 MoneyDisplay.init();
+FloatingCash.init();
 initInformationText();
 initRoomPrompts();
 initOwnerIndicator();

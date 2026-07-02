@@ -160,6 +160,19 @@ end
 -- ── Public API ────────────────────────────────────────────────────────────────
 -- Used by the ButtonMenu Quit flow — release/explosion/parry endings transition
 -- through EndGameButtonModule.enter() instead, which performs the same cleanup.
+-- Native left/right movement redirected to the flying rocket. The client sends the
+-- quantised steering intent (-1/0/+1) only when it changes; we resolve the player's
+-- active room and forward it. setSteer is a no-op when the room isn't flying, so input
+-- outside a run is harmless — no per-game connection to manage. Registered once on load.
+Events.RocketSteerEvent.OnServerEvent:Connect(function(player, dir)
+	local session = ButtonSessionService:getSession(player)
+	if not session then
+		return nil
+	end
+	local _exp = session.room
+	local _dir = dir
+	RocketLauncher:setSteer(_exp, if type(_dir) == "number" then dir else 0)
+end)
 local function endButtonGame(player)
 	ButtonSessionService:cleanup(player)
 	UiService:HideCurrent(player)

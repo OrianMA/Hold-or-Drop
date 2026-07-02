@@ -21,6 +21,13 @@ do
 	_container.QuitButtonClickedEvent = QuitButtonClickedEvent
 	local PerfectParryEvent = DefineEvent("PerfectParryEvent", script)
 	_container.PerfectParryEvent = PerfectParryEvent
+	-- RocketLaunch — client → server. The player's native left/right movement input
+	-- (keyboard A/D, mobile thumbstick, gamepad), quantised to -1 (left) / 0 / +1
+	-- (right) and sent ONLY when it changes. The server rolls the flying rocket toward
+	-- that direction (RocketLauncher.setSteer), tilting its up-axis so it drifts
+	-- sideways. Arg: dir (number). Movement never touches the payout multiplier.
+	local RocketSteerEvent = DefineEvent("RocketSteerEvent", script)
+	_container.RocketSteerEvent = RocketSteerEvent
 	-- RocketLaunch — server → client
 	-- Server confirms a claim with the authoritative locked multiplier (Arg: multiplier)
 	-- so the client shows the exact value that will be paid out.
@@ -67,6 +74,13 @@ do
 	-- levels, increments Rebirths and re-derives MultRebirth.
 	local RebirthEvent = DefineEvent("RebirthEvent", script)
 	_container.RebirthEvent = RebirthEvent
+	-- Rebirth — server → client (no args). Fired ONLY on a normal rebirth (Money reset
+	-- to 0), never on safe rebirth. Tells the client to drop any in-flight "flying cash"
+	-- floating texts (end-game payout chunks + loss-reward text) so nothing lands in the
+	-- money HUD after the balance was reset. The matching server pending payout is cleared
+	-- via EndGameButtonModule.cancelPending so no money is credited either (FloatingCash).
+	local RebirthResetEvent = DefineEvent("RebirthResetEvent", script)
+	_container.RebirthResetEvent = RebirthResetEvent
 	-- Community — client → server (no args). Fired after the client's native
 	-- GroupService:PromptJoinAsync returns Joined/AlreadyMember (the player
 	-- triggered the CommunityJoinPart). The server re-checks membership (fresh,

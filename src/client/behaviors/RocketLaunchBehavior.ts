@@ -6,6 +6,7 @@ import { FormatNumber } from "shared/NumberFormat";
 import { AudioConfig } from "shared/AudioConfig";
 import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
+import { RocketSteerController } from "client/behaviors/RocketSteerController";
 import {
 	ContentProvider,
 	Lighting,
@@ -354,6 +355,7 @@ export function init(): void {
 		// Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
 		// (vrai aussi bien après un claim qu'après une perte).
 		isGameActive = false;
+		RocketSteerController.stop(); // fin du vol : plus de pilotage
 		MusicController.stopRunMusic(); // coupe la musique du run (cas claim : pas de ButtonExplodedEvent)
 		spaceConn?.Disconnect();
 		spaceConn = undefined;
@@ -475,6 +477,7 @@ export function init(): void {
 		// After a claim or a parry the loop is already stopped, so this is a no-op and
 		// never cuts the parry one-shot.
 		isGameActive = false;
+		RocketSteerController.stop(); // filet de sécurité : coupe le pilotage à toute fin de partie
 		ButtonAnimations.stop();
 		if (!exploded) {
 			const wasParry = parryKnockbackCamConn !== undefined;
@@ -601,6 +604,7 @@ export function setup(inGameUI: ScreenGui): void {
 	}
 	MusicController.startRun(); // début du hold → la BGM de base continue de jouer
 	ButtonAnimations.playHold(); // remplace la pose "interact" : le perso appuie et reste sur le bouton
+	RocketSteerController.start(); // le mouvement natif gauche/droite pilote la fusée pendant le vol
 	multiplierText.TextSize = multiplierTextOriginalSize;
 	multiplierText.TextColor3 = multiplierTextOriginalColor;
 	multiplierTextSize = multiplierTextOriginalSize;

@@ -6,6 +6,7 @@ local TweenService = _services.TweenService
 local MultiplierVisuals = TS.import(script, script.Parent, "MultiplierVisuals").MultiplierVisuals
 local InGameUIController = TS.import(script, script.Parent, "InGameUIController").InGameUIController
 local MoneyDisplay = TS.import(script, script.Parent, "MoneyDisplay").MoneyDisplay
+local FloatingCash = TS.import(script, script.Parent, "FloatingCash").FloatingCash
 local InformationText = TS.import(script, script.Parent, "InformationText").InformationText
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 -- ── ButtonFinishGame payout animation ───────────────────────────────────────────
@@ -263,6 +264,9 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	local multiplierText = _binding.multiplierText
 	local baseCashText = _binding.baseCashText
 	local screenGui = _binding.screenGui
+	-- Snapshot the cancellation generation: a rebirth mid-payout bumps it, and every
+	-- deferred callback below bails so no chunk lands in the HUD after the reset to 0.
+	local runGen = FloatingCash:current()
 	if initialBaseCashSize == nil then
 		initialBaseCashSize = baseCashText.TextSize
 	end
@@ -352,6 +356,9 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	end
 	local arrived = 0
 	for i = 1, n do
+		if FloatingCash:isStale(runGen) then
+			break
+		end
 		local isLast = i == n
 		local remaining = if isLast then 0 else totalEarn - i * chunk
 		spawnFloatingChunk(screenGui, chunk, baseCashText, moneyParent, {
@@ -366,6 +373,9 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 				end
 			end,
 			onArrived = function()
+				if FloatingCash:isStale(runGen) then
+					return nil
+				end
 				MoneyDisplay:addVisual(chunk)
 				arrived += 1
 				if arrived >= n then

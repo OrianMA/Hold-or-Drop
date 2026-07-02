@@ -14,7 +14,7 @@ local resetData = false
 -- player even on an account that owns every pass. A purchase made in Studio (and
 -- BoostService.devOwn) still adds to the set for the rest of the session.
 -- Takes priority over `simulateGamePasses`. MUST be false before publishing.
-local ignoreGamePasses = true
+local ignoreGamePasses = false
 -- When true, BoostService IGNORES real Roblox game-pass ownership and treats only
 -- the ids in `simulatedOwnedPassIds` as owned (empty = own nothing). Lets you test
 -- the buy flow from a not-owned state even on an account that owns every pass.

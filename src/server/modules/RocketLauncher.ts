@@ -1,6 +1,12 @@
 import { RunService, Workspace } from "@rbxts/services";
 import { Room } from "server/rooms/Room";
-import { ROCKET_ACCEL, ROCKET_MAX_SPEED } from "shared/RocketGameConfig";
+import {
+	ROCKET_ACCEL,
+	ROCKET_MAX_SPEED,
+	STEER_ROT_SPEED_GROUND,
+	STEER_ROT_SPEED_SPACE,
+	STEER_SPACE_HEIGHT,
+} from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
 
 // Drives the per-room rocket (the MovableModel): it rises while the button is held
@@ -54,6 +60,17 @@ interface RocketPart {
 interface RocketState {
 	conn: RBXScriptConnection;
 	velocity: number;
+	// Player's current left/right steering intent: -1 (left) / 0 / +1 (right). Set by
+	// setSteer from the client's native movement input; released (0) leaves the tilt as-is.
+	steer: number;
+	// Current roll angle (radians), integrated from `steer` with NO cap (rolls freely).
+	// Kept across frames (no auto-centre) — the rocket holds whatever tilt it was left at.
+	tilt: number;
+	// Upright launch pose (the pad pivot). Steering rolls relative to this, and the
+	// running climb position is measured from it.
+	basePivot: CFrame;
+	// Running world position of the pivot as it climbs along its (possibly tilted) up-axis.
+	pos: Vector3;
 }
 
 const states = new Map<Room, RocketState>();
@@ -193,10 +210,37 @@ export const RocketLauncher = {
 		const maxSpeed = ROCKET_MAX_SPEED * speedFactor;
 		const accel = ROCKET_ACCEL * speedFactor;
 
-		const state: RocketState = { conn: undefined!, velocity: 0 };
+		// Steering rolls the rocket relative to this upright pad pose; the climb position
+		// starts here and integrates along the rocket's own (tilted) up-axis each frame.
+		const basePivot = originalPivots.get(room) ?? room.movableModel.GetPivot();
+		const state: RocketState = {
+			conn: undefined!,
+			velocity: 0,
+			steer: 0,
+			tilt: 0,
+			basePivot,
+			pos: basePivot.Position,
+		};
 		state.conn = RunService.Heartbeat.Connect((dt) => {
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed);
-			room.movableModel.PivotTo(room.movableModel.GetPivot().add(new Vector3(0, state.velocity * dt, 0)));
+
+			// Roll authority ramps with altitude: near-zero at the pad (STEER_ROT_SPEED_GROUND),
+			// full once the rocket reaches space (STEER_ROT_SPEED_SPACE at STEER_SPACE_HEIGHT).
+			const altitude = state.pos.Y - state.basePivot.Position.Y;
+			const authority = math.clamp(altitude / STEER_SPACE_HEIGHT, 0, 1);
+			const rotSpeed = STEER_ROT_SPEED_GROUND + (STEER_ROT_SPEED_SPACE - STEER_ROT_SPEED_GROUND) * authority;
+
+			// Integrate the roll toward the held direction — NO cap, it rolls freely.
+			// `steer = 0` (released) leaves the tilt untouched; the gradual integration is
+			// what makes it read as a smooth tween rather than a brute snap.
+			state.tilt += state.steer * rotSpeed * dt;
+
+			// Move along the rocket's OWN up-axis (rolled by `tilt` about its forward axis),
+			// so a roll makes it drift sideways instead of straight up. The `-tilt` inverts
+			// the steering direction (left input leans right and vice-versa, as requested).
+			const orientation = state.basePivot.Rotation.mul(CFrame.Angles(0, 0, -state.tilt));
+			state.pos = state.pos.add(orientation.UpVector.mul(state.velocity * dt));
+			room.movableModel.PivotTo(orientation.add(state.pos));
 		});
 		states.set(room, state);
 
@@ -209,6 +253,16 @@ export const RocketLauncher = {
 	// game loop's multiplier tick so the payout multiplier tracks the rocket's speed.
 	getVelocity(room: Room): number {
 		return states.get(room)?.velocity ?? 0;
+	},
+
+	// Set the player's left/right steering intent for a flying rocket: dir < 0 = left,
+	// dir > 0 = right, 0 = released (hold current tilt). No-op when the room isn't
+	// flying (no active state), so stale input outside a run is harmless. The roll is
+	// integrated in the ascent loop (altitude-scaled rate) — this only records direction.
+	setSteer(room: Room, dir: number): void {
+		const state = states.get(room);
+		if (!state) return;
+		state.steer = dir > 0 ? 1 : dir < 0 ? -1 : 0;
 	},
 
 	// Stop the ascent in place (no reset) — used on a win/release.

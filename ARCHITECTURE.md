@@ -523,6 +523,13 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   It then **swaps the pad rocket immediately** via `RocketPlacer.place` on the player's room
   (§6.18), so the new rebirth-level rocket appears at once. **`Playtime` is never touched by the
   rebirth path** — it is the leaderboard's playtime source (§6.14) and must survive every rebirth.
+  - **Cancel in-flight payout on rebirth:** a run whose end-game payout / loss-reward floating
+    texts are still flying toward the money HUD (§6.4) would otherwise credit money **after** the
+    reset to 0. So a normal rebirth also calls **`EndGameButtonModule.cancelPending`** (clears the
+    player's `pendingEarned` and hides the finish popup, so a late `EndGameFinishedEvent` credits
+    nothing) and fires **`RebirthResetEvent`** (S→C) → client **`FloatingCash`** (`client/ui/FloatingCash.ts`)
+    destroys the in-flight floating frames and bumps a generation so their arrival callbacks no-op.
+    **Safe rebirth does neither** — it keeps Money, so an in-flight payout must still land.
 
 ### 6.10 Audio (`shared/AudioConfig.ts`, `client/audio/MusicController.ts`, `client/audio/UiClickSound.ts`)
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
@@ -772,6 +779,20 @@ recaptured on the next `launch`.
   tracks the rocket's speed (§6.3).
 - Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
   the client orbit camera (reads the pivot live, §6.7) **follows the rocket** with zero extra code.
+- **Steering (up-axis flight):** the ascent loop moves the rocket along **its own up-axis**, not
+  world-Y. A per-room roll angle `tilt` is integrated each frame from the player's steering intent
+  (`setSteer(room, dir)`, `dir` = -1/0/+1) at a rate that **ramps with altitude** — near-zero at the
+  pad (`STEER_ROT_SPEED_GROUND`), full once the rocket reaches space (`STEER_ROT_SPEED_SPACE` at
+  `STEER_SPACE_HEIGHT` studs). The roll is **uncapped** (accumulates freely). The orientation is
+  `basePivot.Rotation × CFrame.Angles(0,0,-tilt)` (roll about the forward axis; the `-tilt` inverts
+  the steer direction) and the model climbs along `orientation.UpVector`, so a roll makes it **drift
+  sideways**; releasing input **holds** the current tilt (no auto-centre). Because authority is ~0 low down, the rocket stays centred in the room shaft and only
+  becomes steerable in open sky. `getVelocity` stays the **scalar** speed, so steering **never**
+  touches the payout multiplier. The intent comes from the client's **native movement** input
+  (`RocketSteerController` reads Roblox's ControlModule `GetMoveVector().X` — keyboard/thumbstick/
+  gamepad, all devices; the character is anchored during a run so movement doesn't walk it) and is
+  sent via **`RocketSteerEvent`** only when it changes; `ButtonInGameModule` resolves the player's
+  room and forwards it. `setSteer` is a no-op when the room isn't flying.
 - **Engine fire:** `launch` lights **every** engine emitter (`Fire`/`ParticleEmitter`/`Smoke`)
   inside the rocket's `NitroParticles` part(s); `stop`/`reset` extinguish them — so the nitro burns
   only while the rocket is moving. A rocket may carry **several** `NitroParticles` parts (multi-engine
@@ -862,6 +883,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `ClaimButtonEvent` | C→S | Player claimed — lock in the current multiplier (rocket keeps flying) |
 | `QuitButtonClickedEvent` | C→S | Player quit the menu |
 | `PerfectParryEvent` | C→S | Player parried within the window |
+| `RocketSteerEvent` | C→S | Native left/right movement redirected to the flying rocket (dir -1/0/+1, sent on change) |
 | `ClaimAcceptedEvent` | S→C | Confirms a claim with the authoritative locked multiplier |
 | `PerfectParryEffectEvent` | S→C | Trigger sparkle/knockback visuals |
 | `ButtonExplodedEvent` | S→C | Explosion roll hit — start grace/parry on client |
@@ -895,6 +917,9 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `MULTIPLIER_PER_STUD` | `shared/RocketGameConfig.ts` | 0.01 | Multiplier gained per stud the rocket climbs (velocity-driven) |
 | `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 1 | Rocket acceleration per RocketSpeed unit (studs/s²), ×stat value |
 | `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 10 | Rocket top speed per RocketSpeed unit (studs/s), ×stat value |
+| `STEER_ROT_SPEED_GROUND` | `shared/RocketGameConfig.ts` | rad(4)/s | Roll rate at the pad — extremely weak |
+| `STEER_ROT_SPEED_SPACE` | `shared/RocketGameConfig.ts` | rad(30)/s | Roll rate in space — responsive |
+| `STEER_SPACE_HEIGHT` | `shared/RocketGameConfig.ts` | 50 | Studs above pad where roll authority reaches full |
 | `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
 | `MAX_RISK` | `ButtonInGameModule.ts` | 0.8 | Risk ceiling |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |

@@ -59,6 +59,11 @@ local EndGameButtonModule = {
 		pendingEarned[_player] = _reward
 		Events.LossRewardEvent:FireClient(player, reward)
 	end,
+	cancelPending = function(self, player)
+		local _player = player
+		pendingEarned[_player] = nil
+		UiService:Hide(player, PopupType.ButtonFinishGame)
+	end,
 	init = function(self)
 		Events.EndGameFinishedEvent.OnServerEvent:Connect(function(player)
 			local _player = player
