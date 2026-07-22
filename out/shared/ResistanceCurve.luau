@@ -14,13 +14,13 @@
 --     seul. C'est la raison du basculement de poids vers safeWindow.
 -- À resistance 0 les deux termes sont neutres → courbe identique à celle d'origine.
 --
--- Repères : L1 → 1.0 s garanties / survie médiane 8.5 s (contre 7.0 s à L0).
---           L5 → 3.9 s / 12.0 s.  L10 → 6.0 s / 15.5 s.  L30 → 7.9 s / 19.0 s (saturé).
+-- Repères : L1 → 1.05 s garanties / survie médiane 8.5 s (contre 7.0 s à L0).
+--           L5 → 4.1 s / 12.0 s.  L10 → 6.2 s / 15.5 s.  L30 → 7.9 s / 19.0 s (saturé).
 local RESISTANCE_MAX_LEVEL = 100
 local RESISTANCE_MAX_REDUCTION = 0.75
 local RESISTANCE_REDUCTION_CURVE = 13
 local RESISTANCE_MAX_SAFE_WINDOW = 8
-local RESISTANCE_SAFE_WINDOW_CURVE = 13
+local RESISTANCE_SAFE_WINDOW_CURVE = 14
 local function resistanceRiskParams(resistance)
 	local n = math.clamp(resistance / RESISTANCE_MAX_LEVEL, 0, 1)
 	local reduction = RESISTANCE_MAX_REDUCTION * (1 - (1 - n) ^ RESISTANCE_REDUCTION_CURVE)
