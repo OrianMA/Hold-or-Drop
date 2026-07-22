@@ -47,3 +47,21 @@ export const STEER_SPACE_HEIGHT = 50; // studs above the pad where roll authorit
 // Seconds the camera lingers on the exploding rocket (loss) before swinging back
 // to the player. Shared so the server reset and the client camera restore agree.
 export const EXPLOSION_VIEW_DELAY = 1.5;
+
+// Nombre de secondes de vol utilisé par le shop pour prévisualiser l'effet d'un niveau
+// de Rocket Speed ("×6.0 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
+export const SPEED_PREVIEW_SECONDS = 10;
+
+// Multiplicateur atteint après `seconds` de vol pour une valeur de Rocket Speed donnée.
+// Reproduit exactement la boucle serveur (un tick toutes les MULTIPLIER_TICK_RATE
+// secondes, chaque tick ajoute vitesse × tick × MULTIPLIER_PER_STUD). Pure — utilisée
+// par le shop côté client pour montrer ce qu'achète un niveau.
+export function multiplierAfter(speedValue: number, seconds: number): number {
+	const accel = ROCKET_ACCEL * speedValue;
+	const maxSpeed = ROCKET_MAX_SPEED * speedValue;
+	let mult = STARTING_MULTIPLIER;
+	for (let t = MULTIPLIER_TICK_RATE; t <= seconds + 1e-6; t += MULTIPLIER_TICK_RATE) {
+		mult += math.min(accel * t, maxSpeed) * MULTIPLIER_TICK_RATE * MULTIPLIER_PER_STUD;
+	}
+	return mult;
+}

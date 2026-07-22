@@ -59,6 +59,15 @@ local function getMoney()
 	end
 	return _condition
 end
+-- Multiplicateur d'argent répliqué (rebirth × boosts) — sert à afficher le gain
+-- EFFECTIF de BaseCash au lieu de sa valeur brute.
+local function getMoneyMult()
+	local _condition = (player:GetAttribute("MoneyMult"))
+	if _condition == nil then
+		_condition = 1
+	end
+	return _condition
+end
 -- Cosmetic only — the real gate is the handler guard + server validation.
 local function setAffordable(button, priceLabel, affordable)
 	button.AutoButtonColor = affordable
@@ -96,7 +105,10 @@ local function bindItem(body, item)
 	end
 	local function refresh()
 		local level = getLevel(cfg.levelAttribute)
-		currentText.Text = cfg.display(cfg.valueFor(level))
+		local ctx = {
+			moneyMult = getMoneyMult(),
+		}
+		currentText.Text = cfg.display(cfg.valueFor(level), ctx)
 		if isAtCap(item.stat, level) then
 			nextText.Text = "MAX"
 			priceLabel.Text = "MAX"
@@ -109,7 +121,7 @@ local function bindItem(body, item)
 			end
 			return nil
 		end
-		nextText.Text = cfg.display(cfg.valueFor(level + item.quantity))
+		nextText.Text = cfg.display(cfg.valueFor(level + item.quantity), ctx)
 		local price = priceForItem(item, level)
 		priceLabel.Text = `{FormatNumber(price)}$`
 		setAffordable(buyButton, priceLabel, getMoney() >= price)
@@ -152,6 +164,8 @@ local function init()
 	player:GetAttributeChangedSignal("BaseCashLevel"):Connect(refreshAll)
 	player:GetAttributeChangedSignal("RocketSpeedLevel"):Connect(refreshAll)
 	player:GetAttributeChangedSignal("ResistanceLevel"):Connect(refreshAll)
+	-- Un rebirth change MoneyMult → le gain effectif affiché sur BaseCash doit suivre.
+	player:GetAttributeChangedSignal("MoneyMult"):Connect(refreshAll)
 end
 return {
 	init = init,

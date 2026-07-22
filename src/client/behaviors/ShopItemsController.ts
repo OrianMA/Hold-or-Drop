@@ -40,6 +40,12 @@ function getMoney(): number {
 	return (player.GetAttribute("Money") as number | undefined) ?? 0;
 }
 
+// Multiplicateur d'argent répliqué (rebirth × boosts) — sert à afficher le gain
+// EFFECTIF de BaseCash au lieu de sa valeur brute.
+function getMoneyMult(): number {
+	return (player.GetAttribute("MoneyMult") as number | undefined) ?? 1;
+}
+
 // Cosmetic only — the real gate is the handler guard + server validation.
 function setAffordable(button: TextButton, priceLabel: TextLabel, affordable: boolean): void {
 	button.AutoButtonColor = affordable;
@@ -81,7 +87,8 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 
 	function refresh(): void {
 		const level = getLevel(cfg.levelAttribute);
-		currentText.Text = cfg.display(cfg.valueFor(level));
+		const ctx = { moneyMult: getMoneyMult() };
+		currentText.Text = cfg.display(cfg.valueFor(level), ctx);
 
 		if (isAtCap(item.stat, level)) {
 			nextText.Text = "MAX";
@@ -96,7 +103,7 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 			return;
 		}
 
-		nextText.Text = cfg.display(cfg.valueFor(level + item.quantity));
+		nextText.Text = cfg.display(cfg.valueFor(level + item.quantity), ctx);
 		const price = priceForItem(item, level);
 		priceLabel.Text = `${FormatNumber(price)}$`;
 		setAffordable(buyButton, priceLabel, getMoney() >= price);
@@ -138,4 +145,6 @@ export function init(): void {
 	player.GetAttributeChangedSignal("BaseCashLevel").Connect(refreshAll);
 	player.GetAttributeChangedSignal("RocketSpeedLevel").Connect(refreshAll);
 	player.GetAttributeChangedSignal("ResistanceLevel").Connect(refreshAll);
+	// Un rebirth change MoneyMult → le gain effectif affiché sur BaseCash doit suivre.
+	player.GetAttributeChangedSignal("MoneyMult").Connect(refreshAll);
 }

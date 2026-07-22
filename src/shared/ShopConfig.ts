@@ -1,4 +1,6 @@
 import { FormatNumber } from "./NumberFormat";
+import { resistanceRiskParams } from "./ResistanceCurve";
+import { SPEED_PREVIEW_SECONDS, multiplierAfter } from "./RocketGameConfig";
 import {
 	BASE_CASH,
 	COMMUNITY,
@@ -23,6 +25,13 @@ export type ShopStat = "BaseCash" | "RocketSpeed" | "Resistance";
 // One per shop button under InGameUI/ShopMenu/Body.
 export type ShopItemId = "BaseCash" | "RocketSpeed" | "Resistance";
 
+// Contexte passé au rendu d'une stat. `moneyMult` permet à BaseCash d'afficher le gain
+// EFFECTIF (multiplicateur de rebirth et boosts inclus) plutôt que la valeur brute :
+// après quelques rebirths, "1K → 1.2K" devient "512K → 614K".
+export interface DisplayContext {
+	readonly moneyMult: number;
+}
+
 export interface StatConfig {
 	// Attribute the rest of the game reads (unchanged names — game loop, billboard).
 	readonly valueAttribute: string;
@@ -34,8 +43,8 @@ export interface StatConfig {
 	// Effective value at a given level. Property (not method) so it matches the
 	// arrow-function assignments below — roblox-ts separates `.` and `:` calls.
 	readonly valueFor: (level: number) => number;
-	// Human-readable rendering of a value (e.g. "50%", "11.7K").
-	readonly display: (value: number) => string;
+	// Rendu lisible par un joueur de la valeur de la stat (pas le nombre brut).
+	readonly display: (value: number, ctx: DisplayContext) => string;
 }
 
 // Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
@@ -54,7 +63,8 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		startPrice: BASE_CASH.startPrice,
 		priceGrowth: BASE_CASH.priceGrowth,
 		valueFor: (level) => math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ** level),
-		display: (value) => FormatNumber(value),
+		// Gain effectif = ce que le joueur encaisse vraiment (EffectiveBaseCash).
+		display: (value, ctx) => `${FormatNumber(math.floor(value * ctx.moneyMult))}$`,
 	},
 	RocketSpeed: {
 		valueAttribute: "RocketSpeed",
@@ -62,8 +72,8 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		startPrice: ROCKET_SPEED.startPrice,
 		priceGrowth: ROCKET_SPEED.priceGrowth,
 		valueFor: (level) => ROCKET_SPEED.baseValue + level,
-		// Plain integer speed (1, 2, 3…).
-		display: (value) => tostring(value),
+		// "3 (x6)" — la vitesse brute plus le multiplicateur atteint à 10 s de vol.
+		display: (value) => `${value} (x${trimDecimals(multiplierAfter(value, SPEED_PREVIEW_SECONDS))})`,
 	},
 	Resistance: {
 		valueAttribute: "Resistance",
@@ -71,10 +81,9 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		startPrice: RESISTANCE.startPrice,
 		priceGrowth: RESISTANCE.priceGrowth,
 		maxLevel: RESISTANCE.maxLevel,
-		// Plain 0..100 level — the risk-curve mapping lives in ButtonInGameModule.
 		valueFor: (level) => level,
-		// Plain integer (1, 2, 3…) like Rocket Speed.
-		display: (value) => tostring(value),
+		// Secondes de vol garanties — la seule formulation compréhensible de cette stat.
+		display: (value) => `${string.format("%.1f", resistanceRiskParams(value).safeWindow)}s`,
 	},
 };
 
@@ -95,7 +104,7 @@ export const ITEMS: { readonly [K in ShopItemId]: ShopItem } = {
 		frameName: "ARocketSpeed",
 		title: "Rocket speed",
 	},
-	Resistance: { id: "Resistance", stat: "Resistance", quantity: 1, frameName: "DSafety", title: "Resistance" },
+	Resistance: { id: "Resistance", stat: "Resistance", quantity: 1, frameName: "DSafety", title: "Vol garanti" },
 };
 
 // Iteration order for the client (matches the A/B/D frame ordering).

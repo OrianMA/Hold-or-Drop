@@ -1,6 +1,10 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
+local resistanceRiskParams = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ResistanceCurve").resistanceRiskParams
+local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
+local SPEED_PREVIEW_SECONDS = _RocketGameConfig.SPEED_PREVIEW_SECONDS
+local multiplierAfter = _RocketGameConfig.multiplierAfter
 local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
 local BASE_CASH = _ShopBalance.BASE_CASH
 local COMMUNITY = _ShopBalance.COMMUNITY
@@ -18,6 +22,9 @@ local ROCKET_SPEED = _ShopBalance.ROCKET_SPEED
 -- A stat is one upgradeable progression value. A shop button targets exactly one
 -- stat (one button per stat for now — the BaseCash +5 button is disabled).
 -- One per shop button under InGameUI/ShopMenu/Body.
+-- Contexte passé au rendu d'une stat. `moneyMult` permet à BaseCash d'afficher le gain
+-- EFFECTIF (multiplicateur de rebirth et boosts inclus) plutôt que la valeur brute :
+-- après quelques rebirths, "1K → 1.2K" devient "512K → 614K".
 -- Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
 -- number rendering used by NumberFormat without flooring sub-1 values to "0".
 local function trimDecimals(value)
@@ -39,8 +46,8 @@ local STATS = {
 		valueFor = function(level)
 			return math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ^ level)
 		end,
-		display = function(value)
-			return FormatNumber(value)
+		display = function(value, ctx)
+			return `{FormatNumber(math.floor(value * ctx.moneyMult))}$`
 		end,
 	},
 	RocketSpeed = {
@@ -52,7 +59,7 @@ local STATS = {
 			return ROCKET_SPEED.baseValue + level
 		end,
 		display = function(value)
-			return tostring(value)
+			return `{value} (x{trimDecimals(multiplierAfter(value, SPEED_PREVIEW_SECONDS))})`
 		end,
 	},
 	Resistance = {
@@ -65,7 +72,7 @@ local STATS = {
 			return level
 		end,
 		display = function(value)
-			return tostring(value)
+			return `{string.format("%.1f", resistanceRiskParams(value).safeWindow)}s`
 		end,
 	},
 }
@@ -89,7 +96,7 @@ local ITEMS = {
 		stat = "Resistance",
 		quantity = 1,
 		frameName = "DSafety",
-		title = "Resistance",
+		title = "Vol garanti",
 	},
 }
 -- Iteration order for the client (matches the A/B/D frame ordering).

@@ -41,7 +41,36 @@ local STEER_SPACE_HEIGHT = 50
 -- Seconds the camera lingers on the exploding rocket (loss) before swinging back
 -- to the player. Shared so the server reset and the client camera restore agree.
 local EXPLOSION_VIEW_DELAY = 1.5
+-- Nombre de secondes de vol utilisé par le shop pour prévisualiser l'effet d'un niveau
+-- de Rocket Speed ("×6.0 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
+local SPEED_PREVIEW_SECONDS = 10
+-- Multiplicateur atteint après `seconds` de vol pour une valeur de Rocket Speed donnée.
+-- Reproduit exactement la boucle serveur (un tick toutes les MULTIPLIER_TICK_RATE
+-- secondes, chaque tick ajoute vitesse × tick × MULTIPLIER_PER_STUD). Pure — utilisée
+-- par le shop côté client pour montrer ce qu'achète un niveau.
+local function multiplierAfter(speedValue, seconds)
+	local accel = ROCKET_ACCEL * speedValue
+	local maxSpeed = ROCKET_MAX_SPEED * speedValue
+	local mult = STARTING_MULTIPLIER
+	do
+		local t = MULTIPLIER_TICK_RATE
+		local _shouldIncrement = false
+		while true do
+			if _shouldIncrement then
+				t += MULTIPLIER_TICK_RATE
+			else
+				_shouldIncrement = true
+			end
+			if not (t <= seconds + 1e-6) then
+				break
+			end
+			mult += math.min(accel * t, maxSpeed) * MULTIPLIER_TICK_RATE * MULTIPLIER_PER_STUD
+		end
+	end
+	return mult
+end
 return {
+	multiplierAfter = multiplierAfter,
 	RISK_RAMP_DURATION = RISK_RAMP_DURATION,
 	MULTIPLIER_TICK_RATE = MULTIPLIER_TICK_RATE,
 	STARTING_MULTIPLIER = STARTING_MULTIPLIER,
@@ -52,4 +81,5 @@ return {
 	STEER_ROT_SPEED_SPACE = STEER_ROT_SPEED_SPACE,
 	STEER_SPACE_HEIGHT = STEER_SPACE_HEIGHT,
 	EXPLOSION_VIEW_DELAY = EXPLOSION_VIEW_DELAY,
+	SPEED_PREVIEW_SECONDS = SPEED_PREVIEW_SECONDS,
 }
