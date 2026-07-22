@@ -993,7 +993,7 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | Shop start prices | `shared/ShopBalance.ts` | 50 / 75 / 150 | BaseCash / RocketSpeed / Resistance lvl 1 |
 | `Resistance` cap (shop) | `shared/ShopBalance.ts` | 100 lvls | Max resistance level (risk curve in §6.3) |
 | `RESISTANCE_PASS` | `shared/ShopBalance.ts` | +20 lvls | Bonus resistance levels from the resistance game-pass (id 0 = inert) |
-| `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to `MoneyMult` |
+| `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to the boosts factor, which is then MULTIPLIED by `MultRebirth` to form `MoneyMult` |
 | `MONEY_TIERS` | `shared/ShopBalance.ts` | ×2…×1024, highest owned wins | Game-pass money-tier multipliers (ids configured; sold via shop upsell + HUD MultiplierBuyButton) |
 | Rebirth base cost | `shared/ShopBalance.ts` | 20 000 | Cash for the 1st rebirth |
 | Rebirth cost growth | `shared/ShopBalance.ts` | ×38 / rebirth | `rebirthCost(R)=floor(20 000×38^R)` |

@@ -1,4 +1,5 @@
 import { Players } from "@rbxts/services";
+import { FormatNumber } from "shared/NumberFormat";
 import { COMMUNITY } from "shared/ShopBalance";
 
 // Shop "boosts" UI — read-only multiplier readout in the ShopMenu header. Pure
@@ -14,8 +15,12 @@ function num(attr: string, fallback: number): number {
 	return (player.GetAttribute(attr) as number | undefined) ?? fallback;
 }
 
-// "×6", "×3.5" — trim trailing zeros.
+// "×6", "×3.5" below 1000 (2 decimals, trailing zeros trimmed) ; "×32.77K",
+// "×2.1M" at and above 1000 — delegated to FormatNumber so the rebirth
+// multiplier (8^R, e.g. ×2 097 152 at R7) never prints as a raw 7-9 digit
+// number in the shop header readout.
 function fmtMult(value: number): string {
+	if (value >= 1000) return `×${FormatNumber(value)}`;
 	const hundredths = math.floor(value * 100 + 1e-7);
 	const trimmed = hundredths % 100 === 0 ? tostring(hundredths / 100) : string.format("%.2f", hundredths / 100);
 	return `×${trimmed}`;

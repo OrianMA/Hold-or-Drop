@@ -71,10 +71,11 @@ local function riskAt(timeHeld, params)
 	return getRisk(timeHeld - params.safeWindow) * params.riskScale
 end
 -- ── Explosion-time preload ──────────────────────────────────────────────────────
--- Guard on the precompute loop. At max resistance the risk floor is tiny and the
--- safe window pushes the first roll to ~15s, so a run can last minutes — but never
--- forever. 2000 ticks (1000s) only guards against a pathological never-ending loop;
--- no real hold reaches it.
+-- Guard on the precompute loop. At max resistance the risk floor is ×0.25 (not
+-- zero — RESISTANCE_MAX_REDUCTION = 0.75) and the safe window guarantees ~8s
+-- before the first roll (RESISTANCE_MAX_SAFE_WINDOW), so a run can last a while —
+-- but never forever. 2000 ticks (1000s) only guards against a pathological
+-- never-ending loop; no real hold reaches it.
 local EXPLOSION_ROLL_CAP = 2000
 -- Precompute, once at launch, the exact moment the rocket will explode by running the
 -- SAME per-tick risk roll the live loop uses — but all at once, up front. This "loads"
@@ -128,9 +129,10 @@ local function endButtonGame(player)
 end
 local function startButtonGame(player, session)
 	local room = session.room
-	-- EffectiveBaseCash already folds in every money multiplier (rebirth + money
-	-- game-pass tier + community), additively. Read once — held for the session so
-	-- a mid-run boost change can't alter an in-progress hold.
+	-- EffectiveBaseCash already folds in every money multiplier (rebirth multiplies;
+	-- money game-pass tier + community add inside that boost factor — see
+	-- shared/ShopConfig.moneyMult). Read once — held for the session so a mid-run
+	-- boost change can't alter an in-progress hold.
 	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash")
 	-- Resistance (0..100, incl. the pass) reshapes the explosion risk — see
 	-- resistanceRiskParams. Read once and resolved to its risk profile for the run.

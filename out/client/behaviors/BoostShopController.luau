@@ -1,6 +1,7 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Players
+local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local COMMUNITY = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance").COMMUNITY
 -- Shop "boosts" UI — read-only multiplier readout in the ShopMenu header. Pure
 -- display from replicated attributes (MultRebirth / InCommunity / MoneyTierMult /
@@ -16,8 +17,14 @@ local function num(attr, fallback)
 	end
 	return _condition
 end
--- "×6", "×3.5" — trim trailing zeros.
+-- "×6", "×3.5" below 1000 (2 decimals, trailing zeros trimmed) ; "×32.77K",
+-- "×2.1M" at and above 1000 — delegated to FormatNumber so the rebirth
+-- multiplier (8^R, e.g. ×2 097 152 at R7) never prints as a raw 7-9 digit
+-- number in the shop header readout.
 local function fmtMult(value)
+	if value >= 1000 then
+		return `×{FormatNumber(value)}`
+	end
 	local hundredths = math.floor(value * 100 + 1e-7)
 	local trimmed = if hundredths % 100 == 0 then tostring(hundredths / 100) else string.format("%.2f", hundredths / 100)
 	return `×{trimmed}`

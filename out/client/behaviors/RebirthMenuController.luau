@@ -31,8 +31,14 @@ local function getMoney()
 	end
 	return _condition
 end
--- "x2", "x3.5" — trim trailing zeros.
+-- "x2", "x3.5" below 1000 (2 decimals, trailing zeros trimmed) ; "x32.77K",
+-- "x2.1M" at and above 1000 — delegated to FormatNumber so the rebirth
+-- multiplier (8^R, e.g. ×2 097 152 at R7) never prints as a raw 7-9 digit
+-- number in a label sized for "x5".
 local function formatMult(value)
+	if value >= 1000 then
+		return `x{FormatNumber(value)}`
+	end
 	local hundredths = math.floor(value * 100 + 1e-7)
 	local trimmed = if hundredths % 100 == 0 then tostring(hundredths / 100) else string.format("%.2f", hundredths / 100)
 	return `x{trimmed}`

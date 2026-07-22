@@ -68,10 +68,14 @@ local REBIRTH = {
 	costGrowth = 38,
 	multGrowth = 8,
 }
--- ── Money multipliers (3 independent additive factors) ────────────────────────
--- Folded into BaseCash via shared/ShopConfig.moneyMult (additive bonus model:
--- each "×N" adds +(N-1)). Game-pass IDs are 0 until authored on the Roblox
--- dashboard — an id of 0 is INERT (treated as not owned, no web call).
+-- ── Money multipliers (rebirth multiplicative, boosts additive) ───────────────
+-- Folded into BaseCash via shared/ShopConfig.moneyMult:
+--   moneyMult = multRebirth * (1 + communityBonus + tierBonus)
+-- MultRebirth MULTIPLIES the whole factor; community and the money-tier pass only
+-- ADD their "+(N-1)" bonus inside the boost factor, so a ×2 pass stays worth ×2 at
+-- any rebirth level instead of being swamped by a large MultRebirth. Game-pass IDs
+-- are 0 until authored on the Roblox dashboard — an id of 0 is INERT (treated as
+-- not owned, no web call).
 -- Community ×2 — membership of the experience's Roblox group, claimed via the
 -- CommunityJoinPart ProximityPrompt in each room.
 local COMMUNITY = {
