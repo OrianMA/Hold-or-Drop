@@ -1,6 +1,7 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").Players
+local COMMUNITY = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance").COMMUNITY
 -- Shop "boosts" UI — read-only multiplier readout in the ShopMenu header. Pure
 -- display from replicated attributes (MultRebirth / InCommunity / MoneyTierMult /
 -- MoneyMult). The shop RobuxButtons are wired by ShopItemsController (developer
@@ -32,7 +33,7 @@ local function init()
 		local total = num("MoneyMult", 1)
 		-- Le rebirth MULTIPLIE le facteur de boost ; la communauté et le palier
 		-- s'additionnent à l'intérieur de ce facteur (voir ShopConfig.moneyMult).
-		local boosts = 1 + (if inCommunity then 1 else 0) + (tier - 1)
+		local boosts = 1 + (if inCommunity then COMMUNITY.mult - 1 else 0) + (tier - 1)
 		readout.Text = `Money {fmtMult(total)} (Rebirth {fmtMult(rebirth)} × Boosts {fmtMult(boosts)})`
 	end
 	player:GetAttributeChangedSignal("MoneyMult"):Connect(refresh)

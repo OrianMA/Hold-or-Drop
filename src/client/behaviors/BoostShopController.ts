@@ -1,4 +1,5 @@
 import { Players } from "@rbxts/services";
+import { COMMUNITY } from "shared/ShopBalance";
 
 // Shop "boosts" UI — read-only multiplier readout in the ShopMenu header. Pure
 // display from replicated attributes (MultRebirth / InCommunity / MoneyTierMult /
@@ -33,7 +34,7 @@ export function init(): void {
 		const total = num("MoneyMult", 1);
 		// Le rebirth MULTIPLIE le facteur de boost ; la communauté et le palier
 		// s'additionnent à l'intérieur de ce facteur (voir ShopConfig.moneyMult).
-		const boosts = 1 + (inCommunity ? 1 : 0) + (tier - 1);
+		const boosts = 1 + (inCommunity ? COMMUNITY.mult - 1 : 0) + (tier - 1);
 		readout.Text = `Money ${fmtMult(total)} (Rebirth ${fmtMult(rebirth)} × Boosts ${fmtMult(boosts)})`;
 	}
 
