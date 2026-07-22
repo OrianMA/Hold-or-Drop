@@ -8,12 +8,11 @@
 **Hold or Drop** is a Roblox risk/reward game. Each player owns a private room with a
 button. Holding the button grows a **multiplier** over time, increasing the payout — but
 the **explosion risk** also ramps up. The player chooses when to **release** (bank the
-cash) or keep **holding** (greed). If the button explodes, a short **perfect-parry** window
-gives one last chance to survive; failing it kills the player and pays only a fraction of
-the pot.
+cash) or keep **holding** (greed). If the button explodes before the player banks, the run
+is lost and pays only a flat fraction of the pot.
 
 Core loop: *enter room → trigger button → hold (multiplier ↑, risk ↑) → release / explode →
-parry chance → end-game payout animation → money credited*.
+end-game payout animation → money credited*.
 
 ## 2. Tech Stack & Build
 
@@ -56,7 +55,7 @@ src/
 │   │   └── RoomService.ts   # player ↔ room assignment
 │   ├── modules/
 │   │   ├── ButtonModule.ts          # Per-room trigger handler
-│   │   ├── ButtonInGameModule.ts    # THE hold/risk/parry game loop
+│   │   ├── ButtonInGameModule.ts    # THE hold/risk/claim game loop
 │   │   ├── RocketLauncher.ts        # Per-room rocket flight: launch/stop/reset/explode
 │   │   ├── EndGameButtonModule.ts   # Post-game payout + popup coordination
 │   │   ├── NeonPipeColors.ts        # Tints Environment/NeonPipe per room occupancy
@@ -84,14 +83,14 @@ src/
     ├── MoneyProducts.ts     # 9 Robux "buy money" dev products (productId ↔ amount)
     ├── PopupType.ts         # Popup enum (shared contract)
     ├── NumberFormat.ts      # FormatCash helper
-    └── CameraController.ts  # Camera helper: rocket-follow (Custom) + parry cinematic (Scriptable)
+    └── CameraController.ts  # Camera helper: rocket-follow (Custom) + cinematic (Scriptable)
 ```
 
 ## 4. Client / Server / Shared Boundaries
 
 - **Server is authoritative.** All gameplay decisions — risk rolls, explosion, payout,
   ownership validation, persistence — happen on the server. The client never decides
-  outcomes; it only sends intent (release/parry/quit) and renders effects.
+  outcomes; it only sends intent (claim/steer/quit) and renders effects.
 - **Client owns presentation:** camera, post-processing, sounds, HUD, popups, and
   per-player ProximityPrompt visibility.
 - **Shared** holds the *contracts* both sides agree on: the RemoteEvent list, popup
@@ -256,8 +255,27 @@ explodes. The server captures `claimedMultiplier = currentMultiplier` and fires
 colour), plays the **cash SFX** (`AudioConfig.sfx.moneyGain`, not the generic UI click — the
 button carries a `NoUiClick` attribute so `UiClickSound` skips it), and is disabled (no
 double-claim). The strategic tension is now *claim before the rocket explodes*: claim too late
-and the explosion lands first (parry/loss); claim in time and the explosion just collects your
+and the explosion lands first (loss); claim in time and the explosion just collects your
 locked win.
+
+**Go Home** (`GoHomeEvent`): `CLAIM_REARM_DELAY` (0.6 s) after a claim the **same button
+re-arms**, with its side label (`ClaimButtonFrame.TextLabel`) swapped from `"Claim"` to
+`"Go Home"` (the button's own text is empty and stays so) and its **original colour restored**
+(the claim red means "not clickable"; it is clickable again). Clicking it ends the run
+**immediately** instead of waiting for the explosion: the server stops the rocket in place
+(`RocketLauncher.stop`), pays the **same locked gain**
+`floor(EffectiveBaseCash × claimedMultiplier)` through the normal EndGame popup path
+(`enter(mode="released")`), and fires `GameResultEvent(exploded=false)` so the client hands
+the camera back to the player — the exact "return home" of an explosion, minus the
+explosion. On the click the client also kills **every flight effect at once**
+(`resetPostProcess(true)`: camera shake, bloom, FOV) plus the run music and the steering —
+the shake decay lives in the `isGameActive`-gated RenderStepped loop, so a leftover
+amplitude would otherwise stay frozen on the camera after it returns to the player. `GO_HOME_RESET_DELAY` (0.6 s) later, once the camera has left the pad,
+`RocketLauncher.reset` + `RocketPlacer.place` respawn a **fresh rocket** on the pad, same as
+after an explosion. The server **refuses
+`GoHomeEvent` before a claim** (it would be a free escape from the risk), and both the
+explosion branch and the client's `PlayerKilledEvent` handler cancel the re-arm, so an
+explosion during those 0.6 s wins.
 
 **`ResultMultiplierText`** (a `RocketLaunch` label) is a **live "cash-out preview"**: it shows
 the money you'd bank if you claimed right now — `floor(EffectiveBaseCash × displayedMultiplier)`,
@@ -271,39 +289,41 @@ Endings:
 - **Claimed → rocket explodes:** guaranteed win. The rocket bursts (`RocketLauncher.explode` +
   3D boom + `PlayerKilledEvent` orbit-on-blast), then after `EXPLOSION_VIEW_DELAY`
   `RocketLauncher.reset` + `RocketPlacer.place` swap in a fresh rocket and the **full** payout
-  `floor(EffectiveBaseCash * claimedMultiplier)` runs → EndGame (`lossMultiplier=1`, **no parry**).
-- **Explosion roll hits before any claim:** fire `ButtonExplodedEvent`, open a **0.2s grace**
-  (delay before the parry cue), then a **0.5s perfect-parry window** (`PerfectParryEvent`):
-  - **Parry success:** visual-only explosion (`blastPressure=0`), sparkle effect, knockback
-    tween, full payout at `currentMultiplier`. Movement frozen during the window, restored after.
-  - **Parry fail (loss):** the **rocket explodes, not the player** — `RocketLauncher.explode`
-    bursts the `ExplosionParticles` in the rocket's `ParticlesParentPart` + a 3D boom; **no
-    `Explosion` instance, no fling, no death**. The player's frozen movement is restored, the
-    client (`PlayerKilledEvent`) keeps the orbit camera on the exploding rocket for
-    `EXPLOSION_VIEW_DELAY` (impact FOV punch + shake) before swinging back, then
-    `RocketLauncher.reset` snaps the rig back to the pad and **`RocketPlacer.place` swaps in a
-    brand-new rocket** (the exploded one is destroyed, not reassembled). A loss pays **no
-    ButtonFinishGame popup**: instead a **flat consolation `floor(EffectiveBaseCash / 3)`**
-    (`LOSS_CONSOLATION_DIVISOR`, **no multiplier** — holding longer doesn't raise it) is granted
-    via `EndGameButtonModule.enterRewardOnly` → `LossRewardEvent`, shown client-side by
-    `LossRewardBehavior` as a single "+amount" text that jumps then flies into the money HUD
-    (§6.4). (No `Humanoid.Health=0` / Motor6D disable anymore.) The `ClaimButton` does **not**
-    disappear on a loss — it turns red and `Interactable=false` (reset to normal at the next
-    launch). There is **no pre-explosion "cling" sound** (removed).
+  `floor(EffectiveBaseCash * claimedMultiplier)` runs → EndGame (`lossMultiplier=1`).
+- **Claimed → player hits "Go Home":** same guaranteed win, collected early. No explosion:
+  `RocketLauncher.stop` freezes the rocket, `GameResultEvent(exploded=false)` returns the
+  camera, the payout `floor(EffectiveBaseCash * claimedMultiplier)` runs → EndGame
+  (`mode="released"`, `lossMultiplier=1`), and after `GO_HOME_RESET_DELAY`
+  `RocketLauncher.reset` + `RocketPlacer.place` respawn a fresh rocket on the pad.
+- **Explosion roll hits before any claim (loss):** fire `ButtonExplodedEvent` (client stops the
+  run music, kills the bloom and closes the run — the claim can no longer lock anything), then
+  the **rocket explodes, not the player** — `RocketLauncher.explode` bursts the
+  `ExplosionParticles` in the rocket's `ParticlesParentPart` + a 3D boom; **no `Explosion`
+  instance, no fling, no death, no movement freeze**. The client (`PlayerKilledEvent`) keeps the
+  orbit camera on the exploding rocket for `EXPLOSION_VIEW_DELAY` (impact FOV punch + shake)
+  before swinging back, then `RocketLauncher.reset` snaps the rig back to the pad and
+  **`RocketPlacer.place` swaps in a brand-new rocket** (the exploded one is destroyed, not
+  reassembled). A loss pays **no ButtonFinishGame popup**: instead a **flat consolation
+  `floor(EffectiveBaseCash / 3)`** (`LOSS_CONSOLATION_DIVISOR`, **no multiplier** — holding
+  longer doesn't raise it) is granted via `EndGameButtonModule.enterRewardOnly` →
+  `LossRewardEvent`, shown client-side by `LossRewardBehavior` as a single "+amount" text that
+  jumps then flies into the money HUD (§6.4). (No `Humanoid.Health=0` / Motor6D disable
+  anymore.) The `ClaimButton` does **not** disappear on a loss — it turns red and
+  `Interactable=false` (reset to normal at the next launch). There is **no pre-explosion
+  "cling" sound** (removed).
 
 > All payout paths are floored and use `EffectiveBaseCash` — the rebirth multiplier and all
 > boosts are already folded into it (see §6.6). `EffectiveBaseCash` is read once at session start
 > so a mid-run boost change can't affect an in-progress hold. A **claimed** run pays the locked
 > `claimedMultiplier` (captured at claim time, so the EndGame popup uses that exact value);
-> **parry-success** pays the live `currentMultiplier`; a **loss** pays a flat `EffectiveBaseCash / 3`
-> **with no multiplier at all** (a longer, greedier hold you then lose is worth no more than a
-> short one). There is no separate `MultRebirth` factor at payout time. The old grace-period
-> "release to cancel" is gone (the button now claims, not releases).
+> a **loss** pays a flat `EffectiveBaseCash / 3` **with no multiplier at all** (a longer,
+> greedier hold you then lose is worth no more than a short one). There is no separate
+> `MultRebirth` factor at payout time. The old grace-period "release to cancel" is gone (the
+> button now claims, not releases).
 
-`triggerExplosionAt` is now used **only** for the parry-success visual (a `blastPressure=0`
-`Explosion` at the button — no fling). The 3D boom (used by both parry-success and the rocket
-loss via `playExplosionSoundAt`) is cloned from a **pre-buffered ReplicatedStorage template** to
-avoid a CDN fetch at runtime.
+The 3D boom (`playExplosionSoundAt`, used by both the claimed and the lost explosion) is cloned
+from a **pre-buffered ReplicatedStorage template** to avoid a CDN fetch at runtime. No
+`Explosion` instance is ever created — the burst is purely the rocket's particles.
 
 ### 6.4 End game (`modules/EndGameButtonModule.ts`)
 `enter(...)` cleans up the session, stashes `pendingEarned`, then (after a delay or
@@ -402,8 +422,7 @@ server credits `Money` and hides the popup.
     parameter is kept so the call site stays unchanged. Started by `ButtonMenuBehavior` on
     `ButtonTriggerEvent`, it persists through the hold; `BringBackPlayerCamera` hands the
     subject back to the player's Humanoid on quit/release/death (tweening only when returning
-    from a `Scriptable` cinematic), and `RocketLaunchBehavior` calls `StopOrbit` before the
-    parry camera takes over. The shake (Camera±1 bindings) layers on top of the native camera's
+    from a `Scriptable` cinematic). The shake (Camera±1 bindings) layers on top of the native camera's
     `Camera`-priority CFrame with no change. The rocket body parts (the placed `Rocket` model) are set
     `CanQuery = false` in `RocketLauncher` so the camera's occlusion raycasts ignore them and
     never pull the camera into the rocket.
@@ -535,7 +554,7 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
   the BGM `playlist`, the `highAltitude` ascent track, and the `sfx` (server `explosion` +
   `rocketLaunch` (looped 3D engine roar — see §6.17),
-  client `parry` / `buttonUpgrade` / `moneyGain` / `uiClick`; `buttonExplode` is still defined
+  client `buttonUpgrade` / `moneyGain` / `uiClick`; `buttonExplode` is still defined
   but no longer played — the pre-explosion "cling" cue was removed). SFX still play
   from their existing call sites (`RocketLaunchBehavior` client-side, `ButtonInGameModule`
   server-side, `NeonPipePulse` for `buttonUpgrade` — see §6.12, `MoneyDisplay` for `moneyGain`,
@@ -577,7 +596,7 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
     crossfades: `AudioFader.Volume` → 0 while the high track fades in (0.8s). At the explosion,
     `stopRunMusic()` hard-cuts the high track and quickly ducks the base BGM to 0 (0.25s) so the run
     ends on silence, then `resumeBgm` brings the base BGM back. Called on `ButtonExplodedEvent`
-    (unclaimed, before the parry window) and on `PlayerKilledEvent` (claimed win / loss, which has
+    (unclaimed loss) and on `PlayerKilledEvent` (claimed win / loss, which has
     no `ButtonExplodedEvent`). `startRun` / `stopRunMusic` / `resumeBgm` are all idempotent.
 
 ### 6.11 Audio Visualizer (`client/ui/AudioVisualizer.ts`)
@@ -652,21 +671,19 @@ working while ids are still being authored.
 - `hold` (`100517121510078`, "press button") — presses down then **holds its last frame** for
   the whole game (re-played fresh after a respawn).
 - `release` (`70993299432318`) — one-shot when the player releases; defaults at its natural end.
-- `parry` (`84361846884673`) — one-shot perfect-parry projection.
 
 **Held poses vs one-shots.** `playInteract`/`playHold` play their clip once then **freeze it on
 the last frame** (a `Heartbeat` watcher pins `AdjustSpeed(0)` just before the natural end so the
 non-looped track can't auto-stop). Only one held pose at a time (`currentHold`). `playQuit`/
-`playRelease`/`playParry` are fire-and-forget one-shots **not** tracked, so they blend back to
+`playRelease` are fire-and-forget one-shots **not** tracked, so they blend back to
 Roblox's defaults on their own and a later `stop()` never cuts them short. `stop()` drops only
 the held pose; `restoreDefault()` stops everything (held + in-flight one-shot) to force defaults.
 Tracks are lazily loaded against the current `Animator` and the cache is dropped on respawn.
 Call sites: `ButtonMenuBehavior` (`playInteract` on `ButtonTriggerEvent`, `playQuit` on Quit);
-`RocketLaunchBehavior` (`playHold` in `setup`, `playParry` on
-`PerfectParryEffectEvent`, `stop` on `GameResultEvent` as a safety net — the character keeps
-the hold pose through a claim, since claiming no longer releases the button);
+`RocketLaunchBehavior` (`playHold` in `setup`, `stop` on `GameResultEvent` as a safety net — the
+character keeps the hold pose through a claim, since claiming no longer releases the button);
 `EndGameButtonBehavior` (`restoreDefault` on `EndGameStartEvent` — the payout popup opening ends
-the parry projection / any still-playing release clip).
+any still-playing release clip).
 
 ### 6.14 Leaderboards & Podium (`server/services/LeaderboardService.ts`, `server/modules/LeaderboardBoard.ts`, `server/modules/PodiumDisplay.ts`, `shared/LeaderboardConfig.ts`)
 Two **global persistent** physical leaderboards + a top-3 money podium, under
@@ -805,7 +822,7 @@ recaptured on the next `launch`.
   `NitroParticles` engine part (so it emanates from the rocket and rises with it; server-authored
   like the explosion boom so every nearby client hears it). It is stopped in **`stopRoom`** — the
   common chokepoint of `stop`/`reset`/`explode` — so it cuts on every ending: explosion, claim
-  (release), parry, and quit. (`LAUNCH_SOUND_ROLLOFF` at the top of `RocketLauncher.ts`.)
+  (release) and quit. (`LAUNCH_SOUND_ROLLOFF` at the top of `RocketLauncher.ts`.)
 - **`stop(room)`** halts the ascent in place; **`reset(room)`** halts + snaps back to the pad
   (called on every ending, §6.3); **`explode(room)`** bursts the `ExplosionParticles` emitter in
   the rocket's `ParticlesParentPart` (authored disabled in Studio, like `UpgradeButtonParticles`)
@@ -816,7 +833,7 @@ recaptured on the next `launch`.
   (`CameraPosPart`, `CameraParentPart`, `ParticlesParentPart`, `RocketProximityPromptPart`,
   `RocketSpawnPoint`) are anchored + non-collidable too, so they ride with the rig and never fall
   — `explode` only unanchors the `Rocket` body parts.
-  `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/parry/quit paths reset it.
+  `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/quit paths reset it.
 - **Physical explosion (loss path).** `explode` unanchors every body part of the `Rocket`
   model (the `Camera*`/`ParticlesParentPart` helpers stay anchored so the orbit camera keeps
   holding on the blast site), flings each one outward with a **horizontal-only radial spread**
@@ -862,7 +879,7 @@ clones the right one onto the rig's `RocketSpawnPoint` (§6.1).
   `GetAttributeChangedSignal`, cleaned up on leave). It's also called by `ButtonInGameModule` on a
   **loss** (rocket explosion) — after `RocketLauncher.reset(room)` snaps the rig back to the pad,
   `RocketPlacer.place(room)` destroys the exploded rocket and clones a fresh one, so the occupant
-  never sees the blown-apart debris reassemble itself. Release/parry/quit endings just `reset`
+  never sees the blown-apart debris reassemble itself. Release/quit endings just `reset`
   (no explosion happened, so the same rocket instance is fine). Finally, `RebirthService`
   (§6.9) calls it after a successful rebirth — the `Rebirths` count just changed, so the pad
   rocket is swapped **instantly** for the new level rather than lingering until the next room
@@ -881,12 +898,11 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `ButtonTriggerEvent` | S→C | Start menu flow; passes `cameraPosPart` + `cameraPivotPart` (orbit camera) |
 | `StartButtonClickedEvent` | C→S | Player clicked Start |
 | `ClaimButtonEvent` | C→S | Player claimed — lock in the current multiplier (rocket keeps flying) |
+| `GoHomeEvent` | C→S | Post-claim "Go Home" — stop the rocket and end the run now (refused before a claim) |
 | `QuitButtonClickedEvent` | C→S | Player quit the menu |
-| `PerfectParryEvent` | C→S | Player parried within the window |
 | `RocketSteerEvent` | C→S | Native left/right movement redirected to the flying rocket (dir -1/0/+1, sent on change) |
 | `ClaimAcceptedEvent` | S→C | Confirms a claim with the authoritative locked multiplier |
-| `PerfectParryEffectEvent` | S→C | Trigger sparkle/knockback visuals |
-| `ButtonExplodedEvent` | S→C | Explosion roll hit — start grace/parry on client |
+| `ButtonExplodedEvent` | S→C | Explosion roll hit without a claim — client closes the run (music + bloom) |
 | `PlayerKilledEvent` | S→C | Loss — rocket exploded; client lingers the camera on it then restores (no death anymore) |
 | `MultiplierUpdateEvent` | S→C | New current multiplier (client lerps `MultiplierText` continuously to it) |
 | `RiskUpdateEvent` | S→C | Current risk value |

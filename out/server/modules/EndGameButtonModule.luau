@@ -7,8 +7,8 @@ local UiService = TS.import(script, game:GetService("ServerScriptService"), "TS"
 local ButtonSessionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ButtonSessionService").ButtonSessionService
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
 -- EndGameButton gameplay state — entered when the player releases the button
--- (success / parry / grace-period cancel) or when the player dies from the
--- explosion. Coordinates the transition into the ButtonFinishGame popup.
+-- (success / grace-period cancel) or when the player dies from the explosion.
+-- Coordinates the transition into the ButtonFinishGame popup.
 local RELEASE_DELAY = 1
 local POST_RESPAWN_DELAY = 0.3
 -- Credited to the player once the client signals the end of the last tween

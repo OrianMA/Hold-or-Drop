@@ -184,7 +184,7 @@ function stopRoom(room: Room): void {
 		states.delete(room);
 	}
 	setNitroEnabled(room, false); // moteur éteint dès que la fusée ne bouge plus
-	// Coupe le son de décollage sur toute fin de partie (explosion, claim/release, parry, quit)
+	// Coupe le son de décollage sur toute fin de partie (explosion, claim/release, quit)
 	// — stopRoom est le point de passage commun à stop/reset/explode.
 	const sound = launchSounds.get(room);
 	if (sound) sound.Stop();

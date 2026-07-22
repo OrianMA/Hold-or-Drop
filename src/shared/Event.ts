@@ -12,8 +12,12 @@ export namespace Events {
 	// flying (multiplier keeps climbing on screen) until it explodes, then the payout
 	// uses the locked value. Replaces the old ReleaseButtonEvent (instant bank).
 	export const ClaimButtonEvent = DefineEvent("ClaimButtonEvent", script);
+	// RocketLaunch — client → server (no args). Once claimed, the ClaimButton re-arms as
+	// "Go Home": the player ends the run early instead of waiting for the explosion. The
+	// rocket stops, the locked gain is paid exactly like a post-claim explosion, minus the
+	// explosion itself. Only accepted after a claim.
+	export const GoHomeEvent = DefineEvent("GoHomeEvent", script);
 	export const QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script);
-	export const PerfectParryEvent = DefineEvent("PerfectParryEvent", script);
 
 	// RocketLaunch — client → server. The player's native left/right movement input
 	// (keyboard A/D, mobile thumbstick, gamepad), quantised to -1 (left) / 0 / +1
@@ -26,7 +30,6 @@ export namespace Events {
 	// Server confirms a claim with the authoritative locked multiplier (Arg: multiplier)
 	// so the client shows the exact value that will be paid out.
 	export const ClaimAcceptedEvent = DefineEvent("ClaimAcceptedEvent", script);
-	export const PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script);
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script);
 	export const MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script);

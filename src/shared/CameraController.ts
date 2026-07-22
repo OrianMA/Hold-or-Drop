@@ -80,7 +80,7 @@ export namespace CameraController {
 	}
 
 	export function BringBackPlayerCamera(duration = DEFAULT_DURATION) {
-		// From a Scriptable cinematic (loss / parry) tween smoothly back to the player;
+		// From a Scriptable cinematic (loss) tween smoothly back to the player;
 		// from the native rocket-follow there's nothing to tween — handing the subject
 		// back to the player is the native return.
 		if (camera.CameraType === Enum.CameraType.Scriptable) {

@@ -17,7 +17,6 @@ local ANIM_IDS = {
 	quit = "rbxassetid://93300469810162",
 	hold = "rbxassetid://100517121510078",
 	release = "rbxassetid://70993299432318",
-	parry = "rbxassetid://84361846884673",
 }
 -- Freeze a held pose this many seconds before the clip's natural end. Stopping
 -- just short keeps a non-looped track from auto-stopping (which blends back to
@@ -31,7 +30,7 @@ local LOAD_TIMEOUT = 3
 local loadedFor
 local tracks = {}
 -- The held pose currently frozen on its last frame (interact/hold). One-shots
--- (quit/release/parry) are fire-and-forget and intentionally not tracked here,
+-- (quit/release) are fire-and-forget and intentionally not tracked here,
 -- so a later stop() — or the next held pose — never cuts them short.
 local currentHold
 -- Heartbeat watcher that pins the held pose on its last frame, if active.
@@ -176,9 +175,6 @@ local ButtonAnimations = {
 	end,
 	playRelease = function()
 		return playOnce("release")
-	end,
-	playParry = function()
-		return playOnce("parry")
 	end,
 	stop = function()
 		return stopHold()

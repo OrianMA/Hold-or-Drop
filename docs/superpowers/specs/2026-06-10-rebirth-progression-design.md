@@ -143,8 +143,8 @@ nombre lisible (×6 vers R12, ×8 vers R20). Toutes ces valeurs vivent dans `Sho
 Lire `MultRebirth` une fois au début de la session (comme BaseCash / Multiplier / Safety
 sont déjà lus une fois). Appliquer sur les deux fins :
 
-- Release / parry réussi : `earned = floor(baseCash × currentMultiplier × multRebirth)`.
-- Mort (parry raté) : `earned = floor(baseCash × LOOSE_WIN_MULTIPLIER × currentMultiplier × multRebirth)`.
+- Release / explosion survécue : `earned = floor(baseCash × currentMultiplier × multRebirth)`.
+- Mort : `earned = floor(baseCash × LOOSE_WIN_MULTIPLIER × currentMultiplier × multRebirth)`.
 
 Le serveur reste la **source de vérité** du montant crédité (crédité après l'animation, cf.
 `ARCHITECTURE.md` §6.4).
@@ -243,7 +243,7 @@ les niveaux plus hauts atteignables) ; (c) les nombres affichés restent lisible
 
 - **Robux / monétisation** : les boutons Robux ne sont pas câblés ; non traités ici. Hooks
   naturels futurs : rebirth instantané, gamepass ×2 cash.
-- Refonte de la boucle hold/risk/parry : **inchangée** (seul le payout final est multiplié).
+- Refonte de la boucle hold/risk : **inchangée** (seul le payout final est multiplié).
 - Nouvelles zones / boutons à débloquer : non retenu pour cette itération.
 
 ## 13. Critères d'acceptation

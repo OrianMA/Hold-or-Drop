@@ -6,8 +6,8 @@ import { ButtonSessionService } from "server/services/ButtonSessionService";
 import { PlayerDataService } from "server/services/PlayerDataService";
 
 // EndGameButton gameplay state — entered when the player releases the button
-// (success / parry / grace-period cancel) or when the player dies from the
-// explosion. Coordinates the transition into the ButtonFinishGame popup.
+// (success / grace-period cancel) or when the player dies from the explosion.
+// Coordinates the transition into the ButtonFinishGame popup.
 
 export type EndGameMode = "released" | "killed";
 

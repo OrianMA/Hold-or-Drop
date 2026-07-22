@@ -2,10 +2,9 @@ import { Events } from "shared/Event";
 import { ButtonSession, ButtonSessionService } from "server/services/ButtonSessionService";
 import { UiService } from "server/services/UiService";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
-import { ReplicatedStorage, TweenService, Workspace } from "@rbxts/services";
+import { ReplicatedStorage, Workspace } from "@rbxts/services";
 import { invincible } from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
-import { ConfettiBurst } from "server/modules/ConfettiBurst";
 import { RocketLauncher } from "server/modules/RocketLauncher";
 import { RocketPlacer } from "server/modules/RocketPlacer";
 import {
@@ -21,18 +20,13 @@ import { AudioConfig } from "shared/AudioConfig";
 
 const MAX_RISK = 0.8;
 const TICK_RATE = 0.5;
-// Lot de consolation sur une perte (explosion sans claim / parade ratée) :
-// baseCash / 3 — FORFAITAIRE, sans le multiplicateur. Pas de popup de fin.
+// Lot de consolation sur une perte (explosion sans claim) : baseCash / 3 —
+// FORFAITAIRE, sans le multiplicateur. Pas de popup de fin.
 const LOSS_CONSOLATION_DIVISOR = 3;
+// "Go Home" (retour à la base après un claim) : délai avant de reposer le rig sur le pad,
+// le temps que la caméra soit revenue au joueur.
+const GO_HOME_RESET_DELAY = 0.6;
 
-const KNOCKBACK_DISTANCE = 15;
-const KNOCKBACK_DURATION = 0.5;
-
-// Small enough that bystanders standing near the button aren't in range, but
-// large enough to cover the assigned player teleported just above the button.
-// Roblox's default explosion handles the fling — we just keep the radius tight
-// so the BlastPressure stays scoped to a single character.
-const EXPLOSION_BLAST_RADIUS = 12;
 const EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id;
 const EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume;
 const EXPLOSION_SOUND_ROLLOFF = 120; // détail 3D propre au serveur
@@ -133,15 +127,6 @@ function rollExplosionTime(params: RiskParams): number {
 	return timeHeld;
 }
 
-// Triggers a 3D explosion at `pos`: visual and sound fire together from the
-// same replication batch, so clients see and hear them simultaneously.
-// blastPressure = 0 for parry (visual-only), non-zero for lethal explosions.
-//
-// BlastRadius is intentionally tight (EXPLOSION_BLAST_RADIUS): the radius
-// gates *both* visual size and the BlastPressure reach. Keeping it small means
-// the fling is naturally scoped to the player anchored on top of the button —
-// bystanders standing a few studs away aren't inside the bubble and are left
-// alone, no manual filtering required.
 // Plays the 3D explosion boom at `pos` (heard by everyone). Cloned from the
 // pre-buffered template — no CDN fetch on the client. Parented to Terrain via an
 // Attachment for proper 3D rolloff.
@@ -156,20 +141,9 @@ function playExplosionSoundAt(pos: Vector3): void {
 	sound.Ended.Connect(() => attachment.Destroy());
 }
 
-function triggerExplosionAt(pos: Vector3, blastPressure: number): void {
-	playExplosionSoundAt(pos);
-
-	const explosion = new Instance("Explosion");
-	explosion.Position = pos;
-	explosion.BlastRadius = EXPLOSION_BLAST_RADIUS;
-	explosion.BlastPressure = blastPressure;
-	explosion.DestroyJointRadiusPercent = 0;
-	explosion.Parent = Workspace;
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
-// Used by the ButtonMenu Quit flow — release/explosion/parry endings transition
+// Used by the ButtonMenu Quit flow — release/explosion endings transition
 // through EndGameButtonModule.enter() instead, which performs the same cleanup.
 // Native left/right movement redirected to the flying rocket. The client sends the
 // quantised steering intent (-1/0/+1) only when it changes; we resolve the player's
@@ -188,7 +162,6 @@ export function endButtonGame(player: Player): void {
 
 export function startButtonGame(player: Player, session: ButtonSession): void {
 	const room = session.room;
-	const buttonModel = room.buttonModel;
 
 	// EffectiveBaseCash already folds in every money multiplier (rebirth + money
 	// game-pass tier + community), additively. Read once — held for the session so
@@ -235,6 +208,32 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier);
 	});
 
+	// "Go Home" : après un claim, le joueur peut rentrer à la base sans attendre
+	// l'explosion. La fusée s'arrête net et le gain VERROUILLÉ est payé exactement comme
+	// après une explosion post-claim — simplement sans explosion. Refusé tant qu'on n'a
+	// pas claim (sinon ce serait une sortie gratuite du risque).
+	const goHomeConn = Events.GoHomeEvent.OnServerEvent.Connect((p) => {
+		if (p !== player || !isActive || !claimed) return;
+		isActive = false;
+		claimConn.Disconnect();
+		goHomeConn.Disconnect();
+
+		RocketLauncher.stop(room); // la fusée s'arrête sur place (moteur + son coupés)
+
+		const earned = math.floor(baseCash * claimedMultiplier);
+		// exploded=false : c'est le client qui ramène la caméra au joueur (retour à la base).
+		Events.GameResultEvent.FireClient(player, false, earned, claimedMultiplier);
+		EndGameButtonModule.enter(player, "released", baseCash, claimedMultiplier, earned, 1);
+
+		// On laisse la caméra revenir au joueur avant de reposer le rig sur le pad
+		// (sinon la fusée se téléporterait sous les yeux du joueur), puis la fusée est
+		// réinstanciée neuve sur le pad — exactement comme après une explosion.
+		task.delay(GO_HOME_RESET_DELAY, () => {
+			RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
+			RocketPlacer.place(room); // fusée neuve sur le pad, comme après une explosion
+		});
+	});
+
 	// ── Boucle multiplier ─────────────────────────────────────────────────────
 	// Le multiplicateur suit la vitesse RÉELLE de la fusée : chaque tick on ajoute
 	// `vélocité × tick × MULTIPLIER_PER_STUD` (= la distance que la fusée vient de
@@ -275,11 +274,12 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 			if (!invincible && timeHeld >= explosionAt) {
 				isActive = false;
 				claimConn.Disconnect();
+				goHomeConn.Disconnect(); // la fusée explose : plus de retour à la base possible
 
 				if (claimed) {
 					// Le joueur a claim avant l'explosion → gain GARANTI au multiplicateur
 					// verrouillé. La fusée explose (spectacle), puis le payout se fait au
-					// claimedMultiplier EXACT — pas de fenêtre de parade, aucune pénalité.
+					// claimedMultiplier EXACT, sans aucune pénalité.
 					const rocketPos = room.movableModel.GetPivot().Position;
 					RocketLauncher.explode(room);
 					playExplosionSoundAt(rocketPos); // boom 3D entendu par tous
@@ -298,114 +298,35 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					return;
 				}
 
-				// Pas de claim à temps : l'explosion tombe → dernière chance en parade (parry).
+				// Pas de claim à temps : perte sèche. La FUSÉE explose, pas le joueur —
+				// pas de fling, pas de mort. explode() stoppe lui-même l'ascension après
+				// avoir capturé sa vitesse, pour que les débris conservent l'élan vers le
+				// haut (la fusée continue de monter en explosant) avant que la gravité ne
+				// les rattrape.
 				Events.ButtonExplodedEvent.FireClient(player);
 
-				// 0.2s de grâce avant la fenêtre de parade (le client attend 0.2s aussi).
-				task.wait(0.2);
+				// Deregister button immediately (avoids WaitForChild blocking the UI)
+				ButtonSessionService.cleanup(player);
 
 				{
-					const character = player.Character;
-					const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
-					const humanoid = character?.FindFirstChildOfClass("Humanoid");
-					// Capture button reference before session is cleared
-					const buttonPart = room.buttonPart;
+					const rocketPos = room.movableModel.GetPivot().Position;
+					RocketLauncher.explode(room); // unanchor + burst, hérite de l'élan de montée
+					playExplosionSoundAt(rocketPos); // boom 3D entendu par tous
 
-					// Deregister button immediately (avoids WaitForChild blocking the UI)
-					ButtonSessionService.cleanup(player);
+					// Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
+					Events.PlayerKilledEvent.FireClient(player);
 
-					// Freeze movement for the parry window
-					const origWalkSpeed = humanoid?.WalkSpeed ?? 16;
-					const origJumpPower = humanoid?.JumpPower ?? 50;
-					const origJumpHeight = humanoid?.JumpHeight ?? 7.2;
-					if (humanoid) {
-						humanoid.WalkSpeed = 0;
-						humanoid.JumpPower = 0;
-						humanoid.JumpHeight = 0;
-					}
+					// On laisse l'explosion se jouer avant de ramener le rig.
+					task.wait(EXPLOSION_VIEW_DELAY);
+					RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
+					RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
 
-					let isPerfectParry = false;
-					const parryConn = Events.PerfectParryEvent.OnServerEvent.Connect((p: Player) => {
-						if (p !== player) return;
-						isPerfectParry = true;
-						parryConn.Disconnect();
-					});
-
-					task.wait(0.5);
-					parryConn.Disconnect();
-
-					if (isPerfectParry) {
-						RocketLauncher.reset(room);
-						if (hrp) hrp.Anchored = true;
-
-						if (buttonPart) triggerExplosionAt(buttonPart.Position, 0);
-
-						// Trigger sparkle effect on the parrying player's client
-						Events.PerfectParryEffectEvent.FireClient(player);
-						ConfettiBurst.play(buttonModel);
-
-						if (hrp && buttonPart) {
-							const rawDir = new Vector3(
-								hrp.Position.X - buttonPart.Position.X,
-								0,
-								hrp.Position.Z - buttonPart.Position.Z,
-							);
-							const dir = rawDir.Magnitude > 0 ? rawDir.Unit : new Vector3(0, 0, 1);
-							const targetCFrame = hrp.CFrame.add(dir.mul(KNOCKBACK_DISTANCE));
-
-							const tween = TweenService.Create(
-								hrp,
-								new TweenInfo(KNOCKBACK_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-								{ CFrame: targetCFrame },
-							);
-							tween.Play();
-							task.wait(KNOCKBACK_DURATION);
-						}
-
-						if (hrp) hrp.Anchored = false;
-						task.wait(0.5);
-
-						if (humanoid) {
-							humanoid.WalkSpeed = origWalkSpeed;
-							humanoid.JumpPower = origJumpPower;
-							humanoid.JumpHeight = origJumpHeight;
-						}
-
-						const earned = math.floor(baseCash * currentMultiplier);
-						Events.GameResultEvent.FireClient(player, false, earned, currentMultiplier);
-						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
-					} else {
-						// Perte : la FUSÉE explose, pas le joueur. Pas de fling, pas de mort.
-						// explode() stoppe lui-même l'ascension après avoir capturé sa vitesse,
-						// pour que les débris conservent l'élan vers le haut (la fusée continue
-						// de monter en explosant) avant que la gravité ne les rattrape.
-						const rocketPos = room.movableModel.GetPivot().Position;
-						RocketLauncher.explode(room); // unanchor + burst, hérite de l'élan de montée
-						playExplosionSoundAt(rocketPos); // boom 3D entendu par tous
-
-						// Le joueur reste en vie : on lui rend sa mobilité (figée pendant la fenêtre).
-						if (hrp) hrp.Anchored = false;
-						if (humanoid) {
-							humanoid.WalkSpeed = origWalkSpeed;
-							humanoid.JumpPower = origJumpPower;
-							humanoid.JumpHeight = origJumpHeight;
-						}
-
-						// Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
-						Events.PlayerKilledEvent.FireClient(player);
-
-						// On laisse l'explosion se jouer avant de ramener le rig.
-						task.wait(EXPLOSION_VIEW_DELAY);
-						RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
-						RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
-
-						// Perte : PAS de popup de fin. Lot de consolation forfaitaire
-						// (baseCash / 3, sans le multiplicateur) montré par un seul texte qui
-						// saute puis file vers l'argent du HUD (client LossRewardBehavior).
-						const reward = math.floor(baseCash / LOSS_CONSOLATION_DIVISOR);
-						Events.GameResultEvent.FireClient(player, true, reward, currentMultiplier);
-						EndGameButtonModule.enterRewardOnly(player, reward);
-					}
+					// Perte : PAS de popup de fin. Lot de consolation forfaitaire
+					// (baseCash / 3, sans le multiplicateur) montré par un seul texte qui
+					// saute puis file vers l'argent du HUD (client LossRewardBehavior).
+					const reward = math.floor(baseCash / LOSS_CONSOLATION_DIVISOR);
+					Events.GameResultEvent.FireClient(player, true, reward, currentMultiplier);
+					EndGameButtonModule.enterRewardOnly(player, reward);
 				}
 				return;
 			}

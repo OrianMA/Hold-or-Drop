@@ -16,7 +16,7 @@ local function init()
 		-- ButtonMenu hid, so the payout animation can fly cash into it.
 		InGameUIController:enable()
 		-- Payout screen is up → return the rig to the default Roblox animations
-		-- (ends the perfect-parry projection / a still-playing release clip).
+		-- (ends a still-playing release clip).
 		ButtonAnimations.restoreDefault()
 		local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 		local inGameUI = playerGui:WaitForChild("InGameUI")

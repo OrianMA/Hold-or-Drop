@@ -574,7 +574,7 @@ In `startButtonGame` (around lines 108–118), replace the BaseCash read and del
 					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 ```
 
-**Site 3 — parry success (inside `if (isPerfectParry)`, after the knockback):**
+**Site 3 — survived explosion (after the knockback):**
 
 ```ts
 						const earned = math.floor(baseCash * currentMultiplier);
@@ -582,7 +582,7 @@ In `startButtonGame` (around lines 108–118), replace the BaseCash read and del
 						EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1);
 ```
 
-**Site 4 — death (the parry `else`):**
+**Site 4 — death (the `else` branch):**
 
 ```ts
 						const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier);

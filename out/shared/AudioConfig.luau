@@ -26,10 +26,6 @@ local AudioConfig = {
 			id = "rbxassetid://133384716023284",
 			volume = 1,
 		},
-		parry = {
-			id = "rbxassetid://119580857539801",
-			volume = 1,
-		},
 		buttonUpgrade = {
 			id = "rbxassetid://90808623060870",
 			volume = 0.5,

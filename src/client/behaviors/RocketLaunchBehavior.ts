@@ -14,12 +14,15 @@ import {
 	RunService,
 	SoundService,
 	TweenService,
-	UserInputService,
 	Workspace,
 } from "@rbxts/services";
 
 // UI refs — assigned on first setup(), never change after
 let claimButton: TextButton | undefined;
+// Le libellé posé sur le ClaimButton : "Claim" pendant le vol, "Go Home" une fois le
+// gain verrouillé (le bouton se réarme alors pour rentrer à la base).
+let claimLabel: TextLabel | undefined;
+let claimLabelOriginalText: string | undefined;
 let multiplierText: TextLabel | undefined;
 let resultMultiplierText: TextLabel | undefined;
 // Popup "gain verrouillé" révélé au claim : CanvasGroup (fade) + Frame qui monte.
@@ -39,8 +42,9 @@ let bloomEffect: BloomEffect | undefined;
 
 // Per-game state
 let isGameActive = false;
-let released = false;
 let hasClaimed = false; // le joueur a verrouillé son multiplicateur (claim) pour cette partie
+let isGoHomeMode = false; // le bouton est réarmé en "Go Home" (rentrer à la base)
+let runId = 0; // incrémenté à chaque partie — invalide les timers d'une partie précédente
 let multiplierTextSize = 0;
 // Aperçu live du gain "si je claim maintenant" (floor(EffectiveBaseCash × multiplicateur)).
 let resultBaseCash = 100; // EffectiveBaseCash du joueur, lu une fois au début de partie
@@ -56,9 +60,7 @@ let multiplierTo = STARTING_MULTIPLIER;
 let multiplierElapsed = 0;
 let shakeUndoCFrame: CFrame | undefined; // clean CFrame saved each frame to undo before next Roblox camera tick
 let baseFov = 70;
-let spaceConn: RBXScriptConnection | undefined;
 let activatedConn: RBXScriptConnection | undefined;
-let parryKnockbackCamConn: RBXScriptConnection | undefined;
 
 // Bascule musicale à l'altitude : on capture le Y de la fusée au décollage, puis une fois
 // qu'elle a grimpé HIGH_ALTITUDE_MUSIC_THRESHOLD studs, on crossfade la BGM vers la piste
@@ -68,20 +70,6 @@ const HIGH_ALTITUDE_MUSIC_THRESHOLD = 50;
 let rocketMusicSubject: BasePart | undefined;
 let rocketBaselineY = 0;
 let highAltitudeReached = false;
-
-// Son de parry — id centralisé dans AudioConfig.
-const SOUND_PARRY_ID = AudioConfig.sfx.parry.id;
-
-// Template persistant en SoundService : le client garde l'asset en mémoire dès le démarrage.
-// Cloner ce template au moment du parry élimine le fetch CDN et le délai de buffering.
-const parrySoundTemplate = (() => {
-	const sound = new Instance("Sound");
-	sound.Name = "ParrySoundTemplate";
-	sound.SoundId = SOUND_PARRY_ID;
-	sound.Volume = AudioConfig.sfx.parry.volume;
-	sound.Parent = SoundService;
-	return sound;
-})();
 
 // Son de cash joué au moment du claim (au lieu du clic UI générique — le ClaimButton
 // porte l'attribut NoUiClick pour que UiClickSound le saute). Template préchargé, cloné
@@ -171,6 +159,10 @@ const MAX_BLOOM_INTENSITY = 1.5;
 // Couleur du ClaimButton quand la fusée explose (il ne disparaît plus, il rougit).
 // Aussi appliquée au claim : le bouton devient rouge dès qu'on verrouille.
 const CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45);
+// Après un claim le bouton se réarme en "Go Home" : court délai anti-double-clic, puis il
+// redevient cliquable pour rentrer à la base (fusée stoppée, caméra rendue au joueur).
+const CLAIM_REARM_DELAY = 0.6;
+const GO_HOME_LABEL = "Go Home";
 
 // Aperçu de gain : on ne rafraîchit le texte que si le multiplicateur a bougé d'au moins
 // RESULT_UPDATE_MULT_STEP ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé (anti-spam).
@@ -181,7 +173,6 @@ const UpgradeMultiplayerTI = new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.Eas
 const PostProcessTI = new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const ResetPostProcessTI = new TweenInfo(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const ZoomResetTI = new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
-const ExplodeFovPunchTI = new TweenInfo(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const EXPLODE_FOV_OVERSHOOT = 18;
 
 // Reveal du popup de gain au claim : le popup part un peu plus bas et transparent, puis
@@ -191,69 +182,17 @@ const CLAIM_POPUP_HOLD = 3; // s d'affichage avant la disparition
 const ClaimPopupTI = new TweenInfo(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 const ClaimPopupFadeTI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 
-const PerfectParrytime = 2;
-
-function resetPostProcess(instant = false, explode = false): void {
-	const ti = instant || explode ? new TweenInfo(0) : ResetPostProcessTI;
+function resetPostProcess(instant = false): void {
+	const ti = instant ? new TweenInfo(0) : ResetPostProcessTI;
 	if (bloomEffect) {
 		TweenService.Create(bloomEffect, ti, { Intensity: 0 }).Play();
 	}
 	const camera = Workspace.CurrentCamera;
 	if (camera) {
-		if (explode) {
-			TweenService.Create(camera, ExplodeFovPunchTI, { FieldOfView: baseFov + EXPLODE_FOV_OVERSHOOT }).Play();
-		} else {
-			const fovTi = instant ? new TweenInfo(0) : ZoomResetTI;
-			TweenService.Create(camera, fovTi, { FieldOfView: baseFov }).Play();
-		}
+		const fovTi = instant ? new TweenInfo(0) : ZoomResetTI;
+		TweenService.Create(camera, fovTi, { FieldOfView: baseFov }).Play();
 	}
 	shakeAmplitude = 0;
-}
-
-function startParryWindow(): void {
-	isGameActive = false;
-	resetPostProcess(false, true); // FOV punch + post-process instantané
-
-	spaceConn?.Disconnect();
-	spaceConn = undefined;
-	activatedConn?.Disconnect();
-	activatedConn = undefined;
-
-	if (!claimButton) {
-		released = true;
-		return;
-	}
-
-	// Le bouton reste visible pendant la fenêtre de parry (il peut servir à parer).
-	claimButton.Active = true;
-
-	const fireParry = () => {
-		if (released) return;
-		released = true;
-		spaceConn?.Disconnect();
-		spaceConn = undefined;
-		activatedConn?.Disconnect();
-		activatedConn = undefined;
-		print("perfect parry");
-		Events.PerfectParryEvent.FireServer();
-	};
-
-	spaceConn = UserInputService.InputBegan.Connect((input, gameProcessed) => {
-		if (gameProcessed) return;
-		if (input.KeyCode === Enum.KeyCode.Space) fireParry();
-	});
-	activatedConn = claimButton.Activated.Connect(fireParry);
-
-	// Fin de la fenêtre de parry — le bouton reste visible (rougi par PlayerKilledEvent
-	// si la partie est perdue), on coupe juste l'input de parry.
-	task.delay(PerfectParrytime, () => {
-		spaceConn?.Disconnect();
-		spaceConn = undefined;
-		activatedConn?.Disconnect();
-		activatedConn = undefined;
-		released = true;
-		if (claimButton) claimButton.Active = false;
-	});
 }
 
 // Called once at startup — all event listeners live here, gated by isGameActive
@@ -355,10 +294,9 @@ export function init(): void {
 		// Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
 		// (vrai aussi bien après un claim qu'après une perte).
 		isGameActive = false;
+		isGoHomeMode = false; // la fusée a explosé : le "Go Home" n'a plus lieu d'être
 		RocketSteerController.stop(); // fin du vol : plus de pilotage
 		MusicController.stopRunMusic(); // coupe la musique du run (cas claim : pas de ButtonExplodedEvent)
-		spaceConn?.Disconnect();
-		spaceConn = undefined;
 		activatedConn?.Disconnect();
 		activatedConn = undefined;
 		if (claimButton) {
@@ -393,78 +331,6 @@ export function init(): void {
 		});
 	});
 
-	Events.PerfectParryEffectEvent.OnClientEvent.Connect(() => {
-		// Le hold s'arrête et l'animation de projection parry se joue.
-		ButtonAnimations.playParry();
-
-		// Son d'explosion joué côté serveur (3D, entendu par tous)
-		// Son d'épée : clone du template — asset déjà en mémoire, aucun délai de buffering
-		const parrySound = parrySoundTemplate.Clone();
-		parrySound.Parent = SoundService;
-		parrySound.Play();
-		parrySound.Ended.Connect(() => parrySound.Destroy());
-
-		const character = Players.LocalPlayer.Character;
-		const hrp = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
-
-		// Caméra cinématique : au-dessus et derrière le joueur pour voir la projection.
-		// L'orbite est stoppée — le tracking parry ci-dessous prend la main sur la CFrame.
-		CameraController.StopOrbit();
-		CameraController.SetCinematic();
-		const camera = Workspace.CurrentCamera;
-		if (camera) camera.FieldOfView = baseFov; // reset FOV instantanément (évite le zoom glitch)
-
-		if (hrp) {
-			// Au moment du parry, le joueur faisait face au bouton → LookVector pointe vers lui
-			// On positionne la caméra dans cette direction pour voir le joueur s'envoler
-			const behindDir = hrp.CFrame.LookVector;
-			const CAM_BEHIND = 12;
-			const CAM_HEIGHT = 8;
-
-			parryKnockbackCamConn?.Disconnect();
-			parryKnockbackCamConn = RunService.RenderStepped.Connect(() => {
-				const cam = Workspace.CurrentCamera;
-				if (!cam) return;
-				const camPos = hrp.Position.add(behindDir.mul(CAM_BEHIND)).add(new Vector3(0, CAM_HEIGHT, 0));
-				cam.CFrame = new CFrame(camPos, hrp.Position.add(new Vector3(0, 1, 0)));
-			});
-		}
-
-		if (!hrp) return;
-
-		const attachment = new Instance("Attachment");
-		attachment.Position = Vector3.zero;
-		attachment.Parent = hrp;
-
-		const emitter = new Instance("ParticleEmitter");
-		emitter.Color = new ColorSequence([
-			new ColorSequenceKeypoint(0, new Color3(1, 1, 1)),
-			new ColorSequenceKeypoint(0.4, new Color3(1, 0.9, 0.2)),
-			new ColorSequenceKeypoint(1, new Color3(1, 1, 0.6)),
-		]);
-		emitter.Size = new NumberSequence([
-			new NumberSequenceKeypoint(0, 0.5),
-			new NumberSequenceKeypoint(0.3, 0.3),
-			new NumberSequenceKeypoint(1, 0),
-		]);
-		emitter.Transparency = new NumberSequence([new NumberSequenceKeypoint(0, 0), new NumberSequenceKeypoint(1, 1)]);
-		emitter.Lifetime = new NumberRange(0.3, 0.6);
-		emitter.Speed = new NumberRange(12, 22);
-		emitter.SpreadAngle = new Vector2(180, 180);
-		emitter.Rate = 0; // burst uniquement
-		emitter.LightEmission = 1;
-		emitter.LightInfluence = 0;
-		emitter.Brightness = 4;
-		emitter.RotSpeed = new NumberRange(-180, 180);
-		emitter.Rotation = new NumberRange(0, 360);
-		emitter.Parent = attachment;
-
-		// Burst instantané
-		emitter.Emit(50);
-
-		task.delay(1.5, () => attachment.Destroy());
-	});
-
 	Players.LocalPlayer.CharacterAdded.Connect(() => {
 		const camera = Workspace.CurrentCamera;
 		if (camera) camera.FieldOfView = baseFov;
@@ -473,25 +339,14 @@ export function init(): void {
 	Events.GameResultEvent.OnClientEvent.Connect((exploded: boolean, cashEarned: number, multiplier: number) => {
 		// The HUD stays hidden until the EndGameButton (ButtonFinishGame) opens —
 		// EndGameButtonBehavior re-enables it on EndGameStartEvent.
-		// Safety net: stop the held pose if the game ended on explosion (no parry fired).
-		// After a claim or a parry the loop is already stopped, so this is a no-op and
-		// never cuts the parry one-shot.
+		// Safety net: stop the held pose if the game ended on explosion.
+		// After a claim the loop is already stopped, so this is a no-op.
 		isGameActive = false;
 		RocketSteerController.stop(); // filet de sécurité : coupe le pilotage à toute fin de partie
 		ButtonAnimations.stop();
-		if (!exploded) {
-			const wasParry = parryKnockbackCamConn !== undefined;
-			parryKnockbackCamConn?.Disconnect();
-			parryKnockbackCamConn = undefined;
-			// Parry réussie : reset instantané (la caméra trackait déjà le joueur, pas de tween).
-			if (wasParry) {
-				CameraController.BringBackPlayerCamera(0);
-			} else {
-				CameraController.BringBackPlayerCamera();
-			}
-			// resetPostProcess() n'est pas appelé ici : la FOV est déjà reset instantanément
-			// dans PerfectParryEffectEvent pour la parry ; l'appeler créait un double tween → glitch.
-		}
+		// Fin sans explosion (cas défensif) : la caméra n'a pas été ramenée par
+		// PlayerKilledEvent, on la rend au joueur ici.
+		if (!exploded) CameraController.BringBackPlayerCamera();
 		print(`Game over — exploded: ${exploded} | cash: ${cashEarned} | ${multiplier}x`);
 	});
 
@@ -545,15 +400,14 @@ export function init(): void {
 		revealClaimPopup(claimedCash);
 	});
 
+	// La fusée explose sans claim : la partie est finie côté client (le claim ne peut
+	// plus rien verrouiller). PlayerKilledEvent, qui suit immédiatement, gère la caméra,
+	// le shake et l'état du bouton — ici on coupe juste la musique et le bloom.
 	Events.ButtonExplodedEvent.OnClientEvent.Connect(() => {
 		if (!isGameActive) return;
+		isGameActive = false;
 		MusicController.stopRunMusic(); // la musique du run s'arrête à l'instant de l'explosion
-		// 0.2s grace period : release normal encore possible
-		task.delay(0.2, () => {
-			if (released) return;
-			// Fenêtre de perfect parry : 0.2s supplémentaires avec espace/clic
-			startParryWindow();
-		});
+		if (bloomEffect) bloomEffect.Intensity = 0;
 	});
 }
 
@@ -562,6 +416,7 @@ export function setup(inGameUI: ScreenGui): void {
 	const popup = inGameUI.WaitForChild("RocketLaunch") as Frame;
 	const claimButtonFrame = popup.WaitForChild("ClaimButtonFrame") as Frame;
 	claimButton = claimButtonFrame.WaitForChild("ClaimButton") as TextButton;
+	claimLabel = claimButtonFrame.WaitForChild("TextLabel") as TextLabel;
 	multiplierText = popup.WaitForChild("MultiplierText") as TextLabel;
 	resultMultiplierText = popup.WaitForChild("ResultMultiplierText") as TextLabel;
 
@@ -577,6 +432,7 @@ export function setup(inGameUI: ScreenGui): void {
 
 	// Save original sizes/colors on first run so we can restore each game
 	if (!buttonOriginalSize) buttonOriginalSize = claimButton.Size;
+	if (!claimLabelOriginalText) claimLabelOriginalText = claimLabel.Text; // "Claim"
 	if (!claimButtonOriginalColor) claimButtonOriginalColor = claimButton.BackgroundColor3;
 	if (!multiplierTextOriginalSize) multiplierTextOriginalSize = multiplierText.TextSize;
 	if (!multiplierTextOriginalColor) multiplierTextOriginalColor = multiplierText.TextColor3;
@@ -584,8 +440,10 @@ export function setup(inGameUI: ScreenGui): void {
 	// Reset per-game state
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
-	released = false;
 	hasClaimed = false;
+	isGoHomeMode = false;
+	runId += 1; // invalide un réarmement "Go Home" encore en attente d'une partie précédente
+	claimLabel.Text = claimLabelOriginalText; // le bouton repart en "Claim"
 	// EffectiveBaseCash (attribut répliqué) : base du gain affiché dans ResultMultiplierText.
 	// Lu une fois par partie — comme côté serveur, il ne bouge pas en cours de hold.
 	resultBaseCash = (Players.LocalPlayer.GetAttribute("EffectiveBaseCash") as number | undefined) ?? 100;
@@ -639,7 +497,6 @@ export function setup(inGameUI: ScreenGui): void {
 	multiplierText.Text = `${formatMultiplier(STARTING_MULTIPLIER)}x`;
 
 	// Clean up any leftover connections from a previous game
-	spaceConn?.Disconnect();
 	activatedConn?.Disconnect();
 
 	// Claim : le joueur VERROUILLE son multiplicateur. La partie NE s'arrête PAS —
@@ -657,7 +514,47 @@ export function setup(inGameUI: ScreenGui): void {
 		}
 		playClaimCashSound();
 		Events.ClaimButtonEvent.FireServer();
+
+		// Le bouton se réarme après CLAIM_REARM_DELAY, cette fois en "Go Home" : le gain
+		// est verrouillé, le joueur peut rentrer à la base au lieu d'attendre l'explosion.
+		// Annulé si la partie s'est terminée entre-temps (explosion) ou si une nouvelle
+		// partie a démarré (runId).
+		const myRun = runId;
+		task.delay(CLAIM_REARM_DELAY, () => {
+			if (myRun !== runId || !isGameActive || !claimButton) return;
+			isGoHomeMode = true;
+			if (claimLabel) claimLabel.Text = GO_HOME_LABEL;
+			// Retour à la couleur d'origine : le rouge signale "non cliquable", or le
+			// bouton redevient bien cliquable (cette fois pour rentrer à la base).
+			if (claimButtonOriginalColor) claimButton.BackgroundColor3 = claimButtonOriginalColor;
+			claimButton.Active = true;
+			claimButton.Interactable = true;
+		});
 	};
 
-	activatedConn = claimButton.Activated.Connect(fireClaim);
+	// Retour à la base : la fusée s'arrête et la caméra revient au joueur, exactement
+	// comme après une explosion — c'est le serveur qui clôt la partie (GameResultEvent
+	// avec exploded=false → CameraController.BringBackPlayerCamera).
+	const fireGoHome = () => {
+		if (!isGameActive || !isGoHomeMode) return;
+		isGoHomeMode = false;
+		if (claimButton) {
+			claimButton.Active = false;
+			claimButton.Interactable = false;
+			claimButton.BackgroundColor3 = CLAIM_BUTTON_EXPLODE_COLOR; // fini : bouton éteint
+		}
+		MusicController.stopRunMusic(); // fin du vol : on coupe la musique du run tout de suite
+		RocketSteerController.stop(); // plus de pilotage dès le clic
+		// On coupe TOUS les effets de vol d'un coup : tremblement de caméra, bloom et FOV.
+		// Indispensable ici : la boucle RenderStepped qui atténue le tremblement ne tourne
+		// que tant que la partie est active, donc un reste de shake serait figé sur la
+		// caméra une fois rendue au joueur (l'explosion, elle, a sa propre extinction).
+		resetPostProcess(true);
+		Events.GoHomeEvent.FireServer();
+	};
+
+	activatedConn = claimButton.Activated.Connect(() => {
+		if (isGoHomeMode) fireGoHome();
+		else fireClaim();
+	});
 }

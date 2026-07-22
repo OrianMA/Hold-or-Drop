@@ -9,14 +9,13 @@ import { Players, RunService } from "@rbxts/services";
 //
 // An empty id is treated as "not provided yet" and simply does nothing, so the
 // remaining animations can be filled in without breaking the others.
-type AnimName = "interact" | "quit" | "hold" | "release" | "parry";
+type AnimName = "interact" | "quit" | "hold" | "release";
 
 const ANIM_IDS: Record<AnimName, string> = {
 	interact: "rbxassetid://123442755794873", // "hand on button": reach onto the button, then hold the last frame
 	quit: "rbxassetid://93300469810162", // leaves the button before pressing: one-shot, chains out of `interact`
 	hold: "rbxassetid://100517121510078", // "press button": press down, then hold the last frame for the whole game
 	release: "rbxassetid://70993299432318", // releases the button: one-shot
-	parry: "rbxassetid://84361846884673", // perfect-parry projection: one-shot
 };
 
 // Freeze a held pose this many seconds before the clip's natural end. Stopping
@@ -33,7 +32,7 @@ let loadedFor: Model | undefined;
 const tracks = new Map<AnimName, AnimationTrack>();
 
 // The held pose currently frozen on its last frame (interact/hold). One-shots
-// (quit/release/parry) are fire-and-forget and intentionally not tracked here,
+// (quit/release) are fire-and-forget and intentionally not tracked here,
 // so a later stop() — or the next held pose — never cuts them short.
 let currentHold: AnimName | undefined;
 // Heartbeat watcher that pins the held pose on its last frame, if active.
@@ -144,7 +143,6 @@ export const ButtonAnimations = {
 	playQuit: (): void => playOnce("quit"), // Quit before pressing: chains out, then defaults
 	playHold: (): void => playHeld("hold"), // game starts (setup): press & hold
 	playRelease: (): void => playOnce("release"), // player releases: defaults at its end
-	playParry: (): void => playOnce("parry"), // perfect parry: defaults on the finish popup
 	stop: (): void => stopHold(), // death safety net: drop the held pose, leave one-shots alone
 	restoreDefault: (): void => stopAll(), // finish popup opened: force back to default animations
 };

@@ -4,7 +4,7 @@
 
 **Goal:** Add a Rebirth system (reset everything → permanent money multiplier) and fix the broken upgrade curves so the early game is strong, the mid game decelerates, and numbers never explode.
 
-**Architecture:** Levels stay the persisted source of truth (`PlayerProgressionService`), values are derived from `shared/ShopConfig` fed by `shared/ShopBalance`. We add a fourth persisted dimension, `Rebirths`, and a derived `MultRebirth` attribute. The button payout gains one factor (`× MultRebirth`); everything else (hold/risk/parry loop) is untouched. A new `RebirthService` validates and performs the reset; a client `RebirthController` drives a Rebirth panel in the existing shop.
+**Architecture:** Levels stay the persisted source of truth (`PlayerProgressionService`), values are derived from `shared/ShopConfig` fed by `shared/ShopBalance`. We add a fourth persisted dimension, `Rebirths`, and a derived `MultRebirth` attribute. The button payout gains one factor (`× MultRebirth`); everything else (hold/risk loop) is untouched. A new `RebirthService` validates and performs the reset; a client `RebirthController` drives a Rebirth panel in the existing shop.
 
 **Tech Stack:** Roblox-TS (`rbxtsc`), Rojo, player Attributes for replication, DataStoreService for persistence, Roblox_Studio MCP for in-Studio verification and GUI authoring.
 
@@ -353,7 +353,7 @@ git commit -m "feat: persister Rebirths + dériver MultRebirth + mutation rebirt
 - Modify: `src/client/behaviors/EndGameButtonBehavior.ts`
 - Modify: `src/client/ui/EndGameAnimation.ts`
 
-The payout becomes `floor(baseCash × currentMultiplier × multRebirth)` on all four outcome paths (release, grace-cancel, parry-success, death). `multRebirth` is read once at session start and forwarded to the client so the end-game animation displays the credited total. **Behavior change:** win paths are now floored (they weren't before); this matches the spec formula and keeps money integral.
+The payout becomes `floor(baseCash × currentMultiplier × multRebirth)` on all four outcome paths (release, grace-cancel, survived explosion, death). `multRebirth` is read once at session start and forwarded to the client so the end-game animation displays the credited total. **Behavior change:** win paths are now floored (they weren't before); this matches the spec formula and keeps money integral.
 
 - [ ] **Step 1: Read `multRebirth` once at session start (ButtonInGameModule)**
 
@@ -385,7 +385,7 @@ Site 2 — grace-period cancel (inside `if (cancelledByPlayer)`):
 					EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth);
 ```
 
-Site 3 — parry success (inside `if (isPerfectParry)`, the block after the knockback):
+Site 3 — survived explosion (the block after the knockback):
 
 ```ts
 							const earned = math.floor(baseCash * currentMultiplier * multRebirth);
@@ -393,7 +393,7 @@ Site 3 — parry success (inside `if (isPerfectParry)`, the block after the knoc
 							EndGameButtonModule.enter(player, "released", baseCash, currentMultiplier, earned, 1, multRebirth);
 ```
 
-Site 4 — death (the `else` of the parry, currently floors with `LOOSE_WIN_MULTIPLIER`):
+Site 4 — death (the `else` branch, currently floors with `LOOSE_WIN_MULTIPLIER`):
 
 ```ts
 							const earned = math.floor(baseCash * LOOSE_WIN_MULTIPLIER * currentMultiplier * multRebirth);

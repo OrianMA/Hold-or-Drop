@@ -57,7 +57,7 @@ MoneyMult         = MultRebirth + (InCommunity ? COMMUNITY.mult-1 : 0) + (MoneyT
                   = 1 + (MultRebirth-1) + communityBonus + tierBonus
 EffectiveBaseCash = floor( BaseCash_brut × MoneyMult )
 
-paiement (win/parry/grace) = floor( EffectiveBaseCash × currentMultiplier )
+paiement (win/grace)       = floor( EffectiveBaseCash × currentMultiplier )
 paiement (mort)            = floor( EffectiveBaseCash × LOOSE_WIN_MULTIPLIER × currentMultiplier )
 
 AdditionalSecurity = min( safetyShop + (HasSafetyPass ? SAFETY_PASS.add : 0), SAFETY_TOTAL_CAP )
@@ -307,14 +307,14 @@ niveaux restent inchangés (`PlayerProgression_v2`).
 - **Vrais IDs de game pass** : config à `0` jusqu'à fourniture.
 - **Reformulation du menu Rebirth** : le texte « x{mult} money » reste valable (le rebirth
   reste un facteur) ; reformulation cosmétique optionnelle, non bloquante.
-- Refonte de la boucle hold/risk/parry : inchangée.
+- Refonte de la boucle hold/risk : inchangée.
 
 ## 15. Critères d'acceptation
 
 1. Le bouton (billboard) et le HUD affichent `EffectiveBaseCash = floor(BaseCash × MoneyMult)`
    avec `MoneyMult = MultRebirth + (communauté ? COMMUNITY.mult−1 : 0) + (MoneyTierMult−1)`
    (bonus additifs), mis à jour quand un facteur change.
-2. Paiement = `floor(EffectiveBaseCash × currentMultiplier)` (win/parry/grace) et
+2. Paiement = `floor(EffectiveBaseCash × currentMultiplier)` (win/grace) et
    `floor(EffectiveBaseCash × LOOSE_WIN_MULTIPLIER × currentMultiplier)` (mort) — **plus
    aucun `multRebirth`** dans `ButtonInGameModule`.
 3. Communauté : membre du groupe `963505568` ⇒ contribution communauté `+1` (bonus additif),

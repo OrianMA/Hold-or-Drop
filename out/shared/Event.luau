@@ -17,10 +17,14 @@ do
 	-- uses the locked value. Replaces the old ReleaseButtonEvent (instant bank).
 	local ClaimButtonEvent = DefineEvent("ClaimButtonEvent", script)
 	_container.ClaimButtonEvent = ClaimButtonEvent
+	-- RocketLaunch — client → server (no args). Once claimed, the ClaimButton re-arms as
+	-- "Go Home": the player ends the run early instead of waiting for the explosion. The
+	-- rocket stops, the locked gain is paid exactly like a post-claim explosion, minus the
+	-- explosion itself. Only accepted after a claim.
+	local GoHomeEvent = DefineEvent("GoHomeEvent", script)
+	_container.GoHomeEvent = GoHomeEvent
 	local QuitButtonClickedEvent = DefineEvent("QuitButtonClickedEvent", script)
 	_container.QuitButtonClickedEvent = QuitButtonClickedEvent
-	local PerfectParryEvent = DefineEvent("PerfectParryEvent", script)
-	_container.PerfectParryEvent = PerfectParryEvent
 	-- RocketLaunch — client → server. The player's native left/right movement input
 	-- (keyboard A/D, mobile thumbstick, gamepad), quantised to -1 (left) / 0 / +1
 	-- (right) and sent ONLY when it changes. The server rolls the flying rocket toward
@@ -33,8 +37,6 @@ do
 	-- so the client shows the exact value that will be paid out.
 	local ClaimAcceptedEvent = DefineEvent("ClaimAcceptedEvent", script)
 	_container.ClaimAcceptedEvent = ClaimAcceptedEvent
-	local PerfectParryEffectEvent = DefineEvent("PerfectParryEffectEvent", script)
-	_container.PerfectParryEffectEvent = PerfectParryEffectEvent
 	local ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script)
 	_container.ButtonExplodedEvent = ButtonExplodedEvent
 	local PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script)

@@ -6,11 +6,9 @@ local UiService = TS.import(script, game:GetService("ServerScriptService"), "TS"
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ReplicatedStorage = _services.ReplicatedStorage
-local TweenService = _services.TweenService
 local Workspace = _services.Workspace
 local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").invincible
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
-local ConfettiBurst = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "ConfettiBurst").ConfettiBurst
 local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
 local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
@@ -23,16 +21,12 @@ local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 -- ── Game tuning ───────────────────────────────────────────────────────────────
 local MAX_RISK = 0.8
 local TICK_RATE = 0.5
--- Lot de consolation sur une perte (explosion sans claim / parade ratée) :
--- baseCash / 3 — FORFAITAIRE, sans le multiplicateur. Pas de popup de fin.
+-- Lot de consolation sur une perte (explosion sans claim) : baseCash / 3 —
+-- FORFAITAIRE, sans le multiplicateur. Pas de popup de fin.
 local LOSS_CONSOLATION_DIVISOR = 3
-local KNOCKBACK_DISTANCE = 15
-local KNOCKBACK_DURATION = 0.5
--- Small enough that bystanders standing near the button aren't in range, but
--- large enough to cover the assigned player teleported just above the button.
--- Roblox's default explosion handles the fling — we just keep the radius tight
--- so the BlastPressure stays scoped to a single character.
-local EXPLOSION_BLAST_RADIUS = 12
+-- "Go Home" (retour à la base après un claim) : délai avant de reposer le rig sur le pad,
+-- le temps que la caméra soit revenue au joueur.
+local GO_HOME_RESET_DELAY = 0.6
 local EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id
 local EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume
 local EXPLOSION_SOUND_ROLLOFF = 120
@@ -125,15 +119,6 @@ local function rollExplosionTime(params)
 	end
 	return timeHeld
 end
--- Triggers a 3D explosion at `pos`: visual and sound fire together from the
--- same replication batch, so clients see and hear them simultaneously.
--- blastPressure = 0 for parry (visual-only), non-zero for lethal explosions.
---
--- BlastRadius is intentionally tight (EXPLOSION_BLAST_RADIUS): the radius
--- gates *both* visual size and the BlastPressure reach. Keeping it small means
--- the fling is naturally scoped to the player anchored on top of the button —
--- bystanders standing a few studs away aren't inside the bubble and are left
--- alone, no manual filtering required.
 -- Plays the 3D explosion boom at `pos` (heard by everyone). Cloned from the
 -- pre-buffered template — no CDN fetch on the client. Parented to Terrain via an
 -- Attachment for proper 3D rolloff.
@@ -148,17 +133,8 @@ local function playExplosionSoundAt(pos)
 		return attachment:Destroy()
 	end)
 end
-local function triggerExplosionAt(pos, blastPressure)
-	playExplosionSoundAt(pos)
-	local explosion = Instance.new("Explosion")
-	explosion.Position = pos
-	explosion.BlastRadius = EXPLOSION_BLAST_RADIUS
-	explosion.BlastPressure = blastPressure
-	explosion.DestroyJointRadiusPercent = 0
-	explosion.Parent = Workspace
-end
 -- ── Public API ────────────────────────────────────────────────────────────────
--- Used by the ButtonMenu Quit flow — release/explosion/parry endings transition
+-- Used by the ButtonMenu Quit flow — release/explosion endings transition
 -- through EndGameButtonModule.enter() instead, which performs the same cleanup.
 -- Native left/right movement redirected to the flying rocket. The client sends the
 -- quantised steering intent (-1/0/+1) only when it changes; we resolve the player's
@@ -179,7 +155,6 @@ local function endButtonGame(player)
 end
 local function startButtonGame(player, session)
 	local room = session.room
-	local buttonModel = room.buttonModel
 	-- EffectiveBaseCash already folds in every money multiplier (rebirth + money
 	-- game-pass tier + community), additively. Read once — held for the session so
 	-- a mid-run boost change can't alter an in-progress hold.
@@ -219,6 +194,31 @@ local function startButtonGame(player, session)
 		claimedMultiplier = currentMultiplier
 		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier)
 	end)
+	-- "Go Home" : après un claim, le joueur peut rentrer à la base sans attendre
+	-- l'explosion. La fusée s'arrête net et le gain VERROUILLÉ est payé exactement comme
+	-- après une explosion post-claim — simplement sans explosion. Refusé tant qu'on n'a
+	-- pas claim (sinon ce serait une sortie gratuite du risque).
+	local goHomeConn
+	goHomeConn = Events.GoHomeEvent.OnServerEvent:Connect(function(p)
+		if p ~= player or not isActive or not claimed then
+			return nil
+		end
+		isActive = false
+		claimConn:Disconnect()
+		goHomeConn:Disconnect()
+		RocketLauncher:stop(room)
+		local earned = math.floor(baseCash * claimedMultiplier)
+		-- exploded=false : c'est le client qui ramène la caméra au joueur (retour à la base).
+		Events.GameResultEvent:FireClient(player, false, earned, claimedMultiplier)
+		EndGameButtonModule:enter(player, "released", baseCash, claimedMultiplier, earned, 1)
+		-- On laisse la caméra revenir au joueur avant de reposer le rig sur le pad
+		-- (sinon la fusée se téléporterait sous les yeux du joueur), puis la fusée est
+		-- réinstanciée neuve sur le pad — exactement comme après une explosion.
+		task.delay(GO_HOME_RESET_DELAY, function()
+			RocketLauncher:reset(room)
+			RocketPlacer:place(room)
+		end)
+	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
 	-- Le multiplicateur suit la vitesse RÉELLE de la fusée : chaque tick on ajoute
 	-- `vélocité × tick × MULTIPLIER_PER_STUD` (= la distance que la fusée vient de
@@ -257,10 +257,11 @@ local function startButtonGame(player, session)
 			if not invincible and timeHeld >= explosionAt then
 				isActive = false
 				claimConn:Disconnect()
+				goHomeConn:Disconnect()
 				if claimed then
 					-- Le joueur a claim avant l'explosion → gain GARANTI au multiplicateur
 					-- verrouillé. La fusée explose (spectacle), puis le payout se fait au
-					-- claimedMultiplier EXACT — pas de fenêtre de parade, aucune pénalité.
+					-- claimedMultiplier EXACT, sans aucune pénalité.
 					local rocketPos = room.movableModel:GetPivot().Position
 					RocketLauncher:explode(room)
 					playExplosionSoundAt(rocketPos)
@@ -275,135 +276,30 @@ local function startButtonGame(player, session)
 					EndGameButtonModule:enter(player, "killed", baseCash, claimedMultiplier, earned, 1)
 					return nil
 				end
-				-- Pas de claim à temps : l'explosion tombe → dernière chance en parade (parry).
+				-- Pas de claim à temps : perte sèche. La FUSÉE explose, pas le joueur —
+				-- pas de fling, pas de mort. explode() stoppe lui-même l'ascension après
+				-- avoir capturé sa vitesse, pour que les débris conservent l'élan vers le
+				-- haut (la fusée continue de monter en explosant) avant que la gravité ne
+				-- les rattrape.
 				Events.ButtonExplodedEvent:FireClient(player)
-				-- 0.2s de grâce avant la fenêtre de parade (le client attend 0.2s aussi).
-				task.wait(0.2)
+				-- Deregister button immediately (avoids WaitForChild blocking the UI)
+				ButtonSessionService:cleanup(player)
 				do
-					local character = player.Character
-					local _result = character
-					if _result ~= nil then
-						_result = _result:FindFirstChild("HumanoidRootPart")
-					end
-					local hrp = _result
-					local _humanoid = character
-					if _humanoid ~= nil then
-						_humanoid = _humanoid:FindFirstChildOfClass("Humanoid")
-					end
-					local humanoid = _humanoid
-					-- Capture button reference before session is cleared
-					local buttonPart = room.buttonPart
-					-- Deregister button immediately (avoids WaitForChild blocking the UI)
-					ButtonSessionService:cleanup(player)
-					-- Freeze movement for the parry window
-					local _result_1 = humanoid
-					if _result_1 ~= nil then
-						_result_1 = _result_1.WalkSpeed
-					end
-					local _condition = _result_1
-					if _condition == nil then
-						_condition = 16
-					end
-					local origWalkSpeed = _condition
-					local _result_2 = humanoid
-					if _result_2 ~= nil then
-						_result_2 = _result_2.JumpPower
-					end
-					local _condition_1 = _result_2
-					if _condition_1 == nil then
-						_condition_1 = 50
-					end
-					local origJumpPower = _condition_1
-					local _result_3 = humanoid
-					if _result_3 ~= nil then
-						_result_3 = _result_3.JumpHeight
-					end
-					local _condition_2 = _result_3
-					if _condition_2 == nil then
-						_condition_2 = 7.2
-					end
-					local origJumpHeight = _condition_2
-					if humanoid then
-						humanoid.WalkSpeed = 0
-						humanoid.JumpPower = 0
-						humanoid.JumpHeight = 0
-					end
-					local isPerfectParry = false
-					local parryConn
-					parryConn = Events.PerfectParryEvent.OnServerEvent:Connect(function(p)
-						if p ~= player then
-							return nil
-						end
-						isPerfectParry = true
-						parryConn:Disconnect()
-					end)
-					task.wait(0.5)
-					parryConn:Disconnect()
-					if isPerfectParry then
-						RocketLauncher:reset(room)
-						if hrp then
-							hrp.Anchored = true
-						end
-						if buttonPart then
-							triggerExplosionAt(buttonPart.Position, 0)
-						end
-						-- Trigger sparkle effect on the parrying player's client
-						Events.PerfectParryEffectEvent:FireClient(player)
-						ConfettiBurst:play(buttonModel)
-						if hrp and buttonPart then
-							local rawDir = Vector3.new(hrp.Position.X - buttonPart.Position.X, 0, hrp.Position.Z - buttonPart.Position.Z)
-							local dir = if rawDir.Magnitude > 0 then rawDir.Unit else Vector3.new(0, 0, 1)
-							local _cFrame = hrp.CFrame
-							local _arg0 = dir * KNOCKBACK_DISTANCE
-							local targetCFrame = _cFrame + _arg0
-							local tween = TweenService:Create(hrp, TweenInfo.new(KNOCKBACK_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-								CFrame = targetCFrame,
-							})
-							tween:Play()
-							task.wait(KNOCKBACK_DURATION)
-						end
-						if hrp then
-							hrp.Anchored = false
-						end
-						task.wait(0.5)
-						if humanoid then
-							humanoid.WalkSpeed = origWalkSpeed
-							humanoid.JumpPower = origJumpPower
-							humanoid.JumpHeight = origJumpHeight
-						end
-						local earned = math.floor(baseCash * currentMultiplier)
-						Events.GameResultEvent:FireClient(player, false, earned, currentMultiplier)
-						EndGameButtonModule:enter(player, "released", baseCash, currentMultiplier, earned, 1)
-					else
-						-- Perte : la FUSÉE explose, pas le joueur. Pas de fling, pas de mort.
-						-- explode() stoppe lui-même l'ascension après avoir capturé sa vitesse,
-						-- pour que les débris conservent l'élan vers le haut (la fusée continue
-						-- de monter en explosant) avant que la gravité ne les rattrape.
-						local rocketPos = room.movableModel:GetPivot().Position
-						RocketLauncher:explode(room)
-						playExplosionSoundAt(rocketPos)
-						-- Le joueur reste en vie : on lui rend sa mobilité (figée pendant la fenêtre).
-						if hrp then
-							hrp.Anchored = false
-						end
-						if humanoid then
-							humanoid.WalkSpeed = origWalkSpeed
-							humanoid.JumpPower = origJumpPower
-							humanoid.JumpHeight = origJumpHeight
-						end
-						-- Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
-						Events.PlayerKilledEvent:FireClient(player)
-						-- On laisse l'explosion se jouer avant de ramener le rig.
-						task.wait(EXPLOSION_VIEW_DELAY)
-						RocketLauncher:reset(room)
-						RocketPlacer:place(room)
-						-- Perte : PAS de popup de fin. Lot de consolation forfaitaire
-						-- (baseCash / 3, sans le multiplicateur) montré par un seul texte qui
-						-- saute puis file vers l'argent du HUD (client LossRewardBehavior).
-						local reward = math.floor(baseCash / LOSS_CONSOLATION_DIVISOR)
-						Events.GameResultEvent:FireClient(player, true, reward, currentMultiplier)
-						EndGameButtonModule:enterRewardOnly(player, reward)
-					end
+					local rocketPos = room.movableModel:GetPivot().Position
+					RocketLauncher:explode(room)
+					playExplosionSoundAt(rocketPos)
+					-- Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
+					Events.PlayerKilledEvent:FireClient(player)
+					-- On laisse l'explosion se jouer avant de ramener le rig.
+					task.wait(EXPLOSION_VIEW_DELAY)
+					RocketLauncher:reset(room)
+					RocketPlacer:place(room)
+					-- Perte : PAS de popup de fin. Lot de consolation forfaitaire
+					-- (baseCash / 3, sans le multiplicateur) montré par un seul texte qui
+					-- saute puis file vers l'argent du HUD (client LossRewardBehavior).
+					local reward = math.floor(baseCash / LOSS_CONSOLATION_DIVISOR)
+					Events.GameResultEvent:FireClient(player, true, reward, currentMultiplier)
+					EndGameButtonModule:enterRewardOnly(player, reward)
 				end
 				return nil
 			end

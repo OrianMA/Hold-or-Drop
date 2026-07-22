@@ -183,7 +183,7 @@ local function stopRoom(room)
 		states[_room_1] = nil
 	end
 	setNitroEnabled(room, false)
-	-- Coupe le son de décollage sur toute fin de partie (explosion, claim/release, parry, quit)
+	-- Coupe le son de décollage sur toute fin de partie (explosion, claim/release, quit)
 	-- — stopRoom est le point de passage commun à stop/reset/explode.
 	local _room_1 = room
 	local sound = launchSounds[_room_1]
