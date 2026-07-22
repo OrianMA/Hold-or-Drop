@@ -16,13 +16,15 @@ local STARTING_MULTIPLIER = 1
 -- and the rocket together.
 local MULTIPLIER_PER_STUD = 0.01
 -- ── Rocket launch (RocketLauncher) ──────────────────────────────────────────────
--- The rocket rises while the button is held: velocity starts at 0, ramps by
--- ROCKET_ACCEL (studs/s²) up to ROCKET_MAX_SPEED (studs/s), then stays constant.
--- These are PER ROCKET-SPEED-UNIT: launch() multiplies both by the player's Rocket
--- Speed stat value. At Rocket Speed 1 the rocket crawls (accel 1 / max 10) so the
--- multiplier barely moves; each upgrade adds a full unit (e.g. 6 → accel 6 / max 60).
-local ROCKET_ACCEL = 1
-local ROCKET_MAX_SPEED = 10
+-- La fusée monte pendant le vol : la vitesse part de 0, monte de ROCKET_ACCEL
+-- (studs/s²) jusqu'à ROCKET_MAX_SPEED (studs/s), puis reste constante.
+-- Ces valeurs sont PAR UNITÉ DE ROCKET SPEED : launch() les multiplie par la stat du
+-- joueur. Au niveau 0 (valeur 1) la fusée atteint 30 studs/s en 10 s — assez pour que
+-- le multiplicateur bouge visiblement dès le premier run. Chaque niveau ajoute une
+-- unité entière, donc le premier achat double littéralement la vitesse ET la vitesse
+-- de montée du multiplicateur.
+local ROCKET_ACCEL = 3
+local ROCKET_MAX_SPEED = 30
 -- ── Rocket steering (RocketLauncher) ────────────────────────────────────────────
 -- In flight the rocket moves along its OWN up-axis. The player's native left/right
 -- movement input (keyboard A/D, mobile thumbstick, gamepad stick — the character is
