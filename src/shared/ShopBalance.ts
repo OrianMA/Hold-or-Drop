@@ -4,49 +4,53 @@
 // values), editing anything below instantly rebalances every player with no save
 // migration.
 //
-// Two curve shapes (defined in ShopConfig, fed by the numbers here):
-//   • exponential value : baseValue * valueGrowth ^ level   (BaseCash)
-//   • linear value      : baseValue + level                 (RocketSpeed / Resistance)
-//   • price (all stats) : startPrice * PRICE_GROWTH ^ level
+// Deux formes de courbe de valeur (définies dans ShopConfig, alimentées ici) :
+//   • valeur exponentielle : baseValue * valueGrowth ^ level   (BaseCash)
+//   • valeur linéaire      : baseValue + level                 (RocketSpeed / Resistance)
+//   • prix (chaque stat)   : startPrice * priceGrowth ^ level  (priceGrowth PAR STAT)
 
-// Price multiplier applied per level for every stat. Higher = steeper grind wall.
-//   1.5 → each level costs +50% of the previous.
-export const PRICE_GROWTH = 1.5;
+// Chaque stat a sa propre croissance de prix (`priceGrowth`). C'est nécessaire parce
+// que les trois stats se MULTIPLIENT entre elles (revenu = BaseCash × mult(vitesse,
+// temps de vol), et la Resistance rallonge le temps de vol) : avec une croissance
+// unique l'économie s'emballe. Mur raide sur les stats d'argent, mur doux sur la
+// Resistance pour qu'elle offre beaucoup de petits paliers.
 
-// BaseCash — the button's base payout. Uncapped.
+// BaseCash — le gain de base du bouton. Sans plafond.
 //   value = baseValue * valueGrowth ^ level   (L0=100, L10≈619, L20≈3.8K)
-//   price = startPrice * PRICE_GROWTH ^ level  (L0→1 = 25)
-//   Invariant: valueGrowth < PRICE_GROWTH (1.20 < 1.5) so price outpaces value.
+//   price = startPrice * priceGrowth ^ level  (L0→1 = 50)
+//   Invariant : valueGrowth < priceGrowth (1.20 < 1.8) → le prix dépasse la valeur.
 export const BASE_CASH = {
 	baseValue: 100,
 	valueGrowth: 1.2,
-	startPrice: 25,
+	startPrice: 50,
+	priceGrowth: 1.8,
 };
 
-// Rocket Speed — drives BOTH the rocket's ascent speed and how fast the payout
-// multiplier grows (the multiplier tracks the rocket's live velocity, so a faster
-// rocket = a faster-climbing multiplier). Integer, +1 per level, uncapped.
-//   value = baseValue + level   (L0=1 → rocket crawls, multiplier barely moves;
-//                                each level is a full unit → noticeably faster at once)
-//   actual rocket accel/max = value × the per-unit constants in RocketGameConfig.
-//   price = startPrice * PRICE_GROWTH ^ level  (L0→1 = 100)
+// Rocket Speed — pilote À LA FOIS la vitesse d'ascension et la vitesse de montée du
+// multiplicateur (le multiplicateur suit la vitesse instantanée de la fusée). Entier,
+// +1 par niveau, sans plafond.
+//   value = baseValue + level   (L0=1 → mult ×2.6 à 10 s ; L1=2 → ×4.3 : le premier
+//                                achat double littéralement le gain)
+//   accel/vitesse max réels = value × les constantes de RocketGameConfig.
+//   price = startPrice * priceGrowth ^ level  (L0→1 = 75)
 export const ROCKET_SPEED = {
 	baseValue: 1,
-	startPrice: 100,
+	startPrice: 75,
+	priceGrowth: 1.7,
 };
 
-// Resistance — explosion-risk reduction, 0..100. Bought +1 per level like Rocket
-// Speed (plain integer, +1 each purchase). The number itself is NOT a percentage:
-// it feeds a curve applied in the risk loop (ButtonInGameModule.resistanceRiskParams).
-// The curve is front-loaded — the FIRST levels hugely raise average survival, the
-// LAST levels barely change it but push out the guaranteed-safe window toward ~15s.
-//   value = level (plain 0..100)
-//   price = startPrice * PRICE_GROWTH ^ level   (L0→1 = 500)
-//   startPrice 500: Resistance resets each rebirth cycle, so early levels (the ones
-//   that matter most) must be reachable within a single early cycle.
+// Resistance — 0..100. Achetée +1 par niveau. Le nombre n'est PAS un pourcentage : il
+// alimente la courbe de shared/ResistanceCurve.ts, qui le convertit en SECONDES DE VOL
+// GARANTIES (c'est ce qu'affiche le shop). La courbe est front-loaded : L1 achète déjà
+// 1.0 s garantie et +1.5 s de survie médiane, L30 n'achète plus rien.
+//   value = level (0..100)
+//   price = startPrice * priceGrowth ^ level   (L0→1 = 150)
+//   Croissance douce (1.35) et prix de départ bas : la Resistance est remise à zéro à
+//   chaque rebirth, donc les niveaux qui comptent doivent être atteignables en 2-3 runs.
 export const RESISTANCE = {
 	maxLevel: 100,
-	startPrice: 500,
+	startPrice: 150,
+	priceGrowth: 1.35,
 };
 
 // ── Rebirth ──────────────────────────────────────────────────────────────────

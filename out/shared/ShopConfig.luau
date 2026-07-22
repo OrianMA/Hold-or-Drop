@@ -5,7 +5,6 @@ local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS
 local BASE_CASH = _ShopBalance.BASE_CASH
 local COMMUNITY = _ShopBalance.COMMUNITY
 local MONEY_TIERS = _ShopBalance.MONEY_TIERS
-local PRICE_GROWTH = _ShopBalance.PRICE_GROWTH
 local REBIRTH = _ShopBalance.REBIRTH
 local RESISTANCE = _ShopBalance.RESISTANCE
 local RESISTANCE_PASS = _ShopBalance.RESISTANCE_PASS
@@ -36,6 +35,7 @@ local STATS = {
 		valueAttribute = "BaseCash",
 		levelAttribute = "BaseCashLevel",
 		startPrice = BASE_CASH.startPrice,
+		priceGrowth = BASE_CASH.priceGrowth,
 		valueFor = function(level)
 			return math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ^ level)
 		end,
@@ -47,6 +47,7 @@ local STATS = {
 		valueAttribute = "RocketSpeed",
 		levelAttribute = "RocketSpeedLevel",
 		startPrice = ROCKET_SPEED.startPrice,
+		priceGrowth = ROCKET_SPEED.priceGrowth,
 		valueFor = function(level)
 			return ROCKET_SPEED.baseValue + level
 		end,
@@ -58,6 +59,7 @@ local STATS = {
 		valueAttribute = "Resistance",
 		levelAttribute = "ResistanceLevel",
 		startPrice = RESISTANCE.startPrice,
+		priceGrowth = RESISTANCE.priceGrowth,
 		maxLevel = RESISTANCE.maxLevel,
 		valueFor = function(level)
 			return level
@@ -92,10 +94,11 @@ local ITEMS = {
 }
 -- Iteration order for the client (matches the A/B/D frame ordering).
 local ITEM_ORDER = { "RocketSpeed", "BaseCash", "Resistance" }
--- Price to go from `level` → `level + 1` for a stat. Deterministic integer so
--- client and server always agree.
+-- Prix pour passer de `level` à `level + 1`. Entier déterministe pour que client et
+-- serveur soient toujours d'accord. Chaque stat a sa propre croissance de prix.
 local function priceForLevel(stat, level)
-	return math.floor(STATS[stat].startPrice * PRICE_GROWTH ^ level)
+	local cfg = STATS[stat]
+	return math.floor(cfg.startPrice * cfg.priceGrowth ^ level)
 end
 -- Total price to buy a whole item from `fromLevel` (strict sum of each level —
 -- no bulk discount). For a +1 item this is just priceForLevel.

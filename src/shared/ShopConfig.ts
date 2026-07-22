@@ -3,7 +3,6 @@ import {
 	BASE_CASH,
 	COMMUNITY,
 	MONEY_TIERS,
-	PRICE_GROWTH,
 	REBIRTH,
 	RESISTANCE,
 	RESISTANCE_PASS,
@@ -30,6 +29,7 @@ export interface StatConfig {
 	// Attribute holding the persisted level (the source of truth).
 	readonly levelAttribute: string;
 	readonly startPrice: number; // price of the very first level (level 0 → 1)
+	readonly priceGrowth: number; // multiplicateur de prix par niveau (propre à la stat)
 	readonly maxLevel?: number; // inclusive cap; undefined = uncapped
 	// Effective value at a given level. Property (not method) so it matches the
 	// arrow-function assignments below — roblox-ts separates `.` and `:` calls.
@@ -52,6 +52,7 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		valueAttribute: "BaseCash",
 		levelAttribute: "BaseCashLevel",
 		startPrice: BASE_CASH.startPrice,
+		priceGrowth: BASE_CASH.priceGrowth,
 		valueFor: (level) => math.floor(BASE_CASH.baseValue * BASE_CASH.valueGrowth ** level),
 		display: (value) => FormatNumber(value),
 	},
@@ -59,6 +60,7 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		valueAttribute: "RocketSpeed",
 		levelAttribute: "RocketSpeedLevel",
 		startPrice: ROCKET_SPEED.startPrice,
+		priceGrowth: ROCKET_SPEED.priceGrowth,
 		valueFor: (level) => ROCKET_SPEED.baseValue + level,
 		// Plain integer speed (1, 2, 3…).
 		display: (value) => tostring(value),
@@ -67,6 +69,7 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		valueAttribute: "Resistance",
 		levelAttribute: "ResistanceLevel",
 		startPrice: RESISTANCE.startPrice,
+		priceGrowth: RESISTANCE.priceGrowth,
 		maxLevel: RESISTANCE.maxLevel,
 		// Plain 0..100 level — the risk-curve mapping lives in ButtonInGameModule.
 		valueFor: (level) => level,
@@ -98,10 +101,11 @@ export const ITEMS: { readonly [K in ShopItemId]: ShopItem } = {
 // Iteration order for the client (matches the A/B/D frame ordering).
 export const ITEM_ORDER: readonly ShopItemId[] = ["RocketSpeed", "BaseCash", "Resistance"];
 
-// Price to go from `level` → `level + 1` for a stat. Deterministic integer so
-// client and server always agree.
+// Prix pour passer de `level` à `level + 1`. Entier déterministe pour que client et
+// serveur soient toujours d'accord. Chaque stat a sa propre croissance de prix.
 export function priceForLevel(stat: ShopStat, level: number): number {
-	return math.floor(STATS[stat].startPrice * PRICE_GROWTH ** level);
+	const cfg = STATS[stat];
+	return math.floor(cfg.startPrice * cfg.priceGrowth ** level);
 }
 
 // Total price to buy a whole item from `fromLevel` (strict sum of each level —
