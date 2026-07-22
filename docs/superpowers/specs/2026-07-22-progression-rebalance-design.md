@@ -206,7 +206,7 @@ Le readout `ShopMenu/Header/MultiplierText` doit refléter la nouvelle décompos
 | Élément | Avant | Après |
 |---|---|---|
 | `rebirthMult(R)` | table `[1,2,3,3.5,4,4.5,4.75,5]` puis `+0.25` | **`REBIRTH.multGrowth ^ R`, `multGrowth = 8`** |
-| `rebirthCost(R)` | `2 500 × 2.4^R` | **`20 000 × 30^R`** |
+| `rebirthCost(R)` | `2 500 × 2.4^R` | **`20 000 × 38^R`** |
 
 `REBIRTH.multTable` et `multTail` sont supprimés au profit de `multGrowth`.
 
@@ -214,33 +214,42 @@ Le readout `ShopMenu/Header/MultiplierText` doit refléter la nouvelle décompos
 
 | R | runs | min | **runs pour retrouver le pic précédent** | BC / RS / RE atteints | coût du rebirth |
 |---|---|---|---|---|---|
-| 0 | 20 | 9,5 | — | 10 / 11 / 14 | 20 000 |
-| 1 | 9 | 4,5 | **3** | 16 / 15 / 20 | 600 000 |
-| 2 | 7 | 3,6 | **3** | 22 / 20 / 30 | 18 M |
-| 3 | 7 | 3,7 | **3** | 28 / 28 / 39 | 540 M |
-| 4 | 7 | 3,8 | **3** | 33 / 35 / 53 | 16,2 G |
-| 5 | 8 | 4,3 | **3** | 40 / 40 / 65 | 486 G |
-| 6 | 12 | 6,6 | **3** | 45 / 49 / 84 | 14,6 T |
-| 7 | 13 | 7,2 | **3** | 51 / 56 / 94 | 437 T |
+| 0 | 20 | 9,5 | — | 11 / 11 / 13 | 20 000 |
+| 1 | 10 | 5,1 | **3** | 17 / 15 / 21 | 760 000 |
+| 2 | 11 | 5,9 | **3** | 23 / 25 / 36 | 28,9 M |
+| 3 | 14 | 7,7 | **3** | 29 / 32 / 52 | 1,10 G |
+| 4 | 15 | 8,3 | **3** | 35 / 38 / 63 | 41,7 G |
+| 5 | 20 | 11,1 | **3** | 41 / 45 / 76 | 1,58 T |
+| 6 | 28 | 15,7 | **3** | 48 / 52 / 88 | 60,2 T |
+| 7 | 29 | 16,3 | **3** | 54 / 59 / 95 | 2,29 Qa |
 
-R0 (9,5 min) est le cycle d'apprentissage : le premier rebirth se mérite. À partir de R1
-la boucle tient dans 3,6-7,2 min et s'allonge naturellement.
+R0 (9,5 min) est le cycle d'apprentissage : le premier rebirth se mérite. Ensuite la
+boucle s'allonge progressivement — ~5 min à R1, ~8 min à R4, ~16 min à R7 — pour environ
+100 min cumulées jusqu'au rebirth 9. `costGrowth` dépasse volontairement la croissance du
+revenu de pointe : c'est ce qui produit l'allongement au lieu de cycles plats.
+
+> **Révision du 2026-07-22 (retour de playtest).** La première version utilisait
+> `costGrowth = 30`, qui donnait des cycles quasi plats à 3,6-7,2 min : les rebirths
+> s'enchaînaient trop vite passé le premier. Passé à **38**. `baseCost` est resté à 20 000
+> — le premier rebirth était jugé bon et ne devait pas bouger. La récupération du revenu
+> de pointe reste à **3 runs** à tous les niveaux.
 
 ### 4.4 Forme du cycle R1 — la boucle visée
 
 | Run | Revenu | Phase |
 |---|---|---|
 | 1 | 947$ | rebirth, on repart de zéro |
-| 2 | 4 080$ | **re-climb explosif** (×4,3 en un run) |
-| 3 | **19 324$** | dépasse le pic du cycle précédent (16 726$) |
-| 4 | 59 995$ | territoire neuf |
-| 5 | 142 671$ | territoire neuf |
-| 6 | 249 734$ | territoire neuf |
-| 7 | 357 095$ | ralentissement |
-| 8 | 464 918$ | **stagnation** — on épargne |
-| 9 | 594 253$ | rebirth |
+| 2 | 4 106$ | **re-climb explosif** (×4,3 en un run) |
+| 3 | **19 873$** | dépasse le pic du cycle précédent (19 790$) |
+| 4 | 61 570$ | territoire neuf |
+| 5 | 145 540$ | territoire neuf |
+| 6 | 260 334$ | territoire neuf |
+| 7 | 372 993$ | ralentissement |
+| 8 | 493 187$ | **stagnation** — on épargne |
+| 9 | 605 516$ | stagnation |
+| 10 | 726 750$ | rebirth |
 
-Croissance par run : ×4,3 → ×4,7 → ×3,1 → ×2,4 → ×1,8 → ×1,4 → ×1,3 → ×1,3. La
+Croissance par run : ×4,3 → ×4,8 → ×3,1 → ×2,4 → ×1,8 → ×1,4 → ×1,3 → ×1,2 → ×1,2. La
 décélération produit d'elle-même la phase de stagnation qui donne envie de rebirth.
 
 ### 4.5 Risques identifiés
@@ -311,7 +320,7 @@ Critères mesurables, à valider par le simulateur (`tools/economy-sim.js`) **et
 1. Le premier run rapporte ≥ 100$ et permet un achat immédiat.
 2. Resistance L1 : fenêtre garantie ≥ 1,0 s et survie médiane ≥ 8,0 s (contre 7,5 s à L0).
 3. RocketSpeed L0→L1 : multiplicateur à 10 s de vol ≥ ×4,0 (contre ×2,6).
-4. Cycles R1..R7 entre 3,5 et 8 min.
+4. Cycles R1..R7 entre 4,5 et 18 min (allongement progressif : ~5 min à R1, ~16 min à R7).
 5. Runs pour retrouver le pic de revenu précédent après rebirth : **≤ 3** pour R1..R7.
 6. Un pass money ×2 multiplie bien le revenu par 2 à n'importe quel niveau de rebirth.
 7. En jeu : le shop affiche des secondes pour Resistance et l'`EffectiveBaseCash` pour

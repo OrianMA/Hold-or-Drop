@@ -418,8 +418,8 @@ check("3. RocketSpeed L1 : mult à 10s ≥ x4.0", m10 >= 4.0, `x${m10.toFixed(2)
 
 // 4 — durée des cycles
 const cycles = rows.filter((r) => r.R >= 1 && r.R <= 7);
-const bad = cycles.filter((r) => r.min < 3.5 || r.min > 8);
-check("4. cycles R1..R7 entre 3.5 et 8 min", bad.length === 0, bad.length ? `hors bornes : ${bad.map((r) => `R${r.R}=${r.min}min`).join(", ")}` : cycles.map((r) => `${r.min}`).join(" / ") + " min");
+const bad = cycles.filter((r) => r.min < 4.5 || r.min > 18);
+check("4. cycles R1..R7 entre 4.5 et 18 min", bad.length === 0, bad.length ? `hors bornes : ${bad.map((r) => `R${r.R}=${r.min}min`).join(", ")}` : cycles.map((r) => `${r.min}`).join(" / ") + " min");
 
 // 5 — retour au niveau précédent
 const slow = cycles.filter((r) => r.recover === null || r.recover > 3);
@@ -779,12 +779,14 @@ git commit -m "balance: une croissance de prix par stat, prix de départ revus"
 // multGrowth = 8 est calibré pour que le joueur RETROUVE son revenu de pointe en ~3
 // runs après un rebirth (il repart avec BaseCash/RocketSpeed/Resistance à zéro, donc
 // un ratio faible le condamnerait à passer la moitié du cycle à racheter l'existant).
-// costGrowth = 30 suit la croissance du revenu de pointe d'un cycle à l'autre et
-// maintient la boucle autour de 4-8 min. Voir
+// costGrowth = 38 dépasse volontairement la croissance du revenu de pointe : les
+// cycles s'allongent progressivement (R1 ~5 min, R4 ~8 min, R7 ~16 min) au lieu de
+// rester plats. baseCost 20000 fixe le PREMIER rebirth à ~9.5 min et n'est pas touché
+// par ce réglage. Voir
 // docs/superpowers/specs/2026-07-22-progression-rebalance-design.md §4.
 export const REBIRTH = {
 	baseCost: 20000,
-	costGrowth: 30,
+	costGrowth: 38,
 	multGrowth: 8,
 };
 ```
@@ -834,8 +836,8 @@ et un exit code 0. Vérifier :
 node tools/economy-sim.js > /dev/null && echo "EXIT 0 — vert"
 ```
 
-Repères attendus dans le tableau : R1 = 9 runs / 4.5 min / récup. 3 ; R2 = 7 runs /
-3.6 min / récup. 3 ; R7 = 13 runs / 7.2 min / récup. 3.
+Repères attendus dans le tableau : R1 = 10 runs / 5.1 min / récup. 3 ; R2 = 11 runs /
+5.9 min / récup. 3 ; R7 = 29 runs / 16.3 min / récup. 3.
 
 - [ ] **Step 5 : Vérifier qu'aucune référence à `multTable`/`multTail` ne subsiste**
 
@@ -850,7 +852,7 @@ Attendu : aucun résultat.
 ```bash
 npm run build
 git add src/shared/ShopBalance.ts src/shared/ShopConfig.ts out/shared/ShopBalance.luau out/shared/ShopConfig.luau
-git commit -m "balance: rebirth multiplicatif 8^R, coût 20000 x 30^R, boosts additifs"
+git commit -m "balance: rebirth multiplicatif 8^R, coût 20000 x 38^R, boosts additifs"
 ```
 
 ---
@@ -1293,7 +1295,7 @@ MoneyMult)` est inchangé.
 
 - [ ] **Step 5 : §6.9 — corriger le coût et la récompense du rebirth**
 
-`rebirthCost(R) = floor(20 000 × 30^R)` et `rebirthMult(R) = 8^R` (la table
+`rebirthCost(R) = floor(20 000 × 38^R)` et `rebirthMult(R) = 8^R` (la table
 `[1,2,3,3.5,…]` et `multTail` n'existent plus).
 
 - [ ] **Step 6 : Relire la cohérence**
