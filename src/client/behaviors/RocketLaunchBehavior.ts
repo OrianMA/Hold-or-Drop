@@ -37,6 +37,14 @@ let claimButtonOriginalColor: Color3 | undefined;
 let multiplierTextOriginalSize: number | undefined;
 let multiplierTextOriginalColor: Color3 | undefined;
 
+// Pulse d'onboarding du bouton Claim : tant que le joueur n'a pas encaissé quelques
+// fois, le bouton respire (taille + halo) pour que le geste soit impossible à rater.
+// Compteur en mémoire, remis à zéro à chaque session — aucun état serveur.
+let claimPulseTween: Tween | undefined;
+let claimPulseStroke: UIStroke | undefined;
+let claimPulseStrokeTween: Tween | undefined;
+let sessionClaimCount = 0;
+
 // Lighting effects — created once in init()
 let bloomEffect: BloomEffect | undefined;
 
@@ -163,6 +171,12 @@ const CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45);
 // redevient cliquable pour rentrer à la base (fusée stoppée, caméra rendue au joueur).
 const CLAIM_REARM_DELAY = 0.6;
 const GO_HOME_LABEL = "Go Home";
+
+// Nombre de claims après lequel le pulse d'onboarding s'arrête définitivement (session).
+const CLAIM_PULSE_RUNS = 3;
+// Amplitude du gonflement du bouton pendant le pulse.
+const CLAIM_PULSE_SCALE = 1.08;
+const ClaimPulseTI = new TweenInfo(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true);
 
 // Aperçu de gain : on ne rafraîchit le texte que si le multiplicateur a bougé d'au moins
 // RESULT_UPDATE_MULT_STEP ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé (anti-spam).
@@ -295,6 +309,7 @@ export function init(): void {
 		// (vrai aussi bien après un claim qu'après une perte).
 		isGameActive = false;
 		isGoHomeMode = false; // la fusée a explosé : le "Go Home" n'a plus lieu d'être
+		stopClaimPulse(); // fin de partie : plus de respiration sur un bouton éteint
 		RocketSteerController.stop(); // fin du vol : plus de pilotage
 		MusicController.stopRunMusic(); // coupe la musique du run (cas claim : pas de ButtonExplodedEvent)
 		activatedConn?.Disconnect();
@@ -411,6 +426,50 @@ export function init(): void {
 	});
 }
 
+// Arrête le pulse et remet le bouton à sa taille / son halo d'origine. Idempotent :
+// appelable même si aucun pulse ne tourne.
+function stopClaimPulse(): void {
+	claimPulseTween?.Cancel();
+	claimPulseTween = undefined;
+	claimPulseStrokeTween?.Cancel();
+	claimPulseStrokeTween = undefined;
+	if (claimPulseStroke) claimPulseStroke.Enabled = false;
+	if (claimButton && buttonOriginalSize) claimButton.Size = buttonOriginalSize;
+}
+
+// Fait respirer le bouton tant que le joueur n'a pas encaissé CLAIM_PULSE_RUNS fois.
+// À appeler APRÈS la restauration de claimButton.Size dans setup(), sinon la taille
+// d'origine serait écrasée par une frame de pulse.
+function startClaimPulse(): void {
+	if (sessionClaimCount >= CLAIM_PULSE_RUNS) return;
+	if (!claimButton || !buttonOriginalSize) return;
+
+	// Halo créé une seule fois, en code — rien à ajouter dans Studio.
+	if (!claimPulseStroke) {
+		const stroke = new Instance("UIStroke");
+		stroke.Name = "ClaimPulseStroke";
+		stroke.Thickness = 4;
+		stroke.Color = new Color3(1, 1, 1);
+		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+		stroke.Parent = claimButton;
+		claimPulseStroke = stroke;
+	}
+	claimPulseStroke.Enabled = true;
+	claimPulseStroke.Transparency = 0.8;
+
+	const s = buttonOriginalSize;
+	const grown = new UDim2(
+		s.X.Scale * CLAIM_PULSE_SCALE,
+		s.X.Offset * CLAIM_PULSE_SCALE,
+		s.Y.Scale * CLAIM_PULSE_SCALE,
+		s.Y.Offset * CLAIM_PULSE_SCALE,
+	);
+	claimPulseTween = TweenService.Create(claimButton, ClaimPulseTI, { Size: grown });
+	claimPulseTween.Play();
+	claimPulseStrokeTween = TweenService.Create(claimPulseStroke, ClaimPulseTI, { Transparency: 0.1 });
+	claimPulseStrokeTween.Play();
+}
+
 // Called each time the player starts a new game (after clicking StartButton)
 export function setup(inGameUI: ScreenGui): void {
 	const popup = inGameUI.WaitForChild("RocketLaunch") as Frame;
@@ -483,6 +542,11 @@ export function setup(inGameUI: ScreenGui): void {
 	claimButton.Active = true;
 	claimButton.Visible = true;
 
+	// Onboarding : le bouton respire tant que le joueur n'a pas encaissé quelques fois.
+	// Doit venir APRÈS la restauration de Size ci-dessus.
+	stopClaimPulse();
+	startClaimPulse();
+
 	// Aperçu de gain visible dès le décollage : "si je claim maintenant" = baseCash × 1.00x.
 	// Il grimpe ensuite (throttlé) dans la boucle RenderStepped, puis se fige au claim.
 	resultMultiplierText.Text = `$${FormatNumber(math.floor(resultBaseCash * STARTING_MULTIPLIER))}`;
@@ -507,6 +571,8 @@ export function setup(inGameUI: ScreenGui): void {
 	const fireClaim = () => {
 		if (!isGameActive || hasClaimed) return;
 		hasClaimed = true;
+		sessionClaimCount += 1;
+		stopClaimPulse();
 		if (claimButton) {
 			claimButton.Active = false;
 			claimButton.Interactable = false;
@@ -538,6 +604,7 @@ export function setup(inGameUI: ScreenGui): void {
 	const fireGoHome = () => {
 		if (!isGameActive || !isGoHomeMode) return;
 		isGoHomeMode = false;
+		stopClaimPulse();
 		if (claimButton) {
 			claimButton.Active = false;
 			claimButton.Interactable = false;

@@ -39,6 +39,13 @@ local buttonOriginalSize
 local claimButtonOriginalColor
 local multiplierTextOriginalSize
 local multiplierTextOriginalColor
+-- Pulse d'onboarding du bouton Claim : tant que le joueur n'a pas encaissé quelques
+-- fois, le bouton respire (taille + halo) pour que le geste soit impossible à rater.
+-- Compteur en mémoire, remis à zéro à chaque session — aucun état serveur.
+local claimPulseTween
+local claimPulseStroke
+local claimPulseStrokeTween
+local sessionClaimCount = 0
 -- Lighting effects — created once in init()
 local bloomEffect
 -- Per-game state
@@ -180,6 +187,11 @@ local CLAIM_BUTTON_EXPLODE_COLOR = Color3.fromRGB(200, 45, 45)
 -- redevient cliquable pour rentrer à la base (fusée stoppée, caméra rendue au joueur).
 local CLAIM_REARM_DELAY = 0.6
 local GO_HOME_LABEL = "Go Home"
+-- Nombre de claims après lequel le pulse d'onboarding s'arrête définitivement (session).
+local CLAIM_PULSE_RUNS = 3
+-- Amplitude du gonflement du bouton pendant le pulse.
+local CLAIM_PULSE_SCALE = 1.08
+local ClaimPulseTI = TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 -- Aperçu de gain : on ne rafraîchit le texte que si le multiplicateur a bougé d'au moins
 -- RESULT_UPDATE_MULT_STEP ET qu'au moins RESULT_UPDATE_MIN_DELAY s'est écoulé (anti-spam).
 local RESULT_UPDATE_MULT_STEP = 0.01
@@ -215,6 +227,7 @@ local function resetPostProcess(instant)
 	shakeAmplitude = 0
 end
 -- Called once at startup — all event listeners live here, gated by isGameActive
+local stopClaimPulse
 local function init()
 	-- Précharge le son de cash pour que même le TOUT premier claim de la session soit
 	-- instantané (les suivants sont déjà en cache). 100 % client : aucune latence réseau.
@@ -311,6 +324,7 @@ local function init()
 		-- (vrai aussi bien après un claim qu'après une perte).
 		isGameActive = false
 		isGoHomeMode = false
+		stopClaimPulse()
 		RocketSteerController:stop()
 		MusicController:stopRunMusic()
 		local _result = activatedConn
@@ -430,6 +444,59 @@ local function init()
 		end
 	end)
 end
+-- Arrête le pulse et remet le bouton à sa taille / son halo d'origine. Idempotent :
+-- appelable même si aucun pulse ne tourne.
+function stopClaimPulse()
+	local _result = claimPulseTween
+	if _result ~= nil then
+		_result:Cancel()
+	end
+	claimPulseTween = nil
+	local _result_1 = claimPulseStrokeTween
+	if _result_1 ~= nil then
+		_result_1:Cancel()
+	end
+	claimPulseStrokeTween = nil
+	if claimPulseStroke then
+		claimPulseStroke.Enabled = false
+	end
+	if claimButton and buttonOriginalSize then
+		claimButton.Size = buttonOriginalSize
+	end
+end
+-- Fait respirer le bouton tant que le joueur n'a pas encaissé CLAIM_PULSE_RUNS fois.
+-- À appeler APRÈS la restauration de claimButton.Size dans setup(), sinon la taille
+-- d'origine serait écrasée par une frame de pulse.
+local function startClaimPulse()
+	if sessionClaimCount >= CLAIM_PULSE_RUNS then
+		return nil
+	end
+	if not claimButton or not buttonOriginalSize then
+		return nil
+	end
+	-- Halo créé une seule fois, en code — rien à ajouter dans Studio.
+	if not claimPulseStroke then
+		local stroke = Instance.new("UIStroke")
+		stroke.Name = "ClaimPulseStroke"
+		stroke.Thickness = 4
+		stroke.Color = Color3.new(1, 1, 1)
+		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		stroke.Parent = claimButton
+		claimPulseStroke = stroke
+	end
+	claimPulseStroke.Enabled = true
+	claimPulseStroke.Transparency = 0.8
+	local s = buttonOriginalSize
+	local grown = UDim2.new(s.X.Scale * CLAIM_PULSE_SCALE, s.X.Offset * CLAIM_PULSE_SCALE, s.Y.Scale * CLAIM_PULSE_SCALE, s.Y.Offset * CLAIM_PULSE_SCALE)
+	claimPulseTween = TweenService:Create(claimButton, ClaimPulseTI, {
+		Size = grown,
+	})
+	claimPulseTween:Play()
+	claimPulseStrokeTween = TweenService:Create(claimPulseStroke, ClaimPulseTI, {
+		Transparency = 0.1,
+	})
+	claimPulseStrokeTween:Play()
+end
 -- Called each time the player starts a new game (after clicking StartButton)
 local function setup(inGameUI)
 	local popup = inGameUI:WaitForChild("RocketLaunch")
@@ -524,6 +591,10 @@ local function setup(inGameUI)
 	claimButton.Interactable = true
 	claimButton.Active = true
 	claimButton.Visible = true
+	-- Onboarding : le bouton respire tant que le joueur n'a pas encaissé quelques fois.
+	-- Doit venir APRÈS la restauration de Size ci-dessus.
+	stopClaimPulse()
+	startClaimPulse()
 	-- Aperçu de gain visible dès le décollage : "si je claim maintenant" = baseCash × 1.00x.
 	-- Il grimpe ensuite (throttlé) dans la boucle RenderStepped, puis se fige au claim.
 	resultMultiplierText.Text = `${FormatNumber(math.floor(resultBaseCash * STARTING_MULTIPLIER))}`
@@ -549,6 +620,8 @@ local function setup(inGameUI)
 			return nil
 		end
 		hasClaimed = true
+		sessionClaimCount += 1
+		stopClaimPulse()
 		if claimButton then
 			claimButton.Active = false
 			claimButton.Interactable = false
@@ -586,6 +659,7 @@ local function setup(inGameUI)
 			return nil
 		end
 		isGoHomeMode = false
+		stopClaimPulse()
 		if claimButton then
 			claimButton.Active = false
 			claimButton.Interactable = false
