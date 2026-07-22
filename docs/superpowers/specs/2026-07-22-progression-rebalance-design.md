@@ -125,7 +125,7 @@ La seule modification de forme est `safeWindow` : `n^C × MAX` (back-loaded) dev
 | Constante | Avant | Après |
 |---|---|---|
 | `RESISTANCE_MAX_SAFE_WINDOW` | 15 | **8** |
-| `RESISTANCE_SAFE_WINDOW_CURVE` | 2.5 (back-loaded) | **13 (front-loaded)** |
+| `RESISTANCE_SAFE_WINDOW_CURVE` | 2.5 (back-loaded) | **14 (front-loaded)** |
 | `RESISTANCE_MAX_REDUCTION` | 0.99 | **0.75** |
 | `RESISTANCE_REDUCTION_CURVE` | 12 | **13** |
 | `RESISTANCE_MAX_LEVEL` | 100 | inchangé |
@@ -135,7 +135,7 @@ La seule modification de forme est `safeWindow` : `n^C × MAX` (back-loaded) dev
 | Niveau | Prix du niveau | Cumulé | Fenêtre garantie | Survie médiane | Δ vs niveau précédent |
 |---|---|---|---|---|---|
 | 0 | — | — | 0,0 s | 7,0 s | — |
-| **1** | **150$** | 150$ | **1,0 s** | **8,5 s** | **+1,5 s** |
+| **1** | **150$** | 150$ | **1,05 s** | **8,5 s** | **+1,5 s** |
 | 2 | 202$ | 352$ | 1,8 s | 9,5 s | +1,0 s |
 | 3 | 273$ | 625$ | 2,6 s | 10,5 s | +1,0 s |
 | 4 | 369$ | 994$ | 3,3 s | 11,5 s | +1,0 s |
