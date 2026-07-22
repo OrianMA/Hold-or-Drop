@@ -132,26 +132,23 @@ local function rebirthCost(rebirths)
 	local r = math.max(0, math.floor(rebirths))
 	return math.floor(REBIRTH.baseCost * REBIRTH.costGrowth ^ r)
 end
--- Permanent money multiplier after `rebirths` rebirths. Table for the designed
--- early curve, then a constant linear queue (+multTail per extra rebirth).
+-- Multiplicateur d'argent permanent après `rebirths` rebirths. Géométrique : chaque
+-- rebirth multiplie le précédent par REBIRTH.multGrowth.
 local function rebirthMult(rebirths)
 	local r = math.max(0, math.floor(rebirths))
-	local multTable = REBIRTH.multTable
-	local lastIndex = #multTable - 1
-	if r <= lastIndex then
-		return multTable[r + 1]
-	end
-	return multTable[lastIndex + 1] + (r - lastIndex) * REBIRTH.multTail
+	return REBIRTH.multGrowth ^ r
 end
--- ── Money multipliers — additive bonus model (pure, shared client/server) ──────
--- ADDITIVE: each "×N" factor contributes "+(N-1)", so a lone factor keeps its
--- labelled value and a brand-new player stays ×1. MultRebirth (≥1) carries the
--- base 1. Any future independent multiplier adds its own (mult-1) the same way.
---   moneyMult = MultRebirth + (inCommunity ? COMMUNITY.mult-1 : 0) + (moneyTierMult-1)
+-- ── Multiplicateurs d'argent — rebirth multiplicatif, boosts additifs ────────────
+-- Le rebirth MULTIPLIE ; la communauté et le palier de game-pass s'additionnent entre
+-- eux dans un facteur de boost commun :
+--   moneyMult = MultRebirth × (1 + (communauté − 1) + (palier − 1))
+-- Conséquence voulue : un pass ×2 reste ×2 quel que soit le niveau de rebirth. Avec un
+-- modèle purement additif, un MultRebirth de 4096 écraserait les paliers MONEY_TIERS
+-- (un pass ×2 n'ajouterait plus que +1 sur 4096) et les rendrait invendables.
 local function moneyMult(multRebirth, moneyTierMult, inCommunity)
 	local communityBonus = if inCommunity then COMMUNITY.mult - 1 else 0
 	local tierBonus = moneyTierMult - 1
-	return multRebirth + communityBonus + tierBonus
+	return multRebirth * (1 + communityBonus + tierBonus)
 end
 -- Effective resistance used by the risk loop: shop Resistance + the resistance
 -- game pass (flat bonus levels), capped at the max level.

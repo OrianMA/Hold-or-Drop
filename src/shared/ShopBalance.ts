@@ -54,15 +54,21 @@ export const RESISTANCE = {
 };
 
 // ── Rebirth ──────────────────────────────────────────────────────────────────
-// Reset everything (cash + the 3 stat levels) for a permanent money multiplier.
-//   cost(R) = floor(baseCost * costGrowth ^ R)   (R = rebirths already done)
-//   mult(R) = multTable[R] for R inside the table, then linear queue of multTail.
-// multTable index 0 = no rebirth (×1). R1→×2, R2→×3, R3→×3.5, … R7→×5.
+// Remet à zéro l'argent + les 3 niveaux de stat contre un multiplicateur d'argent
+// permanent.
+//   cost(R) = floor(baseCost * costGrowth ^ R)   (R = rebirths déjà faits)
+//   mult(R) = multGrowth ^ R                     (R0 → ×1, R1 → ×8, R2 → ×64…)
+//
+// multGrowth = 8 est calibré pour que le joueur RETROUVE son revenu de pointe en ~3
+// runs après un rebirth (il repart avec BaseCash/RocketSpeed/Resistance à zéro, donc
+// un ratio faible le condamnerait à passer la moitié du cycle à racheter l'existant).
+// costGrowth = 30 suit la croissance du revenu de pointe d'un cycle à l'autre et
+// maintient la boucle autour de 4-8 min. Voir
+// docs/superpowers/specs/2026-07-22-progression-rebalance-design.md §4.
 export const REBIRTH = {
-	baseCost: 2500,
-	costGrowth: 2.4,
-	multTable: [1, 2, 3, 3.5, 4, 4.5, 4.75, 5],
-	multTail: 0.25,
+	baseCost: 20000,
+	costGrowth: 30,
+	multGrowth: 8,
 };
 
 // ── Money multipliers (3 independent additive factors) ────────────────────────
