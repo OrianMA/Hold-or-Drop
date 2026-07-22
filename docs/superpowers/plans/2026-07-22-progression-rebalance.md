@@ -551,8 +551,8 @@ Remplacer le bloc de commentaire + constantes + fonction par :
 //     seul. C'est la raison du basculement de poids vers safeWindow.
 // À resistance 0 les deux termes sont neutres → courbe identique à celle d'origine.
 //
-// Repères : L1 → 1.05 s garanties / survie médiane 8.5 s (contre 7.0 s à L0).
-//           L5 → 4.1 s / 12.0 s.  L10 → 6.2 s / 15.5 s.  L30 → 7.9 s / 19.0 s (saturé).
+// Repères : L1 → 1.1 s garanties / survie médiane 8.5 s (contre 7.0 s à L0).
+//           L5 → 4.1 s / 12.5 s.  L10 → 6.2 s / 15.5 s.  L30 → 7.9 s / 19.0 s (saturé).
 
 export const RESISTANCE_MAX_LEVEL = 100;
 export const RESISTANCE_MAX_REDUCTION = 0.75; // risque plancher ×0.25 au niveau 100
