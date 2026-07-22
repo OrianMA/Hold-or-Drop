@@ -1034,7 +1034,7 @@ Attendu : aucune erreur. Une erreur `Expected 1 arguments, but got 2` signale un
 Ouvrir Studio, lancer une partie, ouvrir le shop. Attendu :
 - **Button money** : `100$ → 120$` au niveau 0 sans rebirth ; après 1 rebirth, `800$ → 960$`.
 - **Rocket speed** : `1 (x2.65) → 2 (x4.3)`.
-- **Vol garanti** : `0.0s → 1.0s` au niveau 0, `1.0s → 1.8s` au niveau 1.
+- **Vol garanti** : `0.0s → 1.1s` au niveau 0, `1.1s → 2.0s` au niveau 1.
 
 - [ ] **Step 10 : Commit**
 
