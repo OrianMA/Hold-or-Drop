@@ -77,6 +77,7 @@ src/
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
     ├── Utils/DefineEvent.ts # Creates (server) / waits for (client) a RemoteEvent
     ├── RocketGameConfig.ts  # Shared gameplay tuning constants (risk, multiplier, rocket)
+    ├── ResistanceCurve.ts   # Resistance → {riskScale, safeWindow} (partagé serveur/shop)
     ├── AudioConfig.ts       # All sound asset IDs/volumes (music + SFX)
     ├── ShopBalance.ts       # Shop economy numbers (THE rebalancing file)
     ├── ShopConfig.ts        # Shop items + price/value formulas (logic, reads ShopBalance)
@@ -85,6 +86,12 @@ src/
     ├── NumberFormat.ts      # FormatCash helper
     └── CameraController.ts  # Camera helper: rocket-follow (Custom) + cinematic (Scriptable)
 ```
+
+At the repo root, `tools/economy-sim.js` is a dependency-free Node script that reads the
+tuning constants straight out of the TypeScript sources above (no copy-pasted numbers) and
+simulates runs + shop purchases to assert the design's balance criteria. Run
+`node tools/economy-sim.js` (add `--verbose` for a run-by-run breakdown) whenever retuning
+the economy — see §6.3/§6.8/§6.9.
 
 ## 4. Client / Server / Shared Boundaries
 
@@ -228,22 +235,30 @@ the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17
   near-frozen at liftoff and climbs faster the faster the rocket goes. The rocket's speed is
   scaled by the player's **`RocketSpeed`** stat (read once at session start, passed to
   `RocketLauncher.launch`), so a higher Rocket Speed speeds up the rocket **and** the multiplier
-  together — at `RocketSpeed` 1 the rocket crawls and the multiplier barely moves. Drives the `MultiplierText`
+  together — at `RocketSpeed` 1 (level 0, the new-player default) the rocket already reaches
+  `ROCKET_MAX_SPEED` (30 studs/s) in 10s (×2.65 multiplier by then), so the first run visibly
+  moves the number; each level adds a whole `RocketSpeed` unit, so the first purchase literally
+  doubles the ascent and multiplier-climb speed. Drives the `MultiplierText`
   label (formerly `BaseCashText`) in the `RocketLaunch` popup — the client **lerps the shown
   number continuously** between ticks (RenderStepped) so it passes through every intermediate
   value (1.01, 1.02, …) rather than jumping. No floating labels (removed).
 - **Risk loop** (`TICK_RATE` = 0.5s): `getRisk(t)` is `MAX_RISK * (t/TOTAL_DURATION)²`
   (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s), then reshaped by
   the player's **Resistance** (0..100, read once at session start — see §6.6) via
-  `resistanceRiskParams` → a `{riskScale, safeWindow}` profile: `riskAt(t)` is `0` while
-  `t ≤ safeWindow`, else `getRisk(t − safeWindow) * riskScale`. `riskScale` is FRONT-loaded
-  (first levels cut risk hugely, last levels barely — so level 20 already averages ~20s) and
-  `safeWindow` is BACK-loaded (≈0 until high resistance, ~15s at level 100 — a max rocket
-  can't blow before ~15s). At resistance 0 both are neutral → identical to the base curve.
-  The exact explosion instant is precomputed once at launch (`rollExplosionTime`, same
-  distribution); each tick just refreshes the bar with `riskAt(t)`. Tunables live at the top
-  of `ButtonInGameModule.ts` (`RESISTANCE_MAX_REDUCTION`, `RESISTANCE_REDUCTION_CURVE`,
-  `RESISTANCE_MAX_SAFE_WINDOW`, `RESISTANCE_SAFE_WINDOW_CURVE`).
+  `resistanceRiskParams` (`shared/ResistanceCurve.ts`, **not** `ButtonInGameModule.ts`) → a
+  `{riskScale, safeWindow}` profile: `riskAt(t)` is `0` while `t ≤ safeWindow`, else
+  `getRisk(t − safeWindow) * riskScale`. **`safeWindow` is the primary lever** — it is
+  FRONT-loaded (early levels buy most of the guaranteed window, late levels almost nothing)
+  and it is what the shop shows the player, in seconds ("Vol garanti", §6.8): L1 ≈ 1.1s,
+  L5 ≈ 4.1s, L30 ≈ 7.9s (near-saturated, cap 8s at level 100). `riskScale` is secondary — it
+  scales the curve *after* the window, but median survival only grows as `riskScale^(-1/3)`
+  (risk has to be halved-then-some, roughly ÷8, to double survival time), so it can't be made
+  readable on its own; that asymmetry is why `safeWindow` carries the player-facing message.
+  At resistance 0 both terms are neutral → identical to the base curve. The exact explosion
+  instant is precomputed once at launch (`rollExplosionTime`, same distribution); each tick
+  just refreshes the bar with `riskAt(t)`. Tunables live in `shared/ResistanceCurve.ts`
+  (`RESISTANCE_MAX_REDUCTION`, `RESISTANCE_REDUCTION_CURVE`, `RESISTANCE_MAX_SAFE_WINDOW`,
+  `RESISTANCE_SAFE_WINDOW_CURVE`).
 
 Every ending **stops + resets the rocket** to its launch pad (`RocketLauncher`, §6.17).
 
@@ -368,10 +383,13 @@ server credits `Money` and hides the popup.
   those players simply start at Resistance 0 — acceptable since Resistance resets every rebirth.
   - **Derived boost attributes** (`deriveValues` / `recompute`): `MoneyMult` and
     `EffectiveBaseCash` are also derived and mirrored to attributes on every recompute.
-    `MoneyMult` uses the **additive bonus model**: `MoneyMult = 1 + Σ(mᵢ − 1)`, i.e.
-    `MultRebirth + (InCommunity ? COMMUNITY.mult−1 : 0) + (MoneyTierMult−1)`. All factors
-    start at 1 and contribute their excess above 1, so a solo factor of ×2 gives ×2 total.
-    `EffectiveBaseCash = floor(BaseCash × MoneyMult)` — this is the value used by the
+    `MoneyMult` **multiplies the rebirth factor by an additive boosts factor**
+    (`shared/ShopConfig.moneyMult`): `MoneyMult = MultRebirth × (1 + (InCommunity ?
+    COMMUNITY.mult−1 : 0) + (MoneyTierMult−1))`. Rebirth multiplies because it is the
+    long-term progress axis; community/game-pass boosts add *inside* that factor so a ×2
+    pass stays worth ×2 at any rebirth level — a purely additive model would let a large
+    `MultRebirth` swamp the boosts (a ×2 pass on top of ×4096 would add a negligible +1) and
+    make them unsellable. `EffectiveBaseCash = floor(BaseCash × MoneyMult)` — this is the value used by the
     billboard, HUD, and payout (§6.3).
     `Resistance` folds in the resistance pass (flat bonus LEVELS):
     `Resistance = min(shopResistance + (HasResistancePass ? RESISTANCE_PASS.addLevels : 0), 100)`.
@@ -461,6 +479,11 @@ server credits `Money` and hides the popup.
   explosion-impact punch. There is **no red vignette / ColorCorrection** and **no progressive
   FOV zoom** during the climb (both removed); FOV is only touched for the explosion punch and
   the reset. It listens to all the server gameplay events and translates them into effects.
+  It also owns a **client-only onboarding pulse** on the Claim button (`startClaimPulse` /
+  `stopClaimPulse`): a looping size + `UIStroke` breathing tween nudges a new player toward
+  claiming, and it stops for good after `CLAIM_PULSE_RUNS` (3) claims in the session
+  (`sessionClaimCount`, a plain client-local counter — no server state, no persistence, resets
+  on rejoin).
 
 ### 6.8 Shop (`shared/ShopConfig.ts`, `server/services/ShopService.ts`, `client/behaviors/ShopItemsController.ts`)
 - The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `InGameUI/ShopMenu`,
@@ -468,19 +491,26 @@ server credits `Money` and hides the popup.
   `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CRocketSpeed` = RocketSpeed +1,
   `DSafety` = Resistance +1 (the Studio frame is still named `DSafety`; only the code stat and
   the player-facing title changed to Resistance).
-- **`ShopBalance` (shared)** holds every tunable economy number (start prices, value/price
-  growth, Resistance cap) and nothing else — **the file to edit when rebalancing**. (The
-  Resistance→risk *curve* constants live in `ButtonInGameModule.ts`, not here — see §6.3.)
+- **`ShopBalance` (shared)** holds every tunable economy number (start prices, per-stat price
+  growth, value growth, Resistance cap, rebirth cost/mult growth) and nothing else — **the
+  file to edit when rebalancing**. (The Resistance→risk *curve* constants live in
+  `shared/ResistanceCurve.ts`, not here — see §6.3.)
 - **`ShopConfig` (shared)** is the structure + logic, fed by `ShopBalance`: `ITEMS`, per-stat
-  `STATS` (value attribute, level attribute, `startPrice`, optional `maxLevel`, `valueFor`,
-  `display`) and pure pricing helpers — `priceForLevel` = `floor(start * PRICE_GROWTH^level)`,
-  `priceForItem` (strict sum of the next N levels), `isAtCap`. Imported by both sides so
-  prices/stat previews computed on the client always match the server.
+  `STATS` (value attribute, level attribute, `startPrice`, per-stat `priceGrowth`, optional
+  `maxLevel`, `valueFor`, `display`) and pure pricing helpers — `priceForLevel` =
+  `floor(start * priceGrowth^level)` (each stat carries its **own** `priceGrowth` field — there
+  is no shared growth constant across stats; the three stats multiply together in the payout,
+  so one common growth rate would let the economy run away), `priceForItem` (strict sum of the
+  next N levels), `isAtCap`. Imported by both sides so prices/stat previews computed on the client
+  always match the server.
   - Curves: BaseCash `floor(100 * 1.2^level)`, RocketSpeed `1 + level` (integer, uncapped),
-    Resistance `level` (plain integer, `maxLevel` 100). Start prices 25 / 100 / 500. The
-    RocketSpeed value scales the rocket's ascent (and thus the multiplier) — see §6.3 / §6.17.
-    The Resistance *value* is just the level; its non-linear effect on risk is applied in the
-    risk loop (§6.3), not in the stat curve.
+    Resistance `level` (plain integer, `maxLevel` 100). Start prices **50 / 75 / 150**
+    (BaseCash / RocketSpeed / Resistance), price growth **1.8 / 1.7 / 1.35** per stat — a
+    steep wall on the two money-scaling stats, a gentle one on Resistance so it offers many
+    small, affordable steps (it resets every rebirth). The RocketSpeed value scales the
+    rocket's ascent (and thus the multiplier) — see §6.3 / §6.17. The Resistance *value* is
+    just the level; its non-linear effect on risk is applied in the risk loop (§6.3) via
+    `shared/ResistanceCurve.ts`, not in the stat curve.
 - **`ShopService` (server)** owns the **cash** mutation path. On `ShopPurchaseEvent` it validates
   the item id, checks the cap, re-checks `Money >= price`, then `PlayerDataService.add(-price)`
   + `PlayerProgressionService.addLevel`. Rejections flash `InformationTextEvent`. The client
@@ -488,9 +518,16 @@ server credits `Money` and hides the popup.
   purchase pulse for the buyer's room (`NeonPipeColors.pulse`, see §6.12). The **Robux** path
   (level dev products on the RobuxButtons) is the other mutation path — handled by
   `MoneyProductService.ProcessReceipt`, see §6.15.
-- **`ShopItemsController` (client)** binds the four frames. For each it renders current→next stat
-  (`BoostLyout/CurrentStatText` → `NextStatText`) and the cash price (`BuyButton/TextLabel`),
-  greys unaffordable buttons, shows `MAX` at the Resistance cap, and fires `ShopPurchaseEvent`. It
+- **`ShopItemsController` (client)** binds the four frames. For each it renders current→next
+  **impact**, not the raw stat value (`BoostLyout/CurrentStatText` → `NextStatText`, via each
+  stat's `display` in `ShopConfig.STATS`) and the cash price (`BuyButton/TextLabel`), greys
+  unaffordable buttons, shows `MAX` at the Resistance cap, and fires `ShopPurchaseEvent`. The
+  per-stat display: BaseCash shows the **effective** `$` gain (`floor(value * MoneyMult)`, so it
+  already reflects rebirth/boosts); RocketSpeed shows the raw speed plus the multiplier it
+  reaches at `SPEED_PREVIEW_SECONDS` (10s), e.g. `"3 (x6.0)"`; Resistance (frame `DSafety`,
+  titled **"Vol garanti"**) shows the guaranteed flight seconds from
+  `resistanceRiskParams(value).safeWindow`, e.g. `"4.1s"` — the only readable framing of that
+  stat (§6.3). It
   **also wires each frame's `RobuxButton`** to the matching level dev product
   (`shared/LevelProducts.ts`, resolved by the frame's stat): sets the gain label
   (`GainQuantityText` = `"+{levels} niv."`) + the Robux price (`RobuxQuantityText` via cached
@@ -499,8 +536,9 @@ server credits `Money` and hides the popup.
   maximum atteint" (and the button greys with `MAX`). It refreshes purely from replicated
   attributes (`Money` + the three level attributes) — no server→client response event.
 - **Multiplier readout** (`ShopMenu/Header/MultiplierText`): displays the current `MoneyMult`
-  and its breakdown (rebirth factor, community bonus, money-tier bonus) so the player can see
-  each factor at a glance.
+  and its breakdown as `Money ×T (Rebirth ×R × Boosts ×B)` — `T` = `MoneyMult`, `R` =
+  `MultRebirth`, `B` = the additive community + money-tier factor (`1 + …`, see §6.6) — so the
+  player can see the multiplicative-rebirth / additive-boosts split at a glance.
 - **`BoostShopController` (client)**: now **read-only** — it just drives the multiplier readout
   above (refreshing on `MoneyMult` / `MultRebirth` / `MoneyTierMult` / `InCommunity`). The shop
   RobuxButtons it used to wire (`AButtonMoney` money-tier upsell, `DSafety` resistance pass) were
@@ -519,8 +557,11 @@ server credits `Money` and hides the popup.
 A permanent money multiplier earned by resetting everything. It lives in its **own panel**
 (`InGameUI/RebirthMenu`), **independent of the shop** — opened from the HUD button
 `InGameUI/HUD/ButtonsFrame/RebirthFrame/ImageButton`, closed via `RebirthMenu/CloseFrame/CloseButton`.
-- `ShopConfig` exposes the pure pricing/reward: `rebirthCost(R) = floor(2500 × 2.4^R)` and
-  `rebirthMult(R)` (table `[1,2,3,3.5,4,4.5,4.75,5]`, then `+0.25`/rebirth).
+- `ShopConfig` exposes the pure pricing/reward: `rebirthCost(R) = floor(20 000 × 38^R)` and
+  `rebirthMult(R) = 8^R` (geometric — no lookup table). `multGrowth` = 8 is calibrated so a
+  player recovers their pre-rebirth peak income in ~3 runs (they restart with all 3 stat
+  levels at 0); `costGrowth` = 38 deliberately outpaces that, so rebirth cycles lengthen
+  progressively (R1 ≈ 5 min, R4 ≈ 8 min, R7 ≈ 16 min) instead of staying flat.
 - **`RebirthMenuBehavior` (client)** — open/close only; starts hidden regardless of the Studio
   default (mirrors `ShopBehavior`).
 - **`RebirthMenuController` (client)** — read-only display driven by the replicated `Money` +
@@ -789,9 +830,10 @@ recaptured on the next `launch`.
 - **`launch(room, speedFactor=1)`** — captures the model's launch-pad pivot once (per room),
   resets to it, then a `RunService.Heartbeat` loop ramps `velocity` from 0 by `ROCKET_ACCEL`
   up to `ROCKET_MAX_SPEED` and rises the model via `PivotTo` each frame (slow, accelerating,
-  real-rocket feel). `ROCKET_ACCEL`/`ROCKET_MAX_SPEED` are **per Rocket-Speed unit** (1 / 10);
+  real-rocket feel). `ROCKET_ACCEL`/`ROCKET_MAX_SPEED` are **per Rocket-Speed unit** (3 / 30);
   `speedFactor` is the player's **`RocketSpeed`** stat value, so actual accel/max = value × those
-  (value 1 = crawl, value 6 = old accel 6 / max 60). **`getVelocity(room)`** exposes the live
+  (value 1 = level 0's default, reaches 30 studs/s in 10s; value 6 = accel 18 / max 180).
+  **`getVelocity(room)`** exposes the live
   velocity (0 if not flying) — the game loop's multiplier tick reads it so the payout multiplier
   tracks the rocket's speed (§6.3).
 - Moving the **whole `MovableModel`** carries `CameraPosPart` / `CameraParentPart` up with it, so
@@ -931,31 +973,31 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `MULTIPLIER_TICK_RATE` | `shared/RocketGameConfig.ts` | 1s | Multiplier tick interval |
 | `STARTING_MULTIPLIER` | `shared/RocketGameConfig.ts` | 1 | Base payout multiplier (start) |
 | `MULTIPLIER_PER_STUD` | `shared/RocketGameConfig.ts` | 0.01 | Multiplier gained per stud the rocket climbs (velocity-driven) |
-| `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 1 | Rocket acceleration per RocketSpeed unit (studs/s²), ×stat value |
-| `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 10 | Rocket top speed per RocketSpeed unit (studs/s), ×stat value |
+| `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 3 | Rocket acceleration per RocketSpeed unit (studs/s²), ×stat value |
+| `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 30 | Rocket top speed per RocketSpeed unit (studs/s), ×stat value |
 | `STEER_ROT_SPEED_GROUND` | `shared/RocketGameConfig.ts` | rad(4)/s | Roll rate at the pad — extremely weak |
 | `STEER_ROT_SPEED_SPACE` | `shared/RocketGameConfig.ts` | rad(30)/s | Roll rate in space — responsive |
 | `STEER_SPACE_HEIGHT` | `shared/RocketGameConfig.ts` | 50 | Studs above pad where roll authority reaches full |
 | `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
 | `MAX_RISK` | `ButtonInGameModule.ts` | 0.8 | Risk ceiling |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
-| `RESISTANCE_MAX_REDUCTION` | `ButtonInGameModule.ts` | 0.99 | Risk floor at Resistance 100 (×0.01) — front-loaded curve |
-| `RESISTANCE_REDUCTION_CURVE` | `ButtonInGameModule.ts` | 12 | ↑ = earlier levels cut risk more (lvl 20 ≈ 20s avg) |
-| `RESISTANCE_MAX_SAFE_WINDOW` | `ButtonInGameModule.ts` | 15s | Guaranteed no-explosion head start at Resistance 100 |
-| `RESISTANCE_SAFE_WINDOW_CURVE` | `ButtonInGameModule.ts` | 2.5 | ↑ = safe window stays ~0 until high resistance |
+| `RESISTANCE_MAX_REDUCTION` | `shared/ResistanceCurve.ts` | 0.75 | Risk floor at Resistance 100 (×0.25) — secondary lever |
+| `RESISTANCE_REDUCTION_CURVE` | `shared/ResistanceCurve.ts` | 13 | ↑ = more front-loaded `riskScale` reduction |
+| `RESISTANCE_MAX_SAFE_WINDOW` | `shared/ResistanceCurve.ts` | 8s | Guaranteed no-explosion head start at Resistance 100 |
+| `RESISTANCE_SAFE_WINDOW_CURVE` | `shared/ResistanceCurve.ts` | 14 | ↑ = more front-loaded `safeWindow` — the primary lever (§6.3) |
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on loss (rocket explodes) |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
 | Default `BaseCash` / `RocketSpeed` | `PlayerProgressionService.ts` | 100 / 1 | New-player progression (level 0) |
 | Value curves (BaseCash / RocketSpeed) | `shared/ShopBalance.ts` | ×1.2 per level / +1 per level | BaseCash exponential; RocketSpeed integer linear |
-| Price growth | `shared/ShopBalance.ts` | ×1.5 / level | Per-level price multiplier |
-| Shop start prices | `shared/ShopBalance.ts` | 25 / 100 / 500 | BaseCash / RocketSpeed / Resistance lvl 1 |
+| Price growth (per stat) | `shared/ShopBalance.ts` | ×1.8 / ×1.7 / ×1.35 per level | BaseCash / RocketSpeed / Resistance — each stat has its own `priceGrowth`, no shared constant |
+| Shop start prices | `shared/ShopBalance.ts` | 50 / 75 / 150 | BaseCash / RocketSpeed / Resistance lvl 1 |
 | `Resistance` cap (shop) | `shared/ShopBalance.ts` | 100 lvls | Max resistance level (risk curve in §6.3) |
 | `RESISTANCE_PASS` | `shared/ShopBalance.ts` | +20 lvls | Bonus resistance levels from the resistance game-pass (id 0 = inert) |
 | `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to `MoneyMult` |
 | `MONEY_TIERS` | `shared/ShopBalance.ts` | ×2…×1024, highest owned wins | Game-pass money-tier multipliers (ids configured; sold via shop upsell + HUD MultiplierBuyButton) |
-| Rebirth base cost | `shared/ShopBalance.ts` | 2500 | Cash for the 1st rebirth |
-| Rebirth cost growth | `shared/ShopBalance.ts` | ×2.4 / rebirth | `cost(R)=floor(2500×2.4^R)` |
-| Rebirth mult curve | `shared/ShopBalance.ts` | `[1,2,3,3.5,4,4.5,4.75,5]` +0.25/rebirth | `MultRebirth` factor fed into the additive `MoneyMult` (see §6.6) |
+| Rebirth base cost | `shared/ShopBalance.ts` | 20 000 | Cash for the 1st rebirth |
+| Rebirth cost growth | `shared/ShopBalance.ts` | ×38 / rebirth | `rebirthCost(R)=floor(20 000×38^R)` |
+| Rebirth mult growth | `shared/ShopBalance.ts` | ×8 / rebirth | `rebirthMult(R)=8^R` (geometric, no lookup table) — the `MultRebirth` factor that MULTIPLIES the additive boosts factor in `MoneyMult` (see §6.6) |
 | `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
 | `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |
 | `VISIBLE_ROWS` | `shared/LeaderboardConfig.ts` | 15 | Rows visible before scrolling |
