@@ -58,12 +58,14 @@ local RESISTANCE = {
 -- multGrowth = 8 est calibré pour que le joueur RETROUVE son revenu de pointe en ~3
 -- runs après un rebirth (il repart avec BaseCash/RocketSpeed/Resistance à zéro, donc
 -- un ratio faible le condamnerait à passer la moitié du cycle à racheter l'existant).
--- costGrowth = 30 suit la croissance du revenu de pointe d'un cycle à l'autre et
--- maintient la boucle autour de 4-8 min. Voir
+-- costGrowth = 38 dépasse volontairement la croissance du revenu de pointe : les
+-- cycles s'allongent progressivement (R1 ~5 min, R4 ~8 min, R7 ~16 min) au lieu de
+-- rester plats. baseCost 20000 fixe le PREMIER rebirth à ~9.5 min et n'est pas touché
+-- par ce réglage. Voir
 -- docs/superpowers/specs/2026-07-22-progression-rebalance-design.md §4.
 local REBIRTH = {
 	baseCost = 20000,
-	costGrowth = 30,
+	costGrowth = 38,
 	multGrowth = 8,
 }
 -- ── Money multipliers (3 independent additive factors) ────────────────────────

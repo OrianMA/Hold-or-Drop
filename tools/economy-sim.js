@@ -272,8 +272,8 @@ check("3. RocketSpeed L1 : mult à 10s ≥ x4.0", m10 >= 4.0, `x${m10.toFixed(2)
 
 // 4 — durée des cycles
 const cycles = rows.filter((r) => r.R >= 1 && r.R <= 7);
-const bad = cycles.filter((r) => r.min < 3.5 || r.min > 8);
-check("4. cycles R1..R7 entre 3.5 et 8 min", bad.length === 0, bad.length ? `hors bornes : ${bad.map((r) => `R${r.R}=${r.min}min`).join(", ")}` : cycles.map((r) => `${r.min}`).join(" / ") + " min");
+const bad = cycles.filter((r) => r.min < 4.5 || r.min > 18);
+check("4. cycles R1..R7 entre 4.5 et 18 min", bad.length === 0, bad.length ? `hors bornes : ${bad.map((r) => `R${r.R}=${r.min}min`).join(", ")}` : cycles.map((r) => `${r.min}`).join(" / ") + " min");
 
 // 5 — retour au niveau précédent
 const slow = cycles.filter((r) => r.recover === null || r.recover > 3);
