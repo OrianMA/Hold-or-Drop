@@ -31,8 +31,10 @@ export function init(): void {
 		const tier = num("MoneyTierMult", 1);
 		const inCommunity = player.GetAttribute("InCommunity") === true;
 		const total = num("MoneyMult", 1);
-		const community = inCommunity ? "×2" : "×1";
-		readout.Text = `Money ${fmtMult(total)} (Rebirth ${fmtMult(rebirth)} · Communauté ${community} · Palier ${fmtMult(tier)})`;
+		// Le rebirth MULTIPLIE le facteur de boost ; la communauté et le palier
+		// s'additionnent à l'intérieur de ce facteur (voir ShopConfig.moneyMult).
+		const boosts = 1 + (inCommunity ? 1 : 0) + (tier - 1);
+		readout.Text = `Money ${fmtMult(total)} (Rebirth ${fmtMult(rebirth)} × Boosts ${fmtMult(boosts)})`;
 	}
 
 	player.GetAttributeChangedSignal("MoneyMult").Connect(refresh);

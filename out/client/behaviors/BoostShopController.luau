@@ -30,8 +30,10 @@ local function init()
 		local tier = num("MoneyTierMult", 1)
 		local inCommunity = player:GetAttribute("InCommunity") == true
 		local total = num("MoneyMult", 1)
-		local community = if inCommunity then "×2" else "×1"
-		readout.Text = `Money {fmtMult(total)} (Rebirth {fmtMult(rebirth)} · Communauté {community} · Palier {fmtMult(tier)})`
+		-- Le rebirth MULTIPLIE le facteur de boost ; la communauté et le palier
+		-- s'additionnent à l'intérieur de ce facteur (voir ShopConfig.moneyMult).
+		local boosts = 1 + (if inCommunity then 1 else 0) + (tier - 1)
+		readout.Text = `Money {fmtMult(total)} (Rebirth {fmtMult(rebirth)} × Boosts {fmtMult(boosts)})`
 	end
 	player:GetAttributeChangedSignal("MoneyMult"):Connect(refresh)
 	player:GetAttributeChangedSignal("MultRebirth"):Connect(refresh)
