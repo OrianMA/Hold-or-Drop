@@ -15,6 +15,7 @@ import {
 	EXPLOSION_VIEW_DELAY,
 } from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
+import { RiskParams, resistanceRiskParams } from "shared/ResistanceCurve";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
 
@@ -64,38 +65,6 @@ const explosionSoundTemplate = (() => {
 function getRisk(timeHeld: number): number {
 	const t = math.min(timeHeld / TOTAL_DURATION, 1);
 	return MAX_RISK * (t * t);
-}
-
-// ── Resistance → risk model ──────────────────────────────────────────────────────
-// Resistance is a 0..100 shop stat (see ShopConfig). It reshapes the explosion risk
-// in two independent ways, so a higher resistance both lasts longer on average AND
-// gets a longer guaranteed-safe head start:
-//   • riskScale  — scales the WHOLE risk curve down. FRONT-loaded (reduction =
-//     MAX_REDUCTION × (1 − (1 − n)^CURVE)): the first levels cut risk hugely, the
-//     last levels barely move it. This is what makes level 20 already ~20s average.
-//   • safeWindow — seconds at the start where risk is forced to 0. BACK-loaded
-//     (n^CURVE × MAX): it stays ~0 until high resistance and only reaches ~15s near
-//     level 100 — so a max rocket can't blow before ~15s, while a level-20 rocket
-//     still has a very small early chance.
-// After the safe window the base curve ramps from 0 (shifted by safeWindow), so the
-// post-window climb is gentle. At resistance 0 both terms are neutral → identical to
-// the un-upgraded curve.
-const RESISTANCE_MAX_LEVEL = 100;
-const RESISTANCE_MAX_REDUCTION = 0.99; // risk floored at ×0.01 at level 100
-const RESISTANCE_REDUCTION_CURVE = 12; // ↑ = more front-loaded (early levels matter more)
-const RESISTANCE_MAX_SAFE_WINDOW = 15; // seconds of guaranteed safety at level 100
-const RESISTANCE_SAFE_WINDOW_CURVE = 2.5; // ↑ = window stays near 0 until higher levels
-
-interface RiskParams {
-	readonly riskScale: number;
-	readonly safeWindow: number;
-}
-
-function resistanceRiskParams(resistance: number): RiskParams {
-	const n = math.clamp(resistance / RESISTANCE_MAX_LEVEL, 0, 1);
-	const reduction = RESISTANCE_MAX_REDUCTION * (1 - (1 - n) ** RESISTANCE_REDUCTION_CURVE);
-	const safeWindow = n ** RESISTANCE_SAFE_WINDOW_CURVE * RESISTANCE_MAX_SAFE_WINDOW;
-	return { riskScale: 1 - reduction, safeWindow };
 }
 
 // Effective per-tick risk at `timeHeld` for a resistance profile. Zero inside the
