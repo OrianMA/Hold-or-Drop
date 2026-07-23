@@ -4,6 +4,9 @@ local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Ev
 local rebirthCost = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").rebirthCost
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
+local _AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService")
+local AnalyticsService = _AnalyticsService.AnalyticsService
+local TxType = _AnalyticsService.TxType
 local RoomService = TS.import(script, game:GetService("ServerScriptService"), "TS", "rooms", "RoomService").RoomService
 local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
@@ -15,12 +18,20 @@ local DENIED_COLOR = Color3.new(1, 0.4, 0.4)
 local function handleRebirth(player)
 	local rebirths = PlayerProgressionService:getRebirths(player)
 	local cost = rebirthCost(rebirths)
-	if PlayerDataService:get(player, "Money") < cost then
+	local money = PlayerDataService:get(player, "Money")
+	if money < cost then
 		Events.InformationTextEvent:FireClient(player, "Pas assez d'argent pour le Rebirth", DENIED_COLOR)
 		return nil
 	end
 	PlayerDataService:set(player, "Money", 0)
 	PlayerProgressionService:rebirth(player)
+	-- Analytics: the whole balance leaves the economy (Sink → 0) + progression milestone
+	-- + custom counter + onboarding step 5. Read the fresh rebirth count for the level.
+	local newRebirths = PlayerProgressionService:getRebirths(player)
+	AnalyticsService:cashSink(player, money, 0, TxType.Rebirth, `Rebirth{newRebirths}`)
+	AnalyticsService:rebirth(player, newRebirths)
+	AnalyticsService:custom(player, "RebirthDone", newRebirths)
+	AnalyticsService:onboardingStep(player, 5, "Rebirth")
 	-- Drop any payout that was still animating: cancel the server credit so it can't
 	-- land after the reset to 0, and tell the client to remove the in-flight floating
 	-- texts flying toward the money HUD (FloatingCash).
@@ -41,6 +52,10 @@ local RebirthService = {
 	end,
 	safeRebirth = function(self, player)
 		PlayerProgressionService:safeRebirth(player)
+		-- Analytics: progression milestone + custom counter (Robux-paid, keeps progression).
+		local newRebirths = PlayerProgressionService:getRebirths(player)
+		AnalyticsService:rebirth(player, newRebirths)
+		AnalyticsService:custom(player, "SafeRebirthDone", newRebirths)
 		-- Swap the pad rocket for the new rebirth-level one. Wrapped in pcall: this
 		-- runs inside ProcessReceipt, and a throw AFTER the Rebirths increment would
 		-- make Roblox retry the receipt → double rebirth. The swap is cosmetic, so a

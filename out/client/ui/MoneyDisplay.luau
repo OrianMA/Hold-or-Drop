@@ -4,7 +4,6 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local Players = _services.Players
 local SoundService = _services.SoundService
 local TweenService = _services.TweenService
-local InGameUIController = TS.import(script, script.Parent, "InGameUIController").InGameUIController
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
 -- Renders the local player's Money attribute into a TextLabel named "MoneyText"
@@ -62,22 +61,30 @@ local function notify(value)
 		fn(value)
 	end
 end
-local function findLabel()
-	local moneyParent = InGameUIController:getMoneyParent()
-	if not moneyParent then
-		return nil
+-- Every "MoneyText" label under the InGameUI shows the balance — the HUD's own
+-- (inside HUD/MoneyParent) and the shop-time one (InGameUI/MoneyParent/ListFrame),
+-- which is shown while the HUD is hidden during shopping. Update them all.
+local function findLabels()
+	local _inGameUI = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if _inGameUI ~= nil then
+		_inGameUI = _inGameUI:FindFirstChild("InGameUI")
 	end
-	local found = moneyParent:FindFirstChild(LABEL_NAME, true)
-	local _result = found
-	if _result ~= nil then
-		_result = _result:IsA("TextLabel")
+	local inGameUI = _inGameUI
+	if not inGameUI then
+		return {}
 	end
-	return if _result then found else nil
+	local labels = {}
+	for _, desc in inGameUI:GetDescendants() do
+		if desc.Name == LABEL_NAME and desc:IsA("TextLabel") then
+			table.insert(labels, desc)
+		end
+	end
+	return labels
 end
 local function render(value)
-	local label = findLabel()
-	if label then
-		label.Text = FormatCash(math.floor(value))
+	local text = FormatCash(math.floor(value))
+	for _, label in findLabels() do
+		label.Text = text
 	end
 end
 -- Cancel any in-flight tween and head from where we *visually* are toward

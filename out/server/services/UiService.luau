@@ -1,11 +1,24 @@
 -- Compiled with roblox-ts v3.0.0
+local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
+local PopupType = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "PopupType").PopupType
 local config = {}
 local currentPopup = {}
+-- Notified just before ANY popup other than ButtonFinishGame opens. Used by
+-- EndGameButtonModule to drop a pending end-game payout (see its flush()) so the finish
+-- screen never pops over whatever the player just opened. A registered callback rather
+-- than a direct import — UiService must not depend on the gameplay modules.
+local onBeforeShow
 local UiService = {
 	init = function(self, popupConfig)
 		config = popupConfig
 	end,
+	SetBeforeShow = function(self, callback)
+		onBeforeShow = callback
+	end,
 	Show = function(self, player, popupType)
+		if onBeforeShow and popupType ~= PopupType.ButtonFinishGame then
+			onBeforeShow(player, popupType)
+		end
 		local _player = player
 		local current = currentPopup[_player]
 		if current ~= nil then

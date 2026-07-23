@@ -7,6 +7,9 @@ local isAtCap = _ShopConfig.isAtCap
 local priceForItem = _ShopConfig.priceForItem
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
+local _AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService")
+local AnalyticsService = _AnalyticsService.AnalyticsService
+local TxType = _AnalyticsService.TxType
 local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 -- Authoritative shop purchases. The client pre-checks affordability for instant
 -- feedback, but every purchase is fully re-validated here — never trust the
@@ -37,6 +40,10 @@ local function handlePurchase(player, itemId)
 	end
 	PlayerDataService:add(player, "Money", -price)
 	PlayerProgressionService:addLevel(player, item.stat, item.quantity)
+	-- Analytics: cash Sink (with the resulting balance) + per-item counter + onboarding step 4.
+	AnalyticsService:cashSink(player, price, PlayerDataService:get(player, "Money"), TxType.Shop, itemId)
+	AnalyticsService:custom(player, "ShopPurchase", price, itemId)
+	AnalyticsService:onboardingStep(player, 4, "Purchase")
 	-- Réaction visuelle : un segment file dans les tubes néon du joueur (shop → bouton).
 	local roomName = player:GetAttribute("AssignedRoom")
 	if type(roomName) == "string" and roomName ~= "" then

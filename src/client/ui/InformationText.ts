@@ -59,6 +59,15 @@ export const InformationText = {
 	HOLD_TIME: DEFAULT_HOLD,
 	FADE_OUT_TIME: FADE_OUT_TI.Time,
 
+	// Clears a flash instantly, mid-animation. Used when the end-game payout is
+	// flushed by another popup — the "Finish" text must not linger over the new screen.
+	hide(): void {
+		const canvas = findCanvas();
+		if (!canvas) return;
+		cancelActive();
+		canvas.GroupTransparency = 1;
+	},
+
 	// holdSeconds: how long the text stays fully opaque between fade-in and
 	// fade-out. Falls back to DEFAULT_HOLD (0.2 s — matches the original
 	// ButtonFinishGame timing) when omitted.

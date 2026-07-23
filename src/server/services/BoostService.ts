@@ -3,6 +3,7 @@ import { COMMUNITY, MONEY_TIERS, RESISTANCE_PASS } from "shared/ShopBalance";
 import { Events } from "shared/Event";
 import { ignoreGamePasses, simulateGamePasses, simulatedOwnedPassIds } from "server/modules/CheatConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
+import { AnalyticsService } from "./AnalyticsService";
 
 // HUD flash colours for the community-join feedback (see refreshCommunity).
 const JOINED_COLOR = new Color3(0.4, 1, 0.45);
@@ -125,6 +126,8 @@ export const BoostService = {
 			if (!purchased) return;
 			getOwned(player).add(gamePassId);
 			recount(player);
+			// Analytics: game-pass bought (counter, broken down by pass id).
+			AnalyticsService.custom(player, "GamePassPurchased", gamePassId, tostring(gamePassId));
 		});
 
 		// The client opened the native community-join card (GroupService:PromptJoinAsync)
@@ -149,6 +152,8 @@ export const BoostService = {
 		PlayerProgressionService.recompute(player);
 
 		if (isIn && !wasIn) {
+			// Analytics: player just joined the community (grants ×2) — one-shot per join.
+			AnalyticsService.custom(player, "CommunityJoined");
 			Events.InformationTextEvent.FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR);
 		} else if (!isIn) {
 			Events.InformationTextEvent.FireClient(

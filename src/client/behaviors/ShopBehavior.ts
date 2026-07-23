@@ -13,6 +13,7 @@ import { InGameUIController } from "client/ui/InGameUIController";
 const SHOP_MODEL = "Shop";
 const PROMPT_PART = "ProximityPromptPart";
 const SHOP_MENU = "ShopMenu";
+const MONEY_PARENT = "MoneyParent";
 const HEADER = "Header";
 const CLOSE_BUTTON = "CloseButton";
 const CLOSE_DISTANCE = 15;
@@ -25,8 +26,13 @@ export function init(): void {
 	const inGameUI = (Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("InGameUI");
 	const shopMenu = inGameUI.WaitForChild(SHOP_MENU) as GuiObject;
 	const closeButton = shopMenu.WaitForChild(HEADER).WaitForChild(CLOSE_BUTTON) as GuiButton;
+	// MoneyParent (sibling of ShopMenu) mirrors the shop: the HUD's own money
+	// display is hidden with the HUD while shopping, so this one shows the balance
+	// while the shop is open and hides again on close.
+	const moneyParent = inGameUI.WaitForChild(MONEY_PARENT) as GuiObject;
 
 	shopMenu.Visible = false; // start hidden regardless of the Studio default
+	moneyParent.Visible = false; // follows the shop — hidden while the shop is closed
 
 	// Heartbeat watcher is only attached while the menu is open so the closed
 	// state has zero per-frame cost.
@@ -34,6 +40,7 @@ export function init(): void {
 
 	const close = (): void => {
 		shopMenu.Visible = false;
+		moneyParent.Visible = false;
 		InGameUIController.enable();
 		distanceWatcher?.Disconnect();
 		distanceWatcher = undefined;
@@ -41,6 +48,7 @@ export function init(): void {
 
 	const open = (): void => {
 		shopMenu.Visible = true;
+		moneyParent.Visible = true;
 		InGameUIController.disable();
 		distanceWatcher?.Disconnect();
 		distanceWatcher = RunService.Heartbeat.Connect(() => {

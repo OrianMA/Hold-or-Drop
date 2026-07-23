@@ -2,6 +2,7 @@ import { Events } from "shared/Event";
 import { rebirthCost } from "shared/ShopConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { PlayerDataService } from "./PlayerDataService";
+import { AnalyticsService, TxType } from "./AnalyticsService";
 import { RoomService } from "server/rooms/RoomService";
 import { RocketPlacer } from "server/modules/RocketPlacer";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
@@ -17,13 +18,22 @@ function handleRebirth(player: Player): void {
 	const rebirths = PlayerProgressionService.getRebirths(player);
 	const cost = rebirthCost(rebirths);
 
-	if (PlayerDataService.get(player, "Money") < cost) {
+	const money = PlayerDataService.get(player, "Money");
+	if (money < cost) {
 		Events.InformationTextEvent.FireClient(player, "Pas assez d'argent pour le Rebirth", DENIED_COLOR);
 		return;
 	}
 
 	PlayerDataService.set(player, "Money", 0);
 	PlayerProgressionService.rebirth(player);
+
+	// Analytics: the whole balance leaves the economy (Sink → 0) + progression milestone
+	// + custom counter + onboarding step 5. Read the fresh rebirth count for the level.
+	const newRebirths = PlayerProgressionService.getRebirths(player);
+	AnalyticsService.cashSink(player, money, 0, TxType.Rebirth, `Rebirth${newRebirths}`);
+	AnalyticsService.rebirth(player, newRebirths);
+	AnalyticsService.custom(player, "RebirthDone", newRebirths);
+	AnalyticsService.onboardingStep(player, 5, "Rebirth");
 
 	// Drop any payout that was still animating: cancel the server credit so it can't
 	// land after the reset to 0, and tell the client to remove the in-flight floating
@@ -48,6 +58,11 @@ export const RebirthService = {
 	// the new rebirth level like a normal rebirth.
 	safeRebirth(player: Player): void {
 		PlayerProgressionService.safeRebirth(player);
+
+		// Analytics: progression milestone + custom counter (Robux-paid, keeps progression).
+		const newRebirths = PlayerProgressionService.getRebirths(player);
+		AnalyticsService.rebirth(player, newRebirths);
+		AnalyticsService.custom(player, "SafeRebirthDone", newRebirths);
 
 		// Swap the pad rocket for the new rebirth-level one. Wrapped in pcall: this
 		// runs inside ProcessReceipt, and a throw AFTER the Rebirths increment would

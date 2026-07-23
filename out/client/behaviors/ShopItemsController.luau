@@ -11,7 +11,7 @@ local STATS = _ShopConfig.STATS
 local isAtCap = _ShopConfig.isAtCap
 local priceForItem = _ShopConfig.priceForItem
 local levelProductForStat = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "LevelProducts").levelProductForStat
-local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
+local FormatNumberRounded = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumberRounded
 local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
 -- Wires the four shop item frames (InGameUI/ShopMenu/Body/*). Read-only display
 -- driven by replicated attributes (Money + the per-stat level attributes); the
@@ -123,7 +123,7 @@ local function bindItem(body, item)
 		end
 		nextText.Text = cfg.display(cfg.valueFor(level + item.quantity), ctx)
 		local price = priceForItem(item, level)
-		priceLabel.Text = `{FormatNumber(price)}$`
+		priceLabel.Text = `{FormatNumberRounded(price)}$`
 		setAffordable(buyButton, priceLabel, getMoney() >= price)
 		-- Restore the Robux button (e.g. Resistance dropped back below cap on rebirth).
 		if product then

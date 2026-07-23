@@ -33,7 +33,6 @@ export namespace Events {
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script);
 	export const MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script);
-	export const RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script);
 	export const GameResultEvent = DefineEvent("GameResultEvent", script);
 
 	// EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)
@@ -42,6 +41,14 @@ export namespace Events {
 	// Also fired by LossRewardBehavior once the consolation text lands, so the same
 	// pendingEarned credit path banks a losing-explosion reward.
 	export const EndGameFinishedEvent = DefineEvent("EndGameFinishedEvent", script);
+
+	// EndGameButton — server → client (Arg: earned). Another popup opened while the
+	// payout was pending (typically the player re-triggered the button/rocket during the
+	// 1s release delay, or mid-animation): the finish screen is dropped entirely — no
+	// ButtonFinishGame popup, no HUD restore, the new screen keeps the focus. The client
+	// cancels any running payout animation and shows what is left as a single "+amount"
+	// that jumps then fades on the spot, banking it via EndGameFinishedEvent.
+	export const EndGamePayoutFlushEvent = DefineEvent("EndGamePayoutFlushEvent", script);
 
 	// Losing explosion — server → client (Arg: amount). No ButtonFinishGame popup:
 	// the player gets a flat consolation (baseCash / 3) shown as a single "+amount"

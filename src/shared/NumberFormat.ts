@@ -81,6 +81,37 @@ export function FormatNumber(value: number): string {
 	return `${sign}${math.floor(abs)}`;
 }
 
+// Like FormatNumber but rounds the abbreviated value to a whole number (no
+// decimals) — "15.5K" → "16K", "1.25M" → "1M". Used for shop prices where a
+// clean rounded figure reads better than a precise fractional one. Rolls up to
+// the next tier when rounding pushes the mantissa to 1000 (e.g. 999.6K → "1M").
+export function FormatNumberRounded(value: number): string {
+	if (value !== value) return "0";
+	if (value === math.huge) return "∞";
+	if (value === -math.huge) return "-∞";
+
+	const isNegative = value < 0;
+	const abs = math.abs(value);
+	const sign = isNegative ? "-" : "";
+
+	if (abs < 1000) return `${sign}${math.floor(abs)}`;
+
+	for (let i = SUFFIXES.size() - 1; i >= 1; i--) {
+		if (abs >= THRESHOLDS[i]) {
+			let mantissa = math.round(abs / THRESHOLDS[i]);
+			let tier = i;
+			// Rounding can bump the mantissa to 1000 — carry into the next suffix.
+			if (mantissa >= 1000 && tier < SUFFIXES.size() - 1) {
+				tier += 1;
+				mantissa = math.round(abs / THRESHOLDS[tier]);
+			}
+			return `${sign}${mantissa}${SUFFIXES[tier]}`;
+		}
+	}
+
+	return `${sign}${math.floor(abs)}`;
+}
+
 // Convenience for currency labels — same formatter, prefixed with the $ sign.
 // Negative amounts render as "-$5" (sign first), matching typical UX in shops.
 export function FormatCash(value: number): string {

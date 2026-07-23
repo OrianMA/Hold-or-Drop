@@ -12,6 +12,7 @@ local BoostService = TS.import(script, game:GetService("ServerScriptService"), "
 local ShopService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "ShopService").ShopService
 local RebirthService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "RebirthService").RebirthService
 local LeaderboardService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "LeaderboardService").LeaderboardService
+local AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService").AnalyticsService
 local RoomService = TS.import(script, game:GetService("ServerScriptService"), "TS", "rooms", "RoomService").RoomService
 local PopupConfig = TS.import(script, game:GetService("ServerScriptService"), "TS", "UI", "PopupConfig").PopupConfig
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
@@ -19,7 +20,7 @@ local services = { {
 	init = function(self)
 		UiService:init(PopupConfig)
 	end,
-}, PlayerDataService, MoneyProductService, PlayerProgressionService, BoostService, ShopService, RebirthService, LeaderboardService, RoomService, ButtonTriggerService, CharacterService, EndGameButtonModule, {
+}, PlayerDataService, MoneyProductService, PlayerProgressionService, BoostService, ShopService, RebirthService, LeaderboardService, AnalyticsService, RoomService, ButtonTriggerService, CharacterService, EndGameButtonModule, {
 	init = function(self)
 		Players.PlayerRemoving:Connect(function(player)
 			ButtonSessionService:cleanup(player)

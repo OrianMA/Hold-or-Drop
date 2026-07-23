@@ -2,9 +2,6 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local resistanceRiskParams = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ResistanceCurve").resistanceRiskParams
-local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
-local SPEED_PREVIEW_SECONDS = _RocketGameConfig.SPEED_PREVIEW_SECONDS
-local multiplierAfter = _RocketGameConfig.multiplierAfter
 local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
 local BASE_CASH = _ShopBalance.BASE_CASH
 local COMMUNITY = _ShopBalance.COMMUNITY
@@ -25,18 +22,6 @@ local ROCKET_SPEED = _ShopBalance.ROCKET_SPEED
 -- Contexte passé au rendu d'une stat. `moneyMult` permet à BaseCash d'afficher le gain
 -- EFFECTIF (multiplicateur de rebirth et boosts inclus) plutôt que la valeur brute :
 -- après quelques rebirths, "1K → 1.2K" devient "512K → 614K".
--- Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
--- number rendering used by NumberFormat without flooring sub-1 values to "0".
-local function trimDecimals(value)
-	local hundredths = math.floor(value * 100 + 1e-7)
-	if hundredths % 100 == 0 then
-		return tostring(hundredths / 100)
-	end
-	if hundredths % 10 == 0 then
-		return string.format("%.1f", hundredths / 100)
-	end
-	return string.format("%.2f", hundredths / 100)
-end
 local STATS = {
 	BaseCash = {
 		valueAttribute = "BaseCash",
@@ -59,7 +44,7 @@ local STATS = {
 			return ROCKET_SPEED.baseValue + level
 		end,
 		display = function(value)
-			return `{value} (x{trimDecimals(multiplierAfter(value, SPEED_PREVIEW_SECONDS))})`
+			return `{value}`
 		end,
 	},
 	Resistance = {

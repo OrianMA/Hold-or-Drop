@@ -1,6 +1,5 @@
 import { FormatNumber } from "./NumberFormat";
 import { resistanceRiskParams } from "./ResistanceCurve";
-import { SPEED_PREVIEW_SECONDS, multiplierAfter } from "./RocketGameConfig";
 import {
 	BASE_CASH,
 	COMMUNITY,
@@ -47,15 +46,6 @@ export interface StatConfig {
 	readonly display: (value: number, ctx: DisplayContext) => string;
 }
 
-// Up to 2 decimals, trailing zeros trimmed: 0.1, 2.65, 11.7. Mirrors the small
-// number rendering used by NumberFormat without flooring sub-1 values to "0".
-function trimDecimals(value: number): string {
-	const hundredths = math.floor(value * 100 + 1e-7);
-	if (hundredths % 100 === 0) return tostring(hundredths / 100);
-	if (hundredths % 10 === 0) return string.format("%.1f", hundredths / 100);
-	return string.format("%.2f", hundredths / 100);
-}
-
 export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 	BaseCash: {
 		valueAttribute: "BaseCash",
@@ -72,8 +62,8 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		startPrice: ROCKET_SPEED.startPrice,
 		priceGrowth: ROCKET_SPEED.priceGrowth,
 		valueFor: (level) => ROCKET_SPEED.baseValue + level,
-		// "3 (x6)" — la vitesse brute plus le multiplicateur atteint à 10 s de vol.
-		display: (value) => `${value} (x${trimDecimals(multiplierAfter(value, SPEED_PREVIEW_SECONDS))})`,
+		// Vitesse brute seule (le multiplicateur entre parenthèses a été retiré).
+		display: (value) => `${value}`,
 	},
 	Resistance: {
 		valueAttribute: "Resistance",

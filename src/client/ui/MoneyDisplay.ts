@@ -1,5 +1,4 @@
 import { Players, SoundService, TweenService } from "@rbxts/services";
-import { InGameUIController } from "client/ui/InGameUIController";
 import { AudioConfig } from "shared/AudioConfig";
 import { FormatCash } from "shared/NumberFormat";
 
@@ -62,16 +61,22 @@ function notify(value: number): void {
 	for (const fn of listeners) fn(value);
 }
 
-function findLabel(): TextLabel | undefined {
-	const moneyParent = InGameUIController.getMoneyParent();
-	if (!moneyParent) return undefined;
-	const found = moneyParent.FindFirstChild(LABEL_NAME, true);
-	return found?.IsA("TextLabel") ? found : undefined;
+// Every "MoneyText" label under the InGameUI shows the balance — the HUD's own
+// (inside HUD/MoneyParent) and the shop-time one (InGameUI/MoneyParent/ListFrame),
+// which is shown while the HUD is hidden during shopping. Update them all.
+function findLabels(): TextLabel[] {
+	const inGameUI = Players.LocalPlayer.FindFirstChildOfClass("PlayerGui")?.FindFirstChild("InGameUI");
+	if (!inGameUI) return [];
+	const labels: TextLabel[] = [];
+	for (const desc of inGameUI.GetDescendants()) {
+		if (desc.Name === LABEL_NAME && desc.IsA("TextLabel")) labels.push(desc);
+	}
+	return labels;
 }
 
 function render(value: number): void {
-	const label = findLabel();
-	if (label) label.Text = FormatCash(math.floor(value));
+	const text = FormatCash(math.floor(value));
+	for (const label of findLabels()) label.Text = text;
 }
 
 // Cancel any in-flight tween and head from where we *visually* are toward

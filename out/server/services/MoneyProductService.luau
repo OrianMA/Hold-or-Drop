@@ -10,6 +10,9 @@ local STATS = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Sho
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local RebirthService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "RebirthService").RebirthService
+local _AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService")
+local AnalyticsService = _AnalyticsService.AnalyticsService
+local TxType = _AnalyticsService.TxType
 -- Authoritative handler for ALL developer products. Owns the game's single
 -- MarketplaceService.ProcessReceipt callback. Two product families route through
 -- here:
@@ -35,6 +38,9 @@ local function processReceipt(receiptInfo)
 	local amount = amountForProduct(receiptInfo.ProductId)
 	if amount ~= nil then
 		PlayerDataService:add(player, "Money", amount)
+		-- Analytics: Robux → cash faucet (IAP Source, with the resulting balance) + counter.
+		AnalyticsService:cashSource(player, amount, PlayerDataService:get(player, "Money"), TxType.IAP, `MoneyPack_{receiptInfo.ProductId}`)
+		AnalyticsService:custom(player, "MoneyPackPurchased", amount)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	local grant = levelGrantForProduct(receiptInfo.ProductId)
@@ -47,6 +53,8 @@ local function processReceipt(receiptInfo)
 		-- addLevel clamps to the stat's cap (e.g. Resistance) — a max-level buy is a no-op
 		-- gain but still granted (the client prevents prompting at the cap).
 		PlayerProgressionService:addLevel(player, grant.stat, grant.levels)
+		-- Analytics: Robux-paid stat levels (counter, broken down by stat).
+		AnalyticsService:custom(player, "LevelProductPurchased", grant.levels, grant.stat)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	if isSafeRebirthProduct(receiptInfo.ProductId) then

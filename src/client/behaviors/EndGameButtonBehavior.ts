@@ -1,7 +1,8 @@
 import { Players } from "@rbxts/services";
 import { Events } from "shared/Event";
-import { runEndGameAnimation } from "client/ui/EndGameAnimation";
+import { cancelActiveRun, runEndGameAnimation } from "client/ui/EndGameAnimation";
 import { InGameUIController } from "client/ui/InGameUIController";
+import { FloatingReward } from "client/ui/FloatingReward";
 import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 
@@ -32,4 +33,27 @@ export function init(): void {
 			});
 		},
 	);
+
+	// Another popup opened while the payout was pending — typically the player
+	// re-triggered the button or the rocket during the release delay, or mid-animation.
+	// The finish screen is dropped entirely (no popup, no HUD restore, no BGM resume):
+	// the screen they just opened keeps the focus, and the gain leaves as one floating
+	// text that fades on the spot. `earned` is the server's total; a running animation
+	// overrides it with what its chunks have not already banked.
+	Events.EndGamePayoutFlushEvent.OnClientEvent.Connect((earned: number) => {
+		const remaining = cancelActiveRun();
+
+		// Nothing was animating and a reward text is already on screen (losing-explosion
+		// consolation still in flight) — that text is the gain, don't stack a second one.
+		if (remaining === undefined && FloatingReward.isActive()) return;
+
+		const amount = remaining ?? earned;
+		if (amount <= 0) {
+			// Everything already landed in the HUD — just close the server-side pending.
+			Events.EndGameFinishedEvent.FireServer();
+			return;
+		}
+
+		FloatingReward.show(amount, "fade");
+	});
 }

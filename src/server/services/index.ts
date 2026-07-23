@@ -10,6 +10,7 @@ import { BoostService } from "./BoostService";
 import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
 import { LeaderboardService } from "./LeaderboardService";
+import { AnalyticsService } from "./AnalyticsService";
 import { RoomService } from "server/rooms/RoomService";
 import { PopupConfig } from "server/UI/PopupConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
@@ -37,6 +38,10 @@ export const services: Array<{ init(): void }> = [
 	// Global leaderboards + podium. Needs PlayerData (Money/Playtime) ready; its
 	// refresh loop is self-driven so ordering past PlayerData is not load-bearing.
 	LeaderboardService,
+	// Official Roblox analytics (Creator Hub → Analytics). Observational — logs
+	// economy/funnel/progression/custom events. Needs PlayerProgression ready
+	// (reads isFirstSession for the onboarding funnel gate). No Studio setup.
+	AnalyticsService,
 	RoomService,
 	// Binds a ButtonModule per room — must run after RoomService builds them.
 	ButtonTriggerService,

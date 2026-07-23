@@ -252,6 +252,55 @@ end
 local initialBaseCashColor
 local initialMultiplierPosition
 local initialMultiplierTransparency
+-- ── Cancellation: payout flushed because another popup opened ───────────────────
+--
+-- Opening any popup while this animation runs drops the finish screen entirely
+-- (EndGameButtonModule.flush). The animation must stop where it is and hand back what
+-- has NOT reached the HUD yet, so the caller can show it as one floating text.
+--
+-- Distinct from FloatingCash's rebirth cancellation, which drops the money for good
+-- instead of paying out the remainder.
+local activeRun
+-- Chunk frames live on the ScreenGui, not on the popup frame — hiding the popup does
+-- not hide them, so a cancel has to destroy them explicitly.
+local FLY_FRAME_NAMES = { "EndGameFloatingChunk", "EndGameBaseCashFly" }
+-- Puts the popup labels back to their Studio baseline so the next run starts clean.
+local function resetLabels(refs)
+	refs.baseCashText.Visible = false
+	if initialBaseCashSize ~= nil then
+		refs.baseCashText.TextSize = initialBaseCashSize
+	end
+	if initialBaseCashColor ~= nil then
+		refs.baseCashText.TextColor3 = initialBaseCashColor
+	end
+	refs.multiplierText.Visible = false
+	if initialMultiplierPosition ~= nil then
+		refs.multiplierText.Position = initialMultiplierPosition
+	end
+	if initialMultiplierTransparency ~= nil then
+		refs.multiplierText.TextTransparency = initialMultiplierTransparency
+	end
+end
+-- Stops a running payout animation and returns what has not been banked yet.
+-- Returns undefined when no animation is running (the popup never opened) — the caller
+-- then falls back to the full amount the server sent.
+local function cancelActiveRun()
+	local run = activeRun
+	if not run or run.cancelled then
+		return nil
+	end
+	run.cancelled = true
+	activeRun = nil
+	for _, desc in run.refs.screenGui:GetDescendants() do
+		local _name = desc.Name
+		if table.find(FLY_FRAME_NAMES, _name) ~= nil then
+			desc:Destroy()
+		end
+	end
+	resetLabels(run.refs)
+	InformationText:hide()
+	return math.max(run.totalEarn - run.banked, 0)
+end
 -- Runs the full ButtonFinishGame animation, then calls onComplete().
 -- Safe to call from a regular task (uses task.wait internally).
 local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, onComplete)
@@ -281,6 +330,18 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	end
 	local baseSize = initialBaseCashSize
 	local baseColor = initialBaseCashColor
+	-- Kill penalty applies before the multiplier, so the final payout is known up front —
+	-- register it now so a cancel during the very first phases still knows what is owed.
+	local effectiveBaseCash = if lossMultiplier < 1 then baseCash * lossMultiplier else baseCash
+	local effectiveBaseSize = if lossMultiplier < 1 then baseSize * lossMultiplier else baseSize
+	local totalEarn = effectiveBaseCash * multiplier
+	local run = {
+		refs = refs,
+		totalEarn = totalEarn,
+		banked = 0,
+		cancelled = false,
+	}
+	activeRun = run
 	-- ── Reset MultiplierText — match the in-game label's last appearance ──────────
 	local snapshot = MultiplierVisuals:getLast()
 	local _result = snapshot
@@ -315,22 +376,29 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	-- ── "Finish" flash (blocks through fade-in + hold) ───────────────────────────
 	InformationText:show(FINISH_TEXT)
 	task.wait(InformationText.FADE_IN_TIME + InformationText.HOLD_TIME)
+	if run.cancelled then
+		return nil
+	end
 	-- ── Kill penalty: shrink BaseCashText value + size before the count-up ────────
-	local effectiveBaseCash = baseCash
-	local effectiveBaseSize = baseSize
 	if lossMultiplier < 1 then
-		effectiveBaseCash = baseCash * lossMultiplier
-		effectiveBaseSize = baseSize * lossMultiplier
 		animateCash(baseCashText, baseCash, effectiveBaseCash, baseSize, effectiveBaseSize, baseColor, baseColor, LOSS_PENALTY_TI)
+		if run.cancelled then
+			return nil
+		end
 	end
 	-- ── Phase 1: MultiplierText merges into BaseCashText and disappears ───────────
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText)
+	if run.cancelled then
+		return nil
+	end
 	-- ── Phase 2: BaseCashText counts up by the in-game multiplier ─────────────────
 	-- EffectiveBaseCash already includes every money multiplier (rebirth + tier +
 	-- community), so the start number shows the boost — no separate rebirth phase.
-	local totalEarn = effectiveBaseCash * multiplier
 	local grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE
 	animateCash(baseCashText, effectiveBaseCash, totalEarn, effectiveBaseSize, grownSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI)
+	if run.cancelled then
+		return nil
+	end
 	-- ── Phase 3: spray N floating texts into the money HUD ────────────────────────
 	local moneyParent = InGameUIController:getMoneyParent()
 	local n = FLOATING_TEXT_COUNT
@@ -345,17 +413,33 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 			baseCashText.TextColor3 = initialBaseCashColor
 		end
 	end
+	-- The run stays "active" (and therefore cancellable) until onComplete actually
+	-- fires — a popup opening during the final pause must still cancel it, otherwise
+	-- the flush would fall back to the full amount and pay it a second time.
+	local complete = function()
+		if run.cancelled then
+			return nil
+		end
+		if activeRun == run then
+			activeRun = nil
+		end
+		onComplete()
+	end
 	-- No HUD target / nothing to spray → deposit visually and finish.
 	if not moneyParent or n <= 0 or totalEarn <= 0 then
 		if totalEarn > 0 then
 			MoneyDisplay:addVisual(totalEarn)
+			run.banked = totalEarn
 		end
 		finishReset()
-		onComplete()
+		complete()
 		return nil
 	end
 	local arrived = 0
 	for i = 1, n do
+		if run.cancelled then
+			return nil
+		end
 		if FloatingCash:isStale(runGen) then
 			break
 		end
@@ -363,6 +447,9 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 		local remaining = if isLast then 0 else totalEarn - i * chunk
 		spawnFloatingChunk(screenGui, chunk, baseCashText, moneyParent, {
 			onSpawn = function()
+				if run.cancelled then
+					return nil
+				end
 				-- Floating text leaving drops BaseCashText by one chunk (value + size).
 				baseCashText.Text = formatCash(remaining)
 				local ratio = if totalEarn > 0 then remaining / totalEarn else 0
@@ -373,20 +460,31 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 				end
 			end,
 			onArrived = function()
+				if run.cancelled then
+					return nil
+				end
 				if FloatingCash:isStale(runGen) then
 					return nil
 				end
 				MoneyDisplay:addVisual(chunk)
+				run.banked += chunk
 				arrived += 1
 				if arrived >= n then
 					finishReset()
-					task.delay(0.2, onComplete)
+					task.delay(0.2, complete)
 				end
 			end,
 		})
 		task.wait(FLOATING_TEXT_INTERVAL)
 	end
+	-- Rebirth broke out of the loop: the money is gone for good, so there is nothing
+	-- left to flush — drop the run instead of leaving it cancellable.
+	if activeRun == run and FloatingCash:isStale(runGen) then
+		activeRun = nil
+		finishReset()
+	end
 end
 return {
+	cancelActiveRun = cancelActiveRun,
 	runEndGameAnimation = runEndGameAnimation,
 }

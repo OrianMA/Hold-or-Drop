@@ -63,6 +63,40 @@ local function FormatNumber(value)
 	end
 	return `{sign}{math.floor(abs)}`
 end
+-- Like FormatNumber but rounds the abbreviated value to a whole number (no
+-- decimals) — "15.5K" → "16K", "1.25M" → "1M". Used for shop prices where a
+-- clean rounded figure reads better than a precise fractional one. Rolls up to
+-- the next tier when rounding pushes the mantissa to 1000 (e.g. 999.6K → "1M").
+local function FormatNumberRounded(value)
+	if value ~= value then
+		return "0"
+	end
+	if value == math.huge then
+		return "∞"
+	end
+	if value == -math.huge then
+		return "-∞"
+	end
+	local isNegative = value < 0
+	local abs = math.abs(value)
+	local sign = if isNegative then "-" else ""
+	if abs < 1000 then
+		return `{sign}{math.floor(abs)}`
+	end
+	for i = #SUFFIXES - 1, 1, -1 do
+		if abs >= THRESHOLDS[i + 1] then
+			local mantissa = math.round(abs / THRESHOLDS[i + 1])
+			local tier = i
+			-- Rounding can bump the mantissa to 1000 — carry into the next suffix.
+			if mantissa >= 1000 and tier < #SUFFIXES - 1 then
+				tier += 1
+				mantissa = math.round(abs / THRESHOLDS[tier + 1])
+			end
+			return `{sign}{mantissa}{SUFFIXES[tier + 1]}`
+		end
+	end
+	return `{sign}{math.floor(abs)}`
+end
 -- Convenience for currency labels — same formatter, prefixed with the $ sign.
 -- Negative amounts render as "-$5" (sign first), matching typical UX in shops.
 local function FormatCash(value)
@@ -98,6 +132,7 @@ local function formatDuration(totalSeconds)
 end
 return {
 	FormatNumber = FormatNumber,
+	FormatNumberRounded = FormatNumberRounded,
 	FormatCash = FormatCash,
 	formatDuration = formatDuration,
 	SUFFIXES = SUFFIXES,

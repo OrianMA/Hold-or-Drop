@@ -52,6 +52,11 @@ const dataStore = DataStoreService.GetDataStore(STORE_NAME);
 // wiping a player's progress because of a transient DataStore failure.
 const loadedPlayers = new Set<Player>();
 
+// Players whose DataStore load returned NO existing record — i.e. their very first
+// session ever. Used to gate the onboarding analytics funnel (AnalyticsService) so it
+// only measures genuinely new players. Session-only; not persisted.
+const firstSessionPlayers = new Set<Player>();
+
 function keyFor(player: Player): string {
 	return `Player_${player.UserId}`;
 }
@@ -110,7 +115,12 @@ function loadLevels(player: Player): LevelData | undefined {
 		warn(`PlayerProgressionService: failed to load ${player.Name}: ${result}`);
 		return undefined;
 	}
-	if (result === undefined || !typeIs(result, "table")) return defaultLevels();
+	// No stored record → this is the player's first-ever session (onboarding funnel gate).
+	if (result === undefined) {
+		firstSessionPlayers.add(player);
+		return defaultLevels();
+	}
+	if (!typeIs(result, "table")) return defaultLevels();
 
 	const loaded = result as Partial<LevelData>;
 	const merged = defaultLevels();
@@ -152,6 +162,7 @@ export const PlayerProgressionService = {
 		Players.PlayerRemoving.Connect((player) => {
 			savePlayer(player);
 			loadedPlayers.delete(player);
+			firstSessionPlayers.delete(player);
 		});
 
 		// Roblox waits up to 30s on BindToClose — save everyone in parallel so a
@@ -190,6 +201,12 @@ export const PlayerProgressionService = {
 		player.SetAttribute(cfg.levelAttribute, nextLevel);
 		player.SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel));
 		deriveValues(player);
+	},
+
+	// True only for a player whose DataStore load found no existing record — their
+	// first-ever session. Gates the onboarding analytics funnel.
+	isFirstSession(player: Player): boolean {
+		return firstSessionPlayers.has(player);
 	},
 
 	// Reads the persisted rebirth count.

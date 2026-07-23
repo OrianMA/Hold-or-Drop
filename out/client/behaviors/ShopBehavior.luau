@@ -16,6 +16,7 @@ local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGame
 local SHOP_MODEL = "Shop"
 local PROMPT_PART = "ProximityPromptPart"
 local SHOP_MENU = "ShopMenu"
+local MONEY_PARENT = "MoneyParent"
 local HEADER = "Header"
 local CLOSE_BUTTON = "CloseButton"
 local CLOSE_DISTANCE = 15
@@ -26,12 +27,18 @@ local function init()
 	local inGameUI = (Players.LocalPlayer:WaitForChild("PlayerGui")):WaitForChild("InGameUI")
 	local shopMenu = inGameUI:WaitForChild(SHOP_MENU)
 	local closeButton = shopMenu:WaitForChild(HEADER):WaitForChild(CLOSE_BUTTON)
+	-- MoneyParent (sibling of ShopMenu) mirrors the shop: the HUD's own money
+	-- display is hidden with the HUD while shopping, so this one shows the balance
+	-- while the shop is open and hides again on close.
+	local moneyParent = inGameUI:WaitForChild(MONEY_PARENT)
 	shopMenu.Visible = false
+	moneyParent.Visible = false
 	-- Heartbeat watcher is only attached while the menu is open so the closed
 	-- state has zero per-frame cost.
 	local distanceWatcher
 	local close = function()
 		shopMenu.Visible = false
+		moneyParent.Visible = false
 		InGameUIController:enable()
 		local _result = distanceWatcher
 		if _result ~= nil then
@@ -41,6 +48,7 @@ local function init()
 	end
 	local open = function()
 		shopMenu.Visible = true
+		moneyParent.Visible = true
 		InGameUIController:disable()
 		local _result = distanceWatcher
 		if _result ~= nil then

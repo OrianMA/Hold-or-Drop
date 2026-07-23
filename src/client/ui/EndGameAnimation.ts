@@ -264,6 +264,60 @@ let initialBaseCashColor: Color3 | undefined;
 let initialMultiplierPosition: UDim2 | undefined;
 let initialMultiplierTransparency: number | undefined;
 
+// ── Cancellation: payout flushed because another popup opened ───────────────────
+//
+// Opening any popup while this animation runs drops the finish screen entirely
+// (EndGameButtonModule.flush). The animation must stop where it is and hand back what
+// has NOT reached the HUD yet, so the caller can show it as one floating text.
+//
+// Distinct from FloatingCash's rebirth cancellation, which drops the money for good
+// instead of paying out the remainder.
+
+interface ActiveRun {
+	refs: EndGameRefs;
+	totalEarn: number;
+	banked: number; // amount whose chunks already landed in the HUD
+	cancelled: boolean;
+}
+
+let activeRun: ActiveRun | undefined;
+
+// Chunk frames live on the ScreenGui, not on the popup frame — hiding the popup does
+// not hide them, so a cancel has to destroy them explicitly.
+const FLY_FRAME_NAMES = ["EndGameFloatingChunk", "EndGameBaseCashFly"];
+
+// Puts the popup labels back to their Studio baseline so the next run starts clean.
+function resetLabels(refs: EndGameRefs): void {
+	refs.baseCashText.Visible = false;
+	if (initialBaseCashSize !== undefined) refs.baseCashText.TextSize = initialBaseCashSize;
+	if (initialBaseCashColor !== undefined) refs.baseCashText.TextColor3 = initialBaseCashColor;
+
+	refs.multiplierText.Visible = false;
+	if (initialMultiplierPosition !== undefined) refs.multiplierText.Position = initialMultiplierPosition;
+	if (initialMultiplierTransparency !== undefined) {
+		refs.multiplierText.TextTransparency = initialMultiplierTransparency;
+	}
+}
+
+// Stops a running payout animation and returns what has not been banked yet.
+// Returns undefined when no animation is running (the popup never opened) — the caller
+// then falls back to the full amount the server sent.
+export function cancelActiveRun(): number | undefined {
+	const run = activeRun;
+	if (!run || run.cancelled) return undefined;
+
+	run.cancelled = true;
+	activeRun = undefined;
+
+	for (const desc of run.refs.screenGui.GetDescendants()) {
+		if (FLY_FRAME_NAMES.includes(desc.Name)) desc.Destroy();
+	}
+	resetLabels(run.refs);
+	InformationText.hide(); // kill a still-showing "Finish" flash
+
+	return math.max(run.totalEarn - run.banked, 0);
+}
+
 // Runs the full ButtonFinishGame animation, then calls onComplete().
 // Safe to call from a regular task (uses task.wait internally).
 export function runEndGameAnimation(
@@ -291,6 +345,15 @@ export function runEndGameAnimation(
 	const baseSize = initialBaseCashSize;
 	const baseColor = initialBaseCashColor;
 
+	// Kill penalty applies before the multiplier, so the final payout is known up front —
+	// register it now so a cancel during the very first phases still knows what is owed.
+	const effectiveBaseCash = lossMultiplier < 1 ? baseCash * lossMultiplier : baseCash;
+	const effectiveBaseSize = lossMultiplier < 1 ? baseSize * lossMultiplier : baseSize;
+	const totalEarn = effectiveBaseCash * multiplier;
+
+	const run: ActiveRun = { refs, totalEarn, banked: 0, cancelled: false };
+	activeRun = run;
+
 	// ── Reset MultiplierText — match the in-game label's last appearance ──────────
 	const snapshot = MultiplierVisuals.getLast();
 	const inGameSize = snapshot?.size ?? multiplierText.TextSize;
@@ -311,23 +374,21 @@ export function runEndGameAnimation(
 	// ── "Finish" flash (blocks through fade-in + hold) ───────────────────────────
 	InformationText.show(FINISH_TEXT);
 	task.wait(InformationText.FADE_IN_TIME + InformationText.HOLD_TIME);
+	if (run.cancelled) return;
 
 	// ── Kill penalty: shrink BaseCashText value + size before the count-up ────────
-	let effectiveBaseCash = baseCash;
-	let effectiveBaseSize = baseSize;
 	if (lossMultiplier < 1) {
-		effectiveBaseCash = baseCash * lossMultiplier;
-		effectiveBaseSize = baseSize * lossMultiplier;
 		animateCash(baseCashText, baseCash, effectiveBaseCash, baseSize, effectiveBaseSize, baseColor, baseColor, LOSS_PENALTY_TI);
+		if (run.cancelled) return;
 	}
 
 	// ── Phase 1: MultiplierText merges into BaseCashText and disappears ───────────
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText);
+	if (run.cancelled) return;
 
 	// ── Phase 2: BaseCashText counts up by the in-game multiplier ─────────────────
 	// EffectiveBaseCash already includes every money multiplier (rebirth + tier +
 	// community), so the start number shows the boost — no separate rebirth phase.
-	const totalEarn = effectiveBaseCash * multiplier;
 	const grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE;
 	animateCash(
 		baseCashText,
@@ -339,6 +400,7 @@ export function runEndGameAnimation(
 		BASE_CASH_TARGET_COLOR,
 		BASE_CASH_COUNTUP_TI,
 	);
+	if (run.cancelled) return;
 
 	// ── Phase 3: spray N floating texts into the money HUD ────────────────────────
 	const moneyParent = InGameUIController.getMoneyParent();
@@ -352,21 +414,35 @@ export function runEndGameAnimation(
 		if (initialBaseCashColor !== undefined) baseCashText.TextColor3 = initialBaseCashColor;
 	};
 
+	// The run stays "active" (and therefore cancellable) until onComplete actually
+	// fires — a popup opening during the final pause must still cancel it, otherwise
+	// the flush would fall back to the full amount and pay it a second time.
+	const complete = () => {
+		if (run.cancelled) return;
+		if (activeRun === run) activeRun = undefined;
+		onComplete();
+	};
+
 	// No HUD target / nothing to spray → deposit visually and finish.
 	if (!moneyParent || n <= 0 || totalEarn <= 0) {
-		if (totalEarn > 0) MoneyDisplay.addVisual(totalEarn);
+		if (totalEarn > 0) {
+			MoneyDisplay.addVisual(totalEarn);
+			run.banked = totalEarn;
+		}
 		finishReset();
-		onComplete();
+		complete();
 		return;
 	}
 
 	let arrived = 0;
 	for (let i = 1; i <= n; i++) {
+		if (run.cancelled) return; // another popup opened — the leftover leaves as one text
 		if (FloatingCash.isStale(runGen)) break; // rebirth cancelled the payout — stop spraying
 		const isLast = i === n;
 		const remaining = isLast ? 0 : totalEarn - i * chunk;
 		spawnFloatingChunk(screenGui, chunk, baseCashText, moneyParent, {
 			onSpawn: () => {
+				if (run.cancelled) return;
 				// Floating text leaving drops BaseCashText by one chunk (value + size).
 				baseCashText.Text = formatCash(remaining);
 				const ratio = totalEarn > 0 ? remaining / totalEarn : 0;
@@ -375,15 +451,24 @@ export function runEndGameAnimation(
 				if (isLast) baseCashText.Visible = false;
 			},
 			onArrived: () => {
+				if (run.cancelled) return; // leftover is handled by the floating text instead
 				if (FloatingCash.isStale(runGen)) return; // payout cancelled by a rebirth — don't bank
 				MoneyDisplay.addVisual(chunk);
+				run.banked += chunk;
 				arrived += 1;
 				if (arrived >= n) {
 					finishReset();
-					task.delay(0.2, onComplete);
+					task.delay(0.2, complete);
 				}
 			},
 		});
 		task.wait(FLOATING_TEXT_INTERVAL);
+	}
+
+	// Rebirth broke out of the loop: the money is gone for good, so there is nothing
+	// left to flush — drop the run instead of leaving it cancellable.
+	if (activeRun === run && FloatingCash.isStale(runGen)) {
+		activeRun = undefined;
+		finishReset();
 	}
 }

@@ -48,6 +48,10 @@ local dataStore = DataStoreService:GetDataStore(STORE_NAME)
 -- Only players whose data loaded successfully are eligible for save — avoids
 -- wiping a player's progress because of a transient DataStore failure.
 local loadedPlayers = {}
+-- Players whose DataStore load returned NO existing record — i.e. their very first
+-- session ever. Used to gate the onboarding analytics funnel (AnalyticsService) so it
+-- only measures genuinely new players. Session-only; not persisted.
+local firstSessionPlayers = {}
 local function keyFor(player)
 	return `Player_{player.UserId}`
 end
@@ -128,7 +132,13 @@ local function loadLevels(player)
 		warn(`PlayerProgressionService: failed to load {player.Name}: {result}`)
 		return nil
 	end
-	if result == nil or not (type(result) == "table") then
+	-- No stored record → this is the player's first-ever session (onboarding funnel gate).
+	if result == nil then
+		local _player = player
+		firstSessionPlayers[_player] = true
+		return defaultLevels()
+	end
+	if not (type(result) == "table") then
 		return defaultLevels()
 	end
 	local loaded = result
@@ -190,6 +200,8 @@ local PlayerProgressionService = {
 			savePlayer(player)
 			local _player = player
 			loadedPlayers[_player] = nil
+			local _player_1 = player
+			firstSessionPlayers[_player_1] = nil
 		end)
 		-- Roblox waits up to 30s on BindToClose — save everyone in parallel so a
 		-- slow save doesn't starve the others before the deadline.
@@ -234,6 +246,10 @@ local PlayerProgressionService = {
 		player:SetAttribute(cfg.levelAttribute, nextLevel)
 		player:SetAttribute(cfg.valueAttribute, cfg.valueFor(nextLevel))
 		deriveValues(player)
+	end,
+	isFirstSession = function(self, player)
+		local _player = player
+		return firstSessionPlayers[_player] ~= nil
 	end,
 	getRebirths = function(self, player)
 		local _condition = (player:GetAttribute(REBIRTHS_KEY))

@@ -125,11 +125,13 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
    `Money` + stat levels, increment `Rebirths` (needs PlayerData + PlayerProgression ready)
 8. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
    self-driven 60s refresh loop (needs PlayerData ready — reads `Money`/`Playtime`)
-9. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-10. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-11. `CharacterService` — normalize character scale on spawn
-12. `EndGameButtonModule.init()` — wire the payout-finished handshake
-13. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+9. `AnalyticsService` — official Roblox analytics wrapper (§6.19); logs the onboarding funnel
+   join step. Needs PlayerProgression ready (reads `isFirstSession` for the onboarding gate)
+10. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+11. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+12. `CharacterService` — normalize character scale on spawn
+13. `EndGameButtonModule.init()` — wire the payout-finished handshake
+14. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -341,8 +343,8 @@ from a **pre-buffered ReplicatedStorage template** to avoid a CDN fetch at runti
 `Explosion` instance is ever created — the burst is purely the rocket's particles.
 
 ### 6.4 End game (`modules/EndGameButtonModule.ts`)
-`enter(...)` cleans up the session, stashes `pendingEarned`, then (after a delay or
-respawn) shows the `ButtonFinishGame` popup and fires `EndGameStartEvent`
+`enter(...)` cleans up the session, stashes a `PendingPayout` `{ earned, aborted, clientOwes }`,
+then (after a delay or respawn) shows the `ButtonFinishGame` popup and fires `EndGameStartEvent`
 `(baseCash=EffectiveBaseCash, multiplier, lossMultiplier)` to drive the client payout
 animation — the payload already carries the final credited amount so the animation matches
 exactly. `multRebirth` was removed from the payload; the client animation no longer has a
@@ -356,6 +358,29 @@ server credits `Money` and hides the popup.
   **shared** `EndGameFinishedEvent` on arrival → the same handler credits `reward` and the HUD
   counter reconciles with no jump. One new server→client event, and no duplicate credit logic.
 
+**Flush — the finish screen never steals a screen the player just opened.** `UiService.Show`
+calls a registered `SetBeforeShow` hook for **any** popup other than `ButtonFinishGame`; the hook
+is `EndGameButtonModule.flush(player)`. Typical case: the player re-triggers the button or the
+rocket during the 1 s `RELEASE_DELAY` (the prompt is already free — `cleanup` ran), which would
+otherwise pop the finish screen over the fresh `ButtonMenu`. `flush` marks the entry `aborted`
+(so the waiting `enter` task opens nothing) and fires `EndGamePayoutFlushEvent(earned)`:
+- Client (`EndGameButtonBehavior`) calls `EndGameAnimation.cancelActiveRun()` — stops a payout
+  already playing, destroys its in-flight chunks, resets the popup labels to their Studio
+  baseline, clears the "Finish" flash (`InformationText.hide()`), and returns what its chunks
+  have **not** banked yet. `undefined` when nothing was playing → the server's `earned` is used.
+- The amount is then shown by `FloatingReward.show(amount, "fade")`: one "+amount" that jumps at
+  screen centre and **fades on the spot**. No `InGameUIController.enable()`, no BGM resume — the
+  new screen hid the HUD, so there is no visible counter to fly into and nothing must pop over it.
+- Credit is unchanged: the text fires `EndGameFinishedEvent` when it fades. `earned <= 0` drops
+  the finish screen with no text at all.
+- `staleSignals` guards the tail case where a whole new run finishes inside the ~1.5 s the text
+  lives: `enter` banks the superseded entry early, and the text's late signal is swallowed instead
+  of crediting (and closing) the payout that replaced it.
+
+`client/ui/FloatingReward.ts` owns the single-text visual for both endings — `"fly"` (into the
+money HUD, used by `LossRewardBehavior`) and `"fade"` (in place, used by the flush). Its frames
+are named `LossRewardFloatingText` so `FloatingCash` still drops them on a rebirth.
+
 ### 6.5 Popups (`UI/Popup.ts`, `UI/PopupConfig.ts`, `services/UiService.ts`)
 - `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `RocketLaunch`, `ButtonFinishGame`.
   (The `RocketLaunch` popup — formerly `ButtonInGame` — holds the live `MultiplierText`, the
@@ -364,6 +389,9 @@ server credits `Money` and hides the popup.
   (§6.3); the old `Slider`/progress-bar was removed.)
 - Server `PopupConfig` maps each type to a behavior class; `UiService` shows/hides by type
   and tracks one current popup per player (showing a new one hides the previous).
+- `UiService.SetBeforeShow(cb)` registers one hook called just before **any** popup other than
+  `ButtonFinishGame` opens. `EndGameButtonModule.init()` registers `flush` there (§6.4) — a
+  callback rather than a direct import so `UiService` stays free of gameplay dependencies.
 - A popup resolves `PlayerGui/InGameUI/<className>` Frame and toggles `Visible`.
 - Client mirrors this with `PopupBehaviors/` + `behaviors/` that animate the frames.
 
@@ -487,7 +515,11 @@ server credits `Money` and hides the popup.
 
 ### 6.8 Shop (`shared/ShopConfig.ts`, `server/services/ShopService.ts`, `client/behaviors/ShopItemsController.ts`)
 - The shop sells three upgrades from `Workspace/Shop` (ProximityPrompt → `InGameUI/ShopMenu`,
-  open/close handled by `ShopBehavior`). Four buttons map to the upgrades:
+  open/close handled by `ShopBehavior`). Opening hides the persistent HUD (§6.7) — which
+  includes the HUD's own `MoneyParent` money display — so `ShopBehavior` also toggles a
+  **second `MoneyParent`** (a direct sibling of `ShopMenu` under `InGameUI`, hidden by
+  default) in lockstep with the shop: visible while shopping, hidden on every close path.
+  Four buttons map to the upgrades:
   `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CRocketSpeed` = RocketSpeed +1,
   `DSafety` = Resistance +1 (the Studio frame is still named `DSafety`; only the code stat and
   the player-facing title changed to Resistance).
@@ -520,11 +552,12 @@ server credits `Money` and hides the popup.
   `MoneyProductService.ProcessReceipt`, see §6.15.
 - **`ShopItemsController` (client)** binds the four frames. For each it renders current→next
   **impact**, not the raw stat value (`BoostLyout/CurrentStatText` → `NextStatText`, via each
-  stat's `display` in `ShopConfig.STATS`) and the cash price (`BuyButton/TextLabel`), greys
-  unaffordable buttons, shows `MAX` at the Resistance cap, and fires `ShopPurchaseEvent`. The
+  stat's `display` in `ShopConfig.STATS`) and the cash price (`BuyButton/TextLabel`, via
+  `FormatNumberRounded` — a whole-number abbreviation with no decimals, "16K" not "15.5K"),
+  greys unaffordable buttons, shows `MAX` at the Resistance cap, and fires `ShopPurchaseEvent`. The
   per-stat display: BaseCash shows the **effective** `$` gain (`floor(value * MoneyMult)`, so it
-  already reflects rebirth/boosts); RocketSpeed shows the raw speed plus the multiplier it
-  reaches at `SPEED_PREVIEW_SECONDS` (10s), e.g. `"3 (x6.0)"`; Resistance (frame `DSafety`,
+  already reflects rebirth/boosts); RocketSpeed shows the raw speed alone, e.g. `"3"` (the
+  `(x6.0)` multiplier preview was removed); Resistance (frame `DSafety`,
   titled **"Vol garanti"**) shows the guaranteed flight seconds from
   `resistanceRiskParams(value).safeWindow`, e.g. `"4.1s"` — the only readable framing of that
   stat (§6.3). It
@@ -585,9 +618,10 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   rebirth path** — it is the leaderboard's playtime source (§6.14) and must survive every rebirth.
   - **Cancel in-flight payout on rebirth:** a run whose end-game payout / loss-reward floating
     texts are still flying toward the money HUD (§6.4) would otherwise credit money **after** the
-    reset to 0. So a normal rebirth also calls **`EndGameButtonModule.cancelPending`** (clears the
-    player's `pendingEarned` and hides the finish popup, so a late `EndGameFinishedEvent` credits
-    nothing) and fires **`RebirthResetEvent`** (S→C) → client **`FloatingCash`** (`client/ui/FloatingCash.ts`)
+    reset to 0. So a normal rebirth also calls **`EndGameButtonModule.cancelPending`** (drops the
+    player's pending payout — including a waiting one, marked `aborted` so its `enter` task opens
+    nothing — and hides the finish popup, so a late `EndGameFinishedEvent` credits nothing) and
+    fires **`RebirthResetEvent`** (S→C) → client **`FloatingCash`** (`client/ui/FloatingCash.ts`)
     destroys the in-flight floating frames and bumps a generation so their arrival callbacks no-op.
     **Safe rebirth does neither** — it keeps Money, so an in-flight payout must still land.
 
@@ -930,6 +964,36 @@ clones the right one onto the rig's `RocketSpawnPoint` (§6.1).
   so Lvl3–Lvl5 launch without an engine flame (no error — the launcher just finds no `Fire`); add a
   `NitroParticles` part (with a `Fire`) to those templates to restore the effect.
 
+### 6.19 Analytics (`server/services/AnalyticsService.ts`)
+Official **Roblox** analytics (Creator Hub → your experience → **Analytics**). **No Studio setup**
+is required — the events flow to the dashboard automatically for a published experience (first data
+lands after ~24h; nothing shows for Play Solo). `AnalyticsService` is a thin, **crash-proof wrapper**
+around the engine `AnalyticsService`: every log call is wrapped in `pcall` (analytics can throttle
+or be disabled — it must never break gameplay), server-only, and exposes semantic one-liner helpers
+so call sites stay readable. Because gameplay is server-authoritative, every event is logged from the
+server at the exact point state truly changes.
+- **Economy** (`cashSource` / `cashSink`, currency `"Cash"`, `Enum.AnalyticsEconomyFlowType`):
+  - **Source** — gameplay payouts (`EndGameButtonModule.creditPending`, logged at the true credit
+    with the resulting balance; `itemSku` `ClaimWin` / `LossConsolation`) and Robux money packs
+    (`MoneyProductService`, `TxType.IAP`).
+  - **Sink** — shop purchases (`ShopService`, `itemSku` = the item id) and rebirths
+    (`RebirthService`, the whole balance leaves the economy → ending balance 0).
+- **Onboarding funnel** (`onboardingStep`, `LogOnboardingFunnelStepEvent`) — **first-session players
+  only**, gated by `PlayerProgressionService.isFirstSession` (true only when the DataStore load found
+  no existing record) and de-duped per step per session: 1 Joined → 2 Launch → 3 Claim → 4 Purchase
+  → 5 Rebirth. Returning players skip it entirely (a no-op), so the numbers stay meaningful.
+- **Core-run funnel** (`runStep`, `LogFunnelStepEvent`, funnel `"CoreRun"`) — **repeatable**, one
+  `funnelSessionId` (a GUID from `newRunId`) per run: 1 Launch → 2 Claim → 3 Banked. A loss never
+  reaches step 3, so the drop-off between 2 and 3 is the loss rate.
+- **Progression** (`rebirth`, `LogProgressionEvent`, path `"Rebirth"`, status `Complete`, level =
+  rebirth count) — logged by both normal and safe rebirths.
+- **Custom counters** (`custom`, `LogCustomEvent`, optional numeric value + one breakdown field mapped
+  to `Enum.AnalyticsCustomFieldKeys.CustomField01`): `RocketLaunched`, `RunClaimed`, `RunGoHome`,
+  `RunLost`, `ShopPurchase`, `RebirthDone`, `SafeRebirthDone`, `MoneyPackPurchased`,
+  `LevelProductPurchased`, `GamePassPurchased`, `CommunityJoined`.
+- **No new RemoteEvents** — everything is server-side (the economy is already server-authoritative),
+  and no gameplay logic depends on analytics succeeding.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -950,7 +1014,8 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `RiskUpdateEvent` | S→C | Current risk value |
 | `GameResultEvent` | S→C | (exploded, earned, multiplier) — re-enable HUD |
 | `EndGameStartEvent` | S→C | Start payout animation (baseCash=EffectiveBaseCash, mult, lossMult) — `multRebirth` removed |
-| `EndGameFinishedEvent` | C→S | Animation done → server credits money, hides popup |
+| `EndGameFinishedEvent` | C→S | Animation (or floating text) done → server credits money, hides popup |
+| `EndGamePayoutFlushEvent` | S→C | Another popup opened → drop the finish screen; show the leftover as one fading "+amount" (§6.4) |
 | `InformationTextEvent` | S→C | Flash info text in HUD (e.g. "Not enough money") |
 | `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
 | `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |

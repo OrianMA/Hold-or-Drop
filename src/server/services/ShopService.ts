@@ -2,6 +2,7 @@ import { Events } from "shared/Event";
 import { ITEMS, ShopItemId, isAtCap, priceForItem } from "shared/ShopConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { PlayerDataService } from "./PlayerDataService";
+import { AnalyticsService, TxType } from "./AnalyticsService";
 import { NeonPipeColors } from "server/modules/NeonPipeColors";
 
 // Authoritative shop purchases. The client pre-checks affordability for instant
@@ -32,6 +33,11 @@ function handlePurchase(player: Player, itemId: unknown): void {
 
 	PlayerDataService.add(player, "Money", -price);
 	PlayerProgressionService.addLevel(player, item.stat, item.quantity);
+
+	// Analytics: cash Sink (with the resulting balance) + per-item counter + onboarding step 4.
+	AnalyticsService.cashSink(player, price, PlayerDataService.get(player, "Money"), TxType.Shop, itemId);
+	AnalyticsService.custom(player, "ShopPurchase", price, itemId);
+	AnalyticsService.onboardingStep(player, 4, "Purchase");
 
 	// Réaction visuelle : un segment file dans les tubes néon du joueur (shop → bouton).
 	const roomName = player.GetAttribute("AssignedRoom");

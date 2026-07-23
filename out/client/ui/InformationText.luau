@@ -61,6 +61,14 @@ local InformationText = {
 	FADE_IN_TIME = FADE_IN_TI.Time,
 	HOLD_TIME = DEFAULT_HOLD,
 	FADE_OUT_TIME = FADE_OUT_TI.Time,
+	hide = function(self)
+		local canvas = findCanvas()
+		if not canvas then
+			return nil
+		end
+		cancelActive()
+		canvas.GroupTransparency = 1
+	end,
 	show = function(self, text, color, holdSeconds)
 		local canvas = findCanvas()
 		if not canvas then

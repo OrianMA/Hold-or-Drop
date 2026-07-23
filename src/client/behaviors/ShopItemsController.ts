@@ -2,7 +2,7 @@ import { MarketplaceService, Players } from "@rbxts/services";
 import { Events } from "shared/Event";
 import { ITEM_ORDER, ITEMS, ShopItem, STATS, isAtCap, priceForItem } from "shared/ShopConfig";
 import { levelProductForStat } from "shared/LevelProducts";
-import { FormatNumber } from "shared/NumberFormat";
+import { FormatNumberRounded } from "shared/NumberFormat";
 import { InformationText } from "client/ui/InformationText";
 
 // Wires the four shop item frames (InGameUI/ShopMenu/Body/*). Read-only display
@@ -105,7 +105,7 @@ function bindItem(body: Instance, item: ShopItem): () => void {
 
 		nextText.Text = cfg.display(cfg.valueFor(level + item.quantity), ctx);
 		const price = priceForItem(item, level);
-		priceLabel.Text = `${FormatNumber(price)}$`;
+		priceLabel.Text = `${FormatNumberRounded(price)}$`;
 		setAffordable(buyButton, priceLabel, getMoney() >= price);
 		// Restore the Robux button (e.g. Resistance dropped back below cap on rebirth).
 		if (product) {

@@ -6,6 +6,7 @@ import { STATS } from "shared/ShopConfig";
 import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { RebirthService } from "./RebirthService";
+import { AnalyticsService, TxType } from "./AnalyticsService";
 
 // Authoritative handler for ALL developer products. Owns the game's single
 // MarketplaceService.ProcessReceipt callback. Two product families route through
@@ -31,6 +32,15 @@ function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDecision 
 	const amount = amountForProduct(receiptInfo.ProductId);
 	if (amount !== undefined) {
 		PlayerDataService.add(player, "Money", amount);
+		// Analytics: Robux → cash faucet (IAP Source, with the resulting balance) + counter.
+		AnalyticsService.cashSource(
+			player,
+			amount,
+			PlayerDataService.get(player, "Money"),
+			TxType.IAP,
+			`MoneyPack_${receiptInfo.ProductId}`,
+		);
+		AnalyticsService.custom(player, "MoneyPackPurchased", amount);
 		return Enum.ProductPurchaseDecision.PurchaseGranted;
 	}
 
@@ -44,6 +54,8 @@ function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDecision 
 		// addLevel clamps to the stat's cap (e.g. Resistance) — a max-level buy is a no-op
 		// gain but still granted (the client prevents prompting at the cap).
 		PlayerProgressionService.addLevel(player, grant.stat, grant.levels);
+		// Analytics: Robux-paid stat levels (counter, broken down by stat).
+		AnalyticsService.custom(player, "LevelProductPurchased", grant.levels, grant.stat);
 		return Enum.ProductPurchaseDecision.PurchaseGranted;
 	}
 

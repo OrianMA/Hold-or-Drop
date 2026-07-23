@@ -43,8 +43,6 @@ do
 	_container.PlayerKilledEvent = PlayerKilledEvent
 	local MultiplierUpdateEvent = DefineEvent("MultiplierUpdateEvent", script)
 	_container.MultiplierUpdateEvent = MultiplierUpdateEvent
-	local RiskUpdateEvent = DefineEvent("RiskUpdateEvent", script)
-	_container.RiskUpdateEvent = RiskUpdateEvent
 	local GameResultEvent = DefineEvent("GameResultEvent", script)
 	_container.GameResultEvent = GameResultEvent
 	-- EndGameButton — server → client (starts the post-game animation in ButtonFinishGame)
@@ -55,6 +53,14 @@ do
 	-- pendingEarned credit path banks a losing-explosion reward.
 	local EndGameFinishedEvent = DefineEvent("EndGameFinishedEvent", script)
 	_container.EndGameFinishedEvent = EndGameFinishedEvent
+	-- EndGameButton — server → client (Arg: earned). Another popup opened while the
+	-- payout was pending (typically the player re-triggered the button/rocket during the
+	-- 1s release delay, or mid-animation): the finish screen is dropped entirely — no
+	-- ButtonFinishGame popup, no HUD restore, the new screen keeps the focus. The client
+	-- cancels any running payout animation and shows what is left as a single "+amount"
+	-- that jumps then fades on the spot, banking it via EndGameFinishedEvent.
+	local EndGamePayoutFlushEvent = DefineEvent("EndGamePayoutFlushEvent", script)
+	_container.EndGamePayoutFlushEvent = EndGamePayoutFlushEvent
 	-- Losing explosion — server → client (Arg: amount). No ButtonFinishGame popup:
 	-- the player gets a flat consolation (baseCash / 3) shown as a single "+amount"
 	-- text that jumps then flies into the money HUD (LossRewardBehavior). The client

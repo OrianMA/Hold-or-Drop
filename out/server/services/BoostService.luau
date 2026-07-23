@@ -14,6 +14,7 @@ local ignoreGamePasses = _CheatConfig.ignoreGamePasses
 local simulateGamePasses = _CheatConfig.simulateGamePasses
 local simulatedOwnedPassIds = _CheatConfig.simulatedOwnedPassIds
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+local AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService").AnalyticsService
 -- HUD flash colours for the community-join feedback (see refreshCommunity).
 local JOINED_COLOR = Color3.new(0.4, 1, 0.45)
 local HINT_COLOR = Color3.new(0.6, 0.8, 1)
@@ -172,6 +173,8 @@ BoostService = {
 			local _gamePassId = gamePassId
 			_exp[_gamePassId] = true
 			recount(player)
+			-- Analytics: game-pass bought (counter, broken down by pass id).
+			AnalyticsService:custom(player, "GamePassPurchased", gamePassId, tostring(gamePassId))
 		end)
 		-- The client opened the native community-join card (GroupService:PromptJoinAsync)
 		-- and it returned Joined/AlreadyMember. Re-verify server-side and grant the ×2.
@@ -187,6 +190,8 @@ BoostService = {
 		player:SetAttribute(IN_COMMUNITY_ATTR, isIn)
 		PlayerProgressionService:recompute(player)
 		if isIn and not wasIn then
+			-- Analytics: player just joined the community (grants ×2) — one-shot per join.
+			AnalyticsService:custom(player, "CommunityJoined")
 			Events.InformationTextEvent:FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR)
 		elseif not isIn then
 			Events.InformationTextEvent:FireClient(player, "Rejoins la communauté Grorian's Studio pour x2 argent !", HINT_COLOR)

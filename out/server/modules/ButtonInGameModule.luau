@@ -9,6 +9,7 @@ local ReplicatedStorage = _services.ReplicatedStorage
 local Workspace = _services.Workspace
 local invincible = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").invincible
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
+local AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService").AnalyticsService
 local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
 local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
@@ -145,16 +146,21 @@ local function startButtonGame(player, session)
 	-- fusée va vite, plus il grimpe (voir RocketGameConfig).
 	local currentMultiplier = STARTING_MULTIPLIER
 	local isActive = true
+	-- Analytics: one funnel session id for this run (CoreRun: Launch → Claim → Banked).
+	local runId = AnalyticsService:newRunId()
 	-- Preload the "chance" at launch: precompute the exact instant the rocket will
 	-- explode (tick-aligned, same distribution as the old per-tick roll). The run then
 	-- fires the explosion at this scheduled moment — no per-tick RNG, no discovery delay.
 	-- invincible ⇒ never explodes.
 	local explosionAt = if invincible then math.huge else rollExplosionTime(riskParams)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
-	Events.RiskUpdateEvent:FireClient(player, 0)
 	-- La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
 	-- Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
 	RocketLauncher:launch(room, rocketSpeed)
+	-- Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
+	AnalyticsService:custom(player, "RocketLaunched", rocketSpeed)
+	AnalyticsService:runStep(player, runId, 1, "Launch")
+	AnalyticsService:onboardingStep(player, 2, "Launch")
 	-- Claim : le joueur VERROUILLE le multiplicateur courant en gain garanti. La fusée ne
 	-- s'arrête PAS — elle continue de monter (le multiplicateur affiché grimpe encore,
 	-- purement visuel) jusqu'à l'explosion, où le payout se fait au multiplicateur
@@ -168,6 +174,10 @@ local function startButtonGame(player, session)
 		claimed = true
 		claimedMultiplier = currentMultiplier
 		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier)
+		-- Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
+		AnalyticsService:custom(player, "RunClaimed", claimedMultiplier)
+		AnalyticsService:runStep(player, runId, 2, "Claim")
+		AnalyticsService:onboardingStep(player, 3, "Claim")
 	end)
 	-- "Go Home" : après un claim, le joueur peut rentrer à la base sans attendre
 	-- l'explosion. La fusée s'arrête net et le gain VERROUILLÉ est payé exactement comme
@@ -186,6 +196,9 @@ local function startButtonGame(player, session)
 		-- exploded=false : c'est le client qui ramène la caméra au joueur (retour à la base).
 		Events.GameResultEvent:FireClient(player, false, earned, claimedMultiplier)
 		EndGameButtonModule:enter(player, "released", baseCash, claimedMultiplier, earned, 1)
+		-- Analytics: win banked early (Go Home) — funnel step 3 + custom counter.
+		AnalyticsService:runStep(player, runId, 3, "Banked")
+		AnalyticsService:custom(player, "RunGoHome", earned)
 		-- On laisse la caméra revenir au joueur avant de reposer le rig sur le pad
 		-- (sinon la fusée se téléporterait sous les yeux du joueur), puis la fusée est
 		-- réinstanciée neuve sur le pad — exactement comme après une explosion.
@@ -217,18 +230,14 @@ local function startButtonGame(player, session)
 	task.spawn(function()
 		local timeHeld = 0
 		while isActive do
-			-- Avance jusqu'au prochain rafraîchissement de barre sans jamais dépasser
-			-- l'instant d'explosion précalculé → l'explosion tombe pile à `explosionAt`.
+			-- Avance jusqu'au prochain pas sans jamais dépasser l'instant d'explosion
+			-- précalculé → l'explosion tombe pile à `explosionAt`.
 			local nextStep = math.min(timeHeld + TICK_RATE, explosionAt)
 			task.wait(nextStep - timeHeld)
 			if not isActive then
 				break
 			end
 			timeHeld = nextStep
-			-- Resistance reshapes the effective risk (scale + safe window) — same
-			-- profile used to precompute explosionAt, so the bar matches the outcome.
-			local risk = riskAt(timeHeld, riskParams)
-			Events.RiskUpdateEvent:FireClient(player, risk)
 			if not invincible and timeHeld >= explosionAt then
 				isActive = false
 				claimConn:Disconnect()
@@ -249,6 +258,8 @@ local function startButtonGame(player, session)
 					-- exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
 					Events.GameResultEvent:FireClient(player, true, earned, claimedMultiplier)
 					EndGameButtonModule:enter(player, "killed", baseCash, claimedMultiplier, earned, 1)
+					-- Analytics: guaranteed win landed after the explosion — funnel step 3.
+					AnalyticsService:runStep(player, runId, 3, "Banked")
 					return nil
 				end
 				-- Pas de claim à temps : perte sèche. La FUSÉE explose, pas le joueur —
@@ -275,6 +286,9 @@ local function startButtonGame(player, session)
 					local reward = math.floor(baseCash / LOSS_CONSOLATION_DIVISOR)
 					Events.GameResultEvent:FireClient(player, true, reward, currentMultiplier)
 					EndGameButtonModule:enterRewardOnly(player, reward)
+					-- Analytics: run lost (never claimed) — custom counter with the multiplier
+					-- the player greeded to. No funnel step 3 → the drop-off is the loss rate.
+					AnalyticsService:custom(player, "RunLost", currentMultiplier)
 				end
 				return nil
 			end
