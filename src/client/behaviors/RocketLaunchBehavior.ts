@@ -19,6 +19,11 @@ import {
 
 // UI refs — assigned on first setup(), never change after
 let claimButton: TextButton | undefined;
+// Les deux dégradés du ClaimButton : "Claim" pendant le vol, "Home" une fois le gain
+// verrouillé. On ne bascule de l'un à l'autre qu'au réarmement "Go Home" (quand la
+// couleur du bouton redevient normale), pas pendant l'assombrissement du claim.
+let claimGradient: UIGradient | undefined;
+let homeGradient: UIGradient | undefined;
 // Le libellé posé sur le ClaimButton : "Claim" pendant le vol, "Go Home" une fois le
 // gain verrouillé (le bouton se réarme alors pour rentrer à la base).
 let claimLabel: TextLabel | undefined;
@@ -475,6 +480,8 @@ export function setup(inGameUI: ScreenGui): void {
 	const popup = inGameUI.WaitForChild("RocketLaunch") as Frame;
 	const claimButtonFrame = popup.WaitForChild("ClaimButtonFrame") as Frame;
 	claimButton = claimButtonFrame.WaitForChild("ClaimButton") as TextButton;
+	claimGradient = claimButton.WaitForChild("UIGradientClaim") as UIGradient;
+	homeGradient = claimButton.WaitForChild("UIGradientHome") as UIGradient;
 	claimLabel = claimButtonFrame.WaitForChild("TextLabel") as TextLabel;
 	multiplierText = popup.WaitForChild("MultiplierText") as TextLabel;
 	resultMultiplierText = popup.WaitForChild("ResultMultiplierText") as TextLabel;
@@ -541,6 +548,10 @@ export function setup(inGameUI: ScreenGui): void {
 	claimButton.Interactable = true;
 	claimButton.Active = true;
 	claimButton.Visible = true;
+	// Décollage : le bouton repart avec le dégradé "Claim" (le dégradé "Home" ne réapparaîtra
+	// qu'au réarmement Go Home).
+	if (claimGradient) claimGradient.Enabled = true;
+	if (homeGradient) homeGradient.Enabled = false;
 
 	// Onboarding : le bouton respire tant que le joueur n'a pas encaissé quelques fois.
 	// Doit venir APRÈS la restauration de Size ci-dessus.
@@ -591,8 +602,12 @@ export function setup(inGameUI: ScreenGui): void {
 			isGoHomeMode = true;
 			if (claimLabel) claimLabel.Text = GO_HOME_LABEL;
 			// Retour à la couleur d'origine : le rouge signale "non cliquable", or le
-			// bouton redevient bien cliquable (cette fois pour rentrer à la base).
+			// bouton redevient bien cliquable (cette fois pour rentrer à la base). C'est à
+			// cet instant précis — pas pendant l'assombrissement du claim — qu'on bascule
+			// du dégradé "Claim" vers le dégradé "Home".
 			if (claimButtonOriginalColor) claimButton.BackgroundColor3 = claimButtonOriginalColor;
+			if (claimGradient) claimGradient.Enabled = false;
+			if (homeGradient) homeGradient.Enabled = true;
 			claimButton.Active = true;
 			claimButton.Interactable = true;
 		});

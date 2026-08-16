@@ -22,6 +22,11 @@ local TweenService = _services.TweenService
 local Workspace = _services.Workspace
 -- UI refs — assigned on first setup(), never change after
 local claimButton
+-- Les deux dégradés du ClaimButton : "Claim" pendant le vol, "Home" une fois le gain
+-- verrouillé. On ne bascule de l'un à l'autre qu'au réarmement "Go Home" (quand la
+-- couleur du bouton redevient normale), pas pendant l'assombrissement du claim.
+local claimGradient
+local homeGradient
 -- Le libellé posé sur le ClaimButton : "Claim" pendant le vol, "Go Home" une fois le
 -- gain verrouillé (le bouton se réarme alors pour rentrer à la base).
 local claimLabel
@@ -502,6 +507,8 @@ local function setup(inGameUI)
 	local popup = inGameUI:WaitForChild("RocketLaunch")
 	local claimButtonFrame = popup:WaitForChild("ClaimButtonFrame")
 	claimButton = claimButtonFrame:WaitForChild("ClaimButton")
+	claimGradient = claimButton:WaitForChild("UIGradientClaim")
+	homeGradient = claimButton:WaitForChild("UIGradientHome")
 	claimLabel = claimButtonFrame:WaitForChild("TextLabel")
 	multiplierText = popup:WaitForChild("MultiplierText")
 	resultMultiplierText = popup:WaitForChild("ResultMultiplierText")
@@ -591,6 +598,14 @@ local function setup(inGameUI)
 	claimButton.Interactable = true
 	claimButton.Active = true
 	claimButton.Visible = true
+	-- Décollage : le bouton repart avec le dégradé "Claim" (le dégradé "Home" ne réapparaîtra
+	-- qu'au réarmement Go Home).
+	if claimGradient then
+		claimGradient.Enabled = true
+	end
+	if homeGradient then
+		homeGradient.Enabled = false
+	end
 	-- Onboarding : le bouton respire tant que le joueur n'a pas encaissé quelques fois.
 	-- Doit venir APRÈS la restauration de Size ci-dessus.
 	stopClaimPulse()
@@ -643,9 +658,17 @@ local function setup(inGameUI)
 				claimLabel.Text = GO_HOME_LABEL
 			end
 			-- Retour à la couleur d'origine : le rouge signale "non cliquable", or le
-			-- bouton redevient bien cliquable (cette fois pour rentrer à la base).
+			-- bouton redevient bien cliquable (cette fois pour rentrer à la base). C'est à
+			-- cet instant précis — pas pendant l'assombrissement du claim — qu'on bascule
+			-- du dégradé "Claim" vers le dégradé "Home".
 			if claimButtonOriginalColor then
 				claimButton.BackgroundColor3 = claimButtonOriginalColor
+			end
+			if claimGradient then
+				claimGradient.Enabled = false
+			end
+			if homeGradient then
+				homeGradient.Enabled = true
 			end
 			claimButton.Active = true
 			claimButton.Interactable = true
