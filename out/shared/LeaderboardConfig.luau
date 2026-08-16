@@ -10,7 +10,9 @@ local VISIBLE_ROWS = 15
 local ROW_HEIGHT = 52
 local WRITE_SPACING = 0.1
 -- ── OrderedDataStore names (bump suffix to wipe a ranking) ────────────────────
-local MONEY_STORE = "LB_Money_v1"
+-- v2: values are now the monotonic rank encoding (see LeaderboardService), not
+-- raw cash — a fresh key is required so old raw entries don't mis-sort/mis-decode.
+local MONEY_STORE = "LB_Money_v2"
 local PLAYTIME_STORE = "LB_Playtime_v1"
 -- ── Studio instance names (under Workspace.Environment.LeaderBoards) ──────────
 local LEADERBOARDS_FOLDER = "LeaderBoards"

@@ -146,9 +146,8 @@ once a server event fires.
   (§6.18) from `ReplicatedStorage/RocketModels` and pivoted onto the rig's `RocketSpawnPoint`
   marker (an invisible, anchored, non-collidable Part). The rig also holds `CameraParentPart`
   = the rocket-follow camera's `CameraSubject` (see §6.7; `CameraPosPart` is now unused),
-  `ParticlesParentPart` holding a disabled `ExplosionParticles` emitter burst on a loss (§6.17),
-  and `RocketProximityPromptPart` carrying the rocket's own `ProximityPrompt`), optional
-  `CommunityJoinPart`.
+  and `ParticlesParentPart` holding a disabled `ExplosionParticles` emitter burst on a loss (§6.17)),
+  optional `CommunityJoinPart`.
   Invalid layouts are skipped with a warning.
 - **Ownership is the access rule:** only the assigned occupant may trigger the button.
 - `RoomService` assigns the first free room on join (numeric-aware `P1<P2<…<P10` sort),
@@ -186,12 +185,10 @@ once a server event fires.
   `SpawnLocation` instance is **not** required — matching is by name, placement by teleport.
 - `ProximityPrompt.Enabled` is **global** (no per-player toggle), so the server keeps every
   prompt **disabled** and publishes `AssignedRoom` / `InSession` attributes per player.
-  `RoomPromptController` (client) enables only the local player's prompts — client-side
-  writes don't replicate. Server still validates ownership on `Triggered`. **Each room has
-  two prompts wired identically:** the button prompt (`ButtonModel/ButtonPart`) and the
-  rocket prompt (`MovableModel/RocketProximityPromptPart`) both start the same game (§6.2),
-  and `RoomPromptController` shows/hides them together. The button prompt's `ObjectText`
-  shows the cash gain; the rocket prompt keeps its own fixed description ("Launch the rocket").
+  `RoomPromptController` (client) enables only the local player's prompt — client-side
+  writes don't replicate. Server still validates ownership on `Triggered`. The room's single
+  button prompt (`ButtonModel/ButtonPart`) starts the game (§6.2), and its `ObjectText`
+  shows the cash gain.
 - **Slot colours** (`modules/RoomColors.ts`): the single source of truth for the per-slot
   palette (P1 blue, P2 red, P3 yellow, P4 green, P5 purple; empty = grey), shared by the
   neon pipes and the spotlights below so the two never drift — **edit here to retune**.
@@ -213,9 +210,8 @@ once a server event fires.
     local player's assigned room so the "your base" cue is visible to its owner alone.
 
 ### 6.2 Button trigger (`modules/ButtonModule.ts`)
-One instance per room. **`bind` connects both the button prompt and the rocket prompt
-(`Room.rocketProximityPrompt`, §6.1/§6.17) to the same `onTriggered`** — interacting with
-either starts the game. On `Triggered`: validates ownership, guards against double-start
+One instance per room. **`bind` connects the button prompt to `onTriggered`.** On
+`Triggered`: validates ownership, guards against double-start
 (`InSession` lags one round-trip — re-check the session map), creates the session,
 sets `InSession=true`, hides the billboard for the active player, teleports + anchors the
 player on the button, fires `ButtonTriggerEvent` to the client (with the room's
@@ -764,10 +760,18 @@ any still-playing release clip).
 Two **global persistent** physical leaderboards + a top-3 money podium, under
 `Workspace/Environment/LeaderBoards`. 100 % server-driven — everything replicates, **no
 RemoteEvent, no client script**.
-- **Data:** two `OrderedDataStore`s — `LB_Money_v1` (value = current `Money`) and
-  `LB_Playtime_v1` (value = total seconds). They are a **ranking index only**; the source of
+- **Data:** two `OrderedDataStore`s — `LB_Money_v2` (value = **encoded** rank of current `Money`)
+  and `LB_Playtime_v1` (value = total seconds). They are a **ranking index only**; the source of
   truth for playtime is the `Playtime` key on `PlayerDataService` (safe-save guarded). Money
   ranks **current** cash, so it drops to 0 on rebirth (see §6.6, §6.9).
+- **Money rank encoding** (`encodeMoneyRank`/`decodeMoneyRank` in `LeaderboardService`):
+  OrderedDataStore only accepts signed-64-bit integers (max `9.22e18 ≈ "9.22Qi"`), so raw Money
+  used to freeze the board there. Instead we store a **monotonic, order-preserving** pack of the
+  base-10 exponent + mantissa (`(exp + 40) * 1e15 + mantissaPart`). Sort order matches the real
+  value's, `decodeMoneyRank` recovers ~15 significant digits for display (far more than
+  `FormatCash` shows), and the ceiling rises to ~`1e308` (double max). `readTop` takes an optional
+  `decode` (identity for playtime, `decodeMoneyRank` for money). The store was bumped `v1→v2`
+  because old raw entries are incompatible with the decoder.
 - **Loop** (`REFRESH_INTERVAL` 60s, `LeaderboardService`): flush each in-server player's score
   (accumulate playtime delta via `os.time()`, write both stores in `pcall`, spaced by
   `WRITE_SPACING`) → read `GetSortedAsync(false, TOP_N=50)` → resolve names
@@ -906,7 +910,7 @@ recaptured on the next `launch`.
 - The rocket parts are all **anchored** (no PrimaryPart needed — `PivotTo` uses the model pivot).
   `RocketPlacer` force-anchors every body part of the placed rocket (some `RocketModels` templates
   ship with unanchored parts that would otherwise fall — see §6.18). The non-body helpers
-  (`CameraPosPart`, `CameraParentPart`, `ParticlesParentPart`, `RocketProximityPromptPart`,
+  (`CameraPosPart`, `CameraParentPart`, `ParticlesParentPart`,
   `RocketSpawnPoint`) are anchored + non-collidable too, so they ride with the rig and never fall
   — `explode` only unanchors the `Rocket` body parts.
   `startButtonGame` launches it; the loss path (§6.3) explodes it; the win/quit paths reset it.

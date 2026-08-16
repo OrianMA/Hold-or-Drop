@@ -17,7 +17,9 @@ export const ROW_HEIGHT = 52; // px per row in the ScrollingFrame canvas (50 + 2
 export const WRITE_SPACING = 0.1; // seconds between DataStore writes (smoothing)
 
 // ── OrderedDataStore names (bump suffix to wipe a ranking) ────────────────────
-export const MONEY_STORE = "LB_Money_v1";
+// v2: values are now the monotonic rank encoding (see LeaderboardService), not
+// raw cash — a fresh key is required so old raw entries don't mis-sort/mis-decode.
+export const MONEY_STORE = "LB_Money_v2";
 export const PLAYTIME_STORE = "LB_Playtime_v1";
 
 // ── Studio instance names (under Workspace.Environment.LeaderBoards) ──────────

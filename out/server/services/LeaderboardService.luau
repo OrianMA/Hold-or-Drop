@@ -21,6 +21,42 @@ local playtimeStore = DataStoreService:GetOrderedDataStore(Cfg.PLAYTIME_STORE)
 local lastFlush = {}
 -- userId → display name, resolved once (names rarely change within a session).
 local nameCache = {}
+-- ── Money rank encoding ───────────────────────────────────────────────────────
+-- OrderedDataStore only accepts integers in the signed-64-bit range (max
+-- 9,223,372,036,854,775,807 ≈ "9.22Qi") — which is exactly where the money board
+-- used to freeze once a player crossed it. Instead of storing raw Money, we store
+-- a monotonic, order-preserving encoding: the base-10 exponent and mantissa packed
+-- into a small int. Sort order is identical to the real value's, decoding recovers
+-- ~15 significant digits (far more than the abbreviated display needs), and the
+-- effective ceiling rises to ~1e308 (double max).
+local RANK_EXP_OFFSET = 40
+local RANK_MANTISSA_SCALE = 1e15
+local function encodeMoneyRank(value)
+	if value <= 0 then
+		return 0
+	end
+	local exp = math.floor(math.log(value, 10))
+	local mantissa = value / 10 ^ exp
+	if mantissa >= 10 then
+		mantissa /= 10
+		exp += 1
+	elseif mantissa < 1 then
+		mantissa *= 10
+		exp -= 1
+	end
+	local mantissaPart = math.floor(((mantissa - 1) / 9) * RANK_MANTISSA_SCALE)
+	return (exp + RANK_EXP_OFFSET) * RANK_MANTISSA_SCALE + mantissaPart
+end
+local function decodeMoneyRank(encoded)
+	if encoded <= 0 then
+		return 0
+	end
+	local expIndex = math.floor(encoded / RANK_MANTISSA_SCALE)
+	local mantissaPart = encoded - expIndex * RANK_MANTISSA_SCALE
+	local exp = expIndex - RANK_EXP_OFFSET
+	local mantissa = 1 + (mantissaPart / RANK_MANTISSA_SCALE) * 9
+	return mantissa * 10 ^ exp
+end
 local function resolveName(userId)
 	local _userId = userId
 	local cached = nameCache[_userId]
@@ -55,7 +91,7 @@ local function flushPlayer(player)
 	local money = math.max(0, math.floor(PlayerDataService:get(player, "Money")))
 	local playtime = math.max(0, math.floor(PlayerDataService:get(player, "Playtime")))
 	pcall(function()
-		return moneyStore:SetAsync(key, money)
+		return moneyStore:SetAsync(key, encodeMoneyRank(money))
 	end)
 	task.wait(Cfg.WRITE_SPACING)
 	pcall(function()
@@ -63,7 +99,14 @@ local function flushPlayer(player)
 	end)
 	task.wait(Cfg.WRITE_SPACING)
 end
-local function readTop(store)
+-- `decode` maps the stored integer back to the real value (identity for stores
+-- that keep raw values, decodeMoneyRank for the encoded money store).
+local function readTop(store, decode)
+	if decode == nil then
+		decode = function(v)
+			return v
+		end
+	end
 	local entries = {}
 	local ok, pages = pcall(function()
 		return store:GetSortedAsync(false, Cfg.TOP_N)
@@ -80,7 +123,7 @@ local function readTop(store)
 		local _arg0 = {
 			userId = userId,
 			name = resolveName(userId),
-			value = item.value,
+			value = decode(item.value),
 		}
 		table.insert(entries, _arg0)
 	end
@@ -98,7 +141,7 @@ local function refresh()
 	for _, player in Players:GetPlayers() do
 		flushPlayer(player)
 	end
-	local moneyTop = readTop(moneyStore)
+	local moneyTop = readTop(moneyStore, decodeMoneyRank)
 	local playtimeTop = readTop(playtimeStore)
 	local folder = leaderboardsFolder()
 	if not folder then

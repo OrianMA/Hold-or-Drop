@@ -17,11 +17,6 @@ local PLAYER_POS_PART = "PlayerPosPlaceHolder"
 local MOVABLE_MODEL = "MovableModel"
 local CAMERA_POS_PART = "CameraPosPart"
 local CAMERA_PIVOT_PART = "CameraParentPart"
--- The rocket rig carries its own ProximityPrompt (on RocketProximityPromptPart).
--- It triggers the exact same game flow as the button prompt (see ButtonModule) but
--- keeps its own fixed description instead of showing the cash gain.
-local ROCKET_PROMPT_PART = "RocketProximityPromptPart"
-local ROCKET_PROMPT_TEXT = "Launch the rocket"
 -- Invisible marker the rocket is positioned onto (RocketPlacer seats the cloned
 -- rocket here on assign — see RocketPlacer).
 local ROCKET_SPAWN_POINT = "RocketSpawnPoint"
@@ -73,8 +68,7 @@ do
 			self:invalidate("missing button parts")
 			return nil
 		end
-		-- Camera parts (and the rocket's own ProximityPrompt) live in the
-		-- MovableModel (rocket rig), not the ButtonModel.
+		-- Camera parts live in the MovableModel (rocket rig), not the ButtonModel.
 		local movableModel = folder:FindFirstChild(MOVABLE_MODEL)
 		local _cameraPosPart = movableModel
 		if _cameraPosPart ~= nil then
@@ -86,16 +80,8 @@ do
 			_cameraPivotPart = _cameraPivotPart:FindFirstChild(CAMERA_PIVOT_PART)
 		end
 		local cameraPivotPart = _cameraPivotPart
-		local _rocketProximityPrompt = movableModel
-		if _rocketProximityPrompt ~= nil then
-			_rocketProximityPrompt = _rocketProximityPrompt:FindFirstChild(ROCKET_PROMPT_PART)
-			if _rocketProximityPrompt ~= nil then
-				_rocketProximityPrompt = _rocketProximityPrompt:FindFirstChildOfClass("ProximityPrompt")
-			end
-		end
-		local rocketProximityPrompt = _rocketProximityPrompt
-		if not movableModel or not movableModel:IsA("Model") or not cameraPosPart or not cameraPosPart:IsA("BasePart") or not cameraPivotPart or not cameraPivotPart:IsA("BasePart") or not rocketProximityPrompt then
-			self:invalidate(`missing {MOVABLE_MODEL} camera/prompt parts`)
+		if not movableModel or not movableModel:IsA("Model") or not cameraPosPart or not cameraPosPart:IsA("BasePart") or not cameraPivotPart or not cameraPivotPart:IsA("BasePart") then
+			self:invalidate(`missing {MOVABLE_MODEL} camera parts`)
 			return nil
 		end
 		self.buttonPart = buttonPart
@@ -104,19 +90,12 @@ do
 		self.movableModel = movableModel
 		self.cameraPosPart = cameraPosPart
 		self.cameraPivotPart = cameraPivotPart
-		self.rocketProximityPrompt = rocketProximityPrompt
 		-- ProximityPrompt.Enabled is a global property — there's no per-player
 		-- toggle. We keep it disabled on the server and let each client enable only
 		-- the prompt for the room they own (client-side writes don't replicate). See
 		-- RoomPromptController. The server never flips Enabled again, so the client's
 		-- local override is never stomped.
 		self.proximityPrompt.Enabled = false
-		-- The rocket prompt uses the exact same per-player visibility model, so it is
-		-- also kept disabled on the server (RoomPromptController enables it for the
-		-- owner). Unlike the button (which shows the cash gain via setGainCash), the
-		-- rocket keeps its own fixed description.
-		self.rocketProximityPrompt.Enabled = false
-		self.rocketProximityPrompt.ObjectText = ROCKET_PROMPT_TEXT
 		-- Rocket spawn marker (optional). RocketPlacer seats the cloned rocket
 		-- onto it when the room is assigned.
 		local spawnPoint = movableModel:FindFirstChild(ROCKET_SPAWN_POINT)

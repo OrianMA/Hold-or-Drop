@@ -16,8 +16,6 @@ export class ButtonModule {
 
 	bind(): void {
 		this.room.proximityPrompt.Triggered.Connect((player) => this.onTriggered(player));
-		// The rocket prompt mirrors the button: triggering it starts the same game.
-		this.room.rocketProximityPrompt.Triggered.Connect((player) => this.onTriggered(player));
 	}
 
 	private onTriggered(player: Player): void {
