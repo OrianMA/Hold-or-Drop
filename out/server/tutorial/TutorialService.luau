@@ -128,7 +128,8 @@ local function finishTutorial(player, state, skipped)
 	if skipped then
 		TutorialAnalytics:skipped(player, lastStep, state.elapsed)
 	else
-		TutorialAnalytics:stepDone(player, lastStep, spent)
+		-- La durée du step (stepDone) a déjà été comptabilisée par l'appelant (advanceOne).
+		-- Ne pas la re-logger ici pour éviter un doublon.
 		TutorialAnalytics:completed(player, state.runId, state.elapsed)
 	end
 	state.done = true
