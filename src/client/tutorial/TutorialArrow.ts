@@ -183,7 +183,13 @@ export const TutorialArrow = {
 			} else {
 				const viewport = camera.ViewportSize;
 				const center = viewport.mul(0.5);
-				const toTarget = new Vector2(screen.X - center.X, screen.Y - center.Y);
+				// Z < 0 : la cible est DERRIÈRE la caméra, et WorldToViewportPoint renvoie alors des
+				// coordonnées écran en MIROIR — il faut inverser le vecteur, sinon le chevron indique
+				// exactement le mauvais côté (le cas même pour lequel il existe).
+				let toTarget = new Vector2(screen.X - center.X, screen.Y - center.Y);
+				if (screen.Z < 0) {
+					toTarget = toTarget.mul(-1);
+				}
 				const dir = toTarget.Magnitude > 1 ? toTarget.Unit : new Vector2(0, -1);
 				const margin = GUI_ARROW_SIZE;
 				const clamped = center.add(

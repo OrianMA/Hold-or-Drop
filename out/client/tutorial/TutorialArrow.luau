@@ -193,7 +193,13 @@ TutorialArrow = {
 			else
 				local viewport = camera.ViewportSize
 				local center = viewport * 0.5
+				-- Z < 0 : la cible est DERRIÈRE la caméra, et WorldToViewportPoint renvoie alors des
+				-- coordonnées écran en MIROIR — il faut inverser le vecteur, sinon le chevron indique
+				-- exactement le mauvais côté (le cas même pour lequel il existe).
 				local toTarget = Vector2.new(screen.X - center.X, screen.Y - center.Y)
+				if screen.Z < 0 then
+					toTarget = toTarget * (-1)
+				end
 				local dir = if toTarget.Magnitude > 1 then toTarget.Unit else Vector2.new(0, -1)
 				local margin = GUI_ARROW_SIZE
 				local _vector2 = Vector2.new(math.clamp(dir.X * viewport.X, -center.X + margin, center.X - margin), math.clamp(dir.Y * viewport.Y, -center.Y + margin, center.Y - margin))
