@@ -1465,7 +1465,6 @@ export const TutorialUI = {
 		frame.AnchorPoint = new Vector2(0.5, 1);
 		frame.Position = new UDim2(0.5, 0, 1, -24);
 		frame.Size = new UDim2(0.9, 0, 0, 64);
-		frame.SizeConstraint = Enum.SizeConstraint.RelativeXY;
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20);
 		frame.BackgroundTransparency = 0.25;
 		frame.BorderSizePixel = 0;
@@ -1979,14 +1978,11 @@ function makeWorldArrow(): WorldArrow {
 
 	const billboard = new Instance("BillboardGui");
 	billboard.Name = "TutorialArrow";
-	billboard.Size = new UDim2(0, 100, 0, 100);
-	billboard.StudsOffsetWorldSpace = new Vector3(0, 0, 0);
-	billboard.ExtentsOffsetWorldSpace = new Vector3(0, 0, 0);
-	billboard.AlwaysOnTop = true;
-	billboard.LightInfluence = 0;
-	billboard.MaxDistance = 500;
+	// Taille en STUDS (offset nul) : la flèche garde sa taille apparente avec la distance.
 	billboard.Size = new UDim2(ARROW_SIZE, 0, ARROW_SIZE, 0);
-	billboard.SizeOffset = new Vector2(0, 0);
+	billboard.AlwaysOnTop = true; // visible même derrière la géométrie de la room
+	billboard.LightInfluence = 0; // couleur constante, indépendante de l'éclairage
+	billboard.MaxDistance = 500;
 	billboard.Adornee = part;
 	billboard.Parent = part;
 
