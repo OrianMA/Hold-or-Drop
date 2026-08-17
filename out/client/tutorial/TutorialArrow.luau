@@ -60,9 +60,11 @@ local function makeWorldArrow()
 	billboard.MaxDistance = 500
 	billboard.Adornee = part
 	billboard.Parent = part
+	local image = makeImage(billboard, UDim2.new(1, 0, 1, 0))
+	image.Visible = false
 	return {
 		part = part,
-		image = makeImage(billboard, UDim2.new(1, 0, 1, 0)),
+		image = image,
 	}
 end
 local function ensureWorldArrows()
@@ -120,12 +122,18 @@ TutorialArrow = {
 		TutorialArrow:clear()
 		ensureWorldArrows()
 		local chev = ensureChevron()
-		local camera = Workspace.CurrentCamera
 		renderConn = RunService.RenderStepped:Connect(function(dt)
 			elapsed += dt
 			local from = characterPosition()
 			local target = part.Position
+			-- La caméra doit être lue à chaque frame car elle est nil au spawn
+			local camera = Workspace.CurrentCamera
 			if not from or not camera then
+				-- Masquer toutes les flèches si on n'est pas prêt
+				for _, arrow in worldArrows do
+					arrow.image.Visible = false
+				end
+				chev.Visible = false
 				return nil
 			end
 			-- Répartition régulière sur la ligne joueur → cible ; la traînée se raccourcit

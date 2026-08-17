@@ -69,7 +69,9 @@ function makeWorldArrow(): WorldArrow {
 	billboard.Adornee = part;
 	billboard.Parent = part;
 
-	return { part, image: makeImage(billboard, new UDim2(1, 0, 1, 0)) };
+	const image = makeImage(billboard, new UDim2(1, 0, 1, 0));
+	image.Visible = false; // Masquées jusqu'à positionnement réel
+	return { part, image };
 }
 
 function ensureWorldArrows(): void {
@@ -115,13 +117,19 @@ export const TutorialArrow = {
 		TutorialArrow.clear();
 		ensureWorldArrows();
 		const chev = ensureChevron();
-		const camera = Workspace.CurrentCamera;
 
 		renderConn = RunService.RenderStepped.Connect((dt) => {
 			elapsed += dt;
 			const from = characterPosition();
 			const target = part.Position;
-			if (!from || !camera) return;
+			// La caméra doit être lue à chaque frame car elle est nil au spawn
+			const camera = Workspace.CurrentCamera;
+			if (!from || !camera) {
+				// Masquer toutes les flèches si on n'est pas prêt
+				for (const arrow of worldArrows) arrow.image.Visible = false;
+				chev.Visible = false;
+				return;
+			}
 
 			// Répartition régulière sur la ligne joueur → cible ; la traînée se raccourcit
 			// en approchant plutôt que de se densifier.
