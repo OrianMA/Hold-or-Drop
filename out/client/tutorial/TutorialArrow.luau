@@ -77,18 +77,27 @@ local function ensureWorldArrows()
 	end
 end
 local function ensureChevron()
-	if chevron and chevron.Parent ~= nil then
+	-- `Parent !== undefined` ne suffit PAS : un ScreenGui détruit (TutorialUI.destroy) garde
+	-- sa hiérarchie interne intacte, juste détachée du DataModel — un chevron qui y est encore
+	-- parenté a donc toujours un `Parent` non nil. Il faut vérifier qu'il est descendant du
+	-- ScreenGui COURANT, sinon on continue d'écrire dans une instance orpheline.
+	local gui = TutorialUI:ensure()
+	if chevron and chevron:IsDescendantOf(gui) then
 		return chevron
 	end
-	chevron = makeImage(TutorialUI:ensure(), UDim2.new(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE))
+	chevron = makeImage(gui, UDim2.new(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE))
 	chevron.Name = "TutorialChevron"
 	return chevron
 end
 local function ensureGuiArrow()
-	if guiArrow and guiArrow.Parent ~= nil then
+	-- Même piège que ensureChevron : un ScreenGui détruit garde un `Parent` non nil sur ses
+	-- anciens enfants, donc on compare explicitement au ScreenGui courant plutôt que de tester
+	-- juste la présence d'un parent.
+	local gui = TutorialUI:ensure()
+	if guiArrow and guiArrow:IsDescendantOf(gui) then
 		return guiArrow
 	end
-	guiArrow = makeImage(TutorialUI:ensure(), UDim2.new(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE))
+	guiArrow = makeImage(gui, UDim2.new(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE))
 	guiArrow.Name = "TutorialGuiArrow"
 	return guiArrow
 end
@@ -120,9 +129,13 @@ TutorialArrow = {
 	pointAtWorld = function(self, part)
 		TutorialArrow:clear()
 		ensureWorldArrows()
-		local chev = ensureChevron()
 		renderConn = RunService.RenderStepped:Connect(function(dt)
 			elapsed += dt
+			-- Le chevron vit dans le ScreenGui du tutorial, qui peut être détruit puis
+			-- reconstruit pendant que cette boucle tourne : il doit être résolu ICI, à chaque
+			-- frame, jamais capturé hors boucle — sinon on écrit dans une instance orpheline
+			-- pendant que le vrai chevron reste invisible.
+			local chev = ensureChevron()
 			local from = characterPosition()
 			local target = part.Position
 			-- La caméra doit être lue à chaque frame car elle est nil au spawn
@@ -213,10 +226,13 @@ TutorialArrow = {
 	end,
 	pointAtGui = function(self, target)
 		TutorialArrow:clear()
-		local arrow = ensureGuiArrow()
-		arrow.Visible = true
 		renderConn = RunService.RenderStepped:Connect(function(dt)
 			elapsed += dt
+			-- Même piège que le chevron : cette flèche vit dans le ScreenGui du tutorial, qui
+			-- peut être détruit puis reconstruit pendant que la boucle tourne. On la résout ICI,
+			-- à chaque frame, plutôt que de la capturer hors boucle.
+			local arrow = ensureGuiArrow()
+			arrow.Visible = true
 			local pos = target.AbsolutePosition
 			local size = target.AbsoluteSize
 			local bob = math.sin(elapsed * 4) * GUI_BOB

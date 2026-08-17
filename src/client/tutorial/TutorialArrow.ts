@@ -79,15 +79,24 @@ function ensureWorldArrows(): void {
 }
 
 function ensureChevron(): ImageLabel {
-	if (chevron && chevron.Parent !== undefined) return chevron;
-	chevron = makeImage(TutorialUI.ensure(), new UDim2(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE));
+	// `Parent !== undefined` ne suffit PAS : un ScreenGui détruit (TutorialUI.destroy) garde
+	// sa hiérarchie interne intacte, juste détachée du DataModel — un chevron qui y est encore
+	// parenté a donc toujours un `Parent` non nil. Il faut vérifier qu'il est descendant du
+	// ScreenGui COURANT, sinon on continue d'écrire dans une instance orpheline.
+	const gui = TutorialUI.ensure();
+	if (chevron && chevron.IsDescendantOf(gui)) return chevron;
+	chevron = makeImage(gui, new UDim2(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE));
 	chevron.Name = "TutorialChevron";
 	return chevron;
 }
 
 function ensureGuiArrow(): ImageLabel {
-	if (guiArrow && guiArrow.Parent !== undefined) return guiArrow;
-	guiArrow = makeImage(TutorialUI.ensure(), new UDim2(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE));
+	// Même piège que ensureChevron : un ScreenGui détruit garde un `Parent` non nil sur ses
+	// anciens enfants, donc on compare explicitement au ScreenGui courant plutôt que de tester
+	// juste la présence d'un parent.
+	const gui = TutorialUI.ensure();
+	if (guiArrow && guiArrow.IsDescendantOf(gui)) return guiArrow;
+	guiArrow = makeImage(gui, new UDim2(0, GUI_ARROW_SIZE, 0, GUI_ARROW_SIZE));
 	guiArrow.Name = "TutorialGuiArrow";
 	return guiArrow;
 }
@@ -115,10 +124,14 @@ export const TutorialArrow = {
 	pointAtWorld(part: BasePart): void {
 		TutorialArrow.clear();
 		ensureWorldArrows();
-		const chev = ensureChevron();
 
 		renderConn = RunService.RenderStepped.Connect((dt) => {
 			elapsed += dt;
+			// Le chevron vit dans le ScreenGui du tutorial, qui peut être détruit puis
+			// reconstruit pendant que cette boucle tourne : il doit être résolu ICI, à chaque
+			// frame, jamais capturé hors boucle — sinon on écrit dans une instance orpheline
+			// pendant que le vrai chevron reste invisible.
+			const chev = ensureChevron();
 			const from = characterPosition();
 			const target = part.Position;
 			// La caméra doit être lue à chaque frame car elle est nil au spawn
@@ -209,11 +222,14 @@ export const TutorialArrow = {
 	// Flèche écran posée à gauche du rectangle de la cible, pointant vers elle.
 	pointAtGui(target: GuiObject): void {
 		TutorialArrow.clear();
-		const arrow = ensureGuiArrow();
-		arrow.Visible = true;
 
 		renderConn = RunService.RenderStepped.Connect((dt) => {
 			elapsed += dt;
+			// Même piège que le chevron : cette flèche vit dans le ScreenGui du tutorial, qui
+			// peut être détruit puis reconstruit pendant que la boucle tourne. On la résout ICI,
+			// à chaque frame, plutôt que de la capturer hors boucle.
+			const arrow = ensureGuiArrow();
+			arrow.Visible = true;
 			const pos = target.AbsolutePosition;
 			const size = target.AbsoluteSize;
 			const bob = math.sin(elapsed * 4) * GUI_BOB;
