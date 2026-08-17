@@ -5,6 +5,8 @@ import { stepById } from "shared/tutorial/TutorialSteps";
 import { TutorialUI } from "./TutorialUI";
 import { TutorialSkipButton } from "./TutorialSkipButton";
 import { TutorialTriggers } from "./TutorialTriggers";
+import { TutorialArrow } from "./TutorialArrow";
+import { TutorialTargets } from "./TutorialTargets";
 
 // Orchestre le rendu du tutorial côté client. Le serveur publie l'étape courante dans
 // l'attribut répliqué TutorialStep ("" = terminé) ; ce contrôleur la lit, monte la mise
@@ -23,6 +25,7 @@ function clearStep(): void {
 		teardown();
 		teardown = undefined;
 	}
+	TutorialArrow.clear();
 	TutorialUI.hideBanner();
 }
 
@@ -30,6 +33,23 @@ function showStep(step: TutorialStep): void {
 	clearStep();
 	TutorialUI.ensure();
 	TutorialUI.setText(step.text);
+
+	// Pointage. Le monde peut yielder (streaming) → task.spawn, et on vérifie que le
+	// step n'a pas changé entre-temps avant d'afficher quoi que ce soit.
+	const target = step.target;
+	if (target.kind === "gui") {
+		const gui = TutorialTargets.resolveGui(target.path);
+		if (gui) TutorialArrow.pointAtGui(gui);
+		else warn(`TutorialController: cible GUI introuvable "${target.path}"`);
+	} else if (target.kind === "world") {
+		const shownFor = step.id;
+		task.spawn(() => {
+			const part = TutorialTargets.resolveWorld(target.part);
+			const currentId = (player.GetAttribute(STEP_ATTR) as string | undefined) ?? "";
+			if (!part || currentId !== shownFor) return;
+			TutorialArrow.pointAtWorld(part);
+		});
+	}
 
 	// La complétion est remontée au serveur, qui valide que c'est bien le step courant.
 	const stopWatching = TutorialTriggers.watch(step, () => {

@@ -6,6 +6,8 @@ local stepById = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "
 local TutorialUI = TS.import(script, script.Parent, "TutorialUI").TutorialUI
 local TutorialSkipButton = TS.import(script, script.Parent, "TutorialSkipButton").TutorialSkipButton
 local TutorialTriggers = TS.import(script, script.Parent, "TutorialTriggers").TutorialTriggers
+local TutorialArrow = TS.import(script, script.Parent, "TutorialArrow").TutorialArrow
+local TutorialTargets = TS.import(script, script.Parent, "TutorialTargets").TutorialTargets
 -- Orchestre le rendu du tutorial côté client. Le serveur publie l'étape courante dans
 -- l'attribut répliqué TutorialStep ("" = terminé) ; ce contrôleur la lit, monte la mise
 -- en scène du step, et remonte la complétion via TutorialAdvanceEvent.
@@ -19,12 +21,38 @@ local function clearStep()
 		teardown()
 		teardown = nil
 	end
+	TutorialArrow:clear()
 	TutorialUI:hideBanner()
 end
 local function showStep(step)
 	clearStep()
 	TutorialUI:ensure()
 	TutorialUI:setText(step.text)
+	-- Pointage. Le monde peut yielder (streaming) → task.spawn, et on vérifie que le
+	-- step n'a pas changé entre-temps avant d'afficher quoi que ce soit.
+	local target = step.target
+	if target.kind == "gui" then
+		local gui = TutorialTargets:resolveGui(target.path)
+		if gui then
+			TutorialArrow:pointAtGui(gui)
+		else
+			warn(`TutorialController: cible GUI introuvable "{target.path}"`)
+		end
+	elseif target.kind == "world" then
+		local shownFor = step.id
+		task.spawn(function()
+			local part = TutorialTargets:resolveWorld(target.part)
+			local _condition = (player:GetAttribute(STEP_ATTR))
+			if _condition == nil then
+				_condition = ""
+			end
+			local currentId = _condition
+			if not part or currentId ~= shownFor then
+				return nil
+			end
+			TutorialArrow:pointAtWorld(part)
+		end)
+	end
 	-- La complétion est remontée au serveur, qui valide que c'est bien le step courant.
 	local stopWatching = TutorialTriggers:watch(step, function()
 		Events.TutorialAdvanceEvent:FireServer(step.id)
