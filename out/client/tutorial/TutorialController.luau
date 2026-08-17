@@ -40,7 +40,13 @@ local function render()
 	end
 	local step = stepById(stepId)
 	if not step then
+		-- Id inconnu : on ne sait pas quoi afficher, mais le tutorial est toujours en cours
+		-- côté serveur (attribut non vide). On démonte juste la présentation du step
+		-- précédent — même teardown que pour l'attribut vide, moins TutorialUI.destroy() —
+		-- pour ne pas laisser le texte/highlight d'un ancien step à l'écran.
 		warn(`TutorialController: step inconnu "{stepId}"`)
+		clearStep()
+		TutorialSkipButton:setVisible(false)
 		return nil
 	end
 	TutorialSkipButton:setVisible(true)

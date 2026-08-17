@@ -13,13 +13,19 @@ const BUTTON_NAME = "TextButton";
 
 let root: Frame | undefined;
 let connected = false;
+// setVisible() appelle findRoot() à chaque step : si le frame Studio est absent, on ne
+// veut avertir qu'une fois, pas spammer l'output à chaque changement d'étape.
+let warnedMissing = false;
 
 function findRoot(): Frame | undefined {
 	if (root && root.Parent !== undefined) return root;
 	const gui = Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui;
 	const found = gui.FindFirstChild(ROOT_NAME, true);
 	root = found?.IsA("Frame") ? found : undefined;
-	if (!root) warn(`TutorialSkipButton: ${ROOT_NAME} introuvable sous PlayerGui`);
+	if (!root && !warnedMissing) {
+		warn(`TutorialSkipButton: ${ROOT_NAME} introuvable sous PlayerGui`);
+		warnedMissing = true;
+	}
 	return root;
 }
 

@@ -6,7 +6,7 @@ local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_i
 -- le bandeau d'instruction. Détruit intégralement à la fin du tutorial.
 local GUI_NAME = "TutorialUI"
 local IN_GAME_UI = "InGameUI"
--- Au-dessus de InGameUI (qui n'a pas de DisplayOrder explicite, donc 0).
+-- Au-dessus de InGameUI (mesuré à DisplayOrder = 1).
 local DISPLAY_ORDER = 100
 local screenGui
 local banner
@@ -47,19 +47,17 @@ TutorialUI = {
 		screenGui = gui
 		local frame = Instance.new("Frame")
 		frame.Name = "InstructionBanner"
-		-- Placement mesuré dans Studio (viewport 1627x905) pour ne recouvrir AUCUN élément
-		-- du jeu, run en cours ou pas :
-		--   • verticalement, la bande y ∈ [0.22, 0.29] passe sous le MultiplierText
-		--     (y 36→147) et au-dessus des boutons Start (457) / Claim (639) et de
-		--     HUD/BottomList (715→797) ;
-		--   • horizontalement, la colonne gauche du HUD (MoneyParent puis ButtonsFrame /
-		--     Rebirth) occupe x 21→390 de y 122 à 620 — d'où une largeur de 0.52 centrée
-		--     (x 390→1236 ici) plutôt que pleine largeur.
-		-- Ces deux nombres sont les seuls leviers de placement : les retoucher ne demande
-		-- aucun autre changement.
+		-- Placement en scale pour rester valide sur tout viewport (le jeu est mobile-first).
+		-- Le levier qui compte est le Y : MoneyParent a sa largeur pilotée par un
+		-- UIAspectRatioConstraint, donc dépendante du viewport (large sur téléphone, étroite
+		-- sur desktop) — on ne peut se fier qu'à sa bande verticale, qui elle est stable. Le
+		-- bandeau est placé juste sous cette bande, avant les boutons Start/Claim. Pour la
+		-- largeur, ButtonsFrame et BottomList sont en scale pur : leurs fractions tiennent sur
+		-- n'importe quel écran, d'où une largeur centrée qui garde une vraie marge avec
+		-- ButtonsFrame. Position Y et largeur sont les deux seuls leviers de placement.
 		frame.AnchorPoint = Vector2.new(0.5, 0)
-		frame.Position = UDim2.new(0.5, 0, 0.22, 0)
-		frame.Size = UDim2.new(0.52, 0, 0, 64)
+		frame.Position = UDim2.new(0.5, 0, 0.34, 0)
+		frame.Size = UDim2.new(0.46, 0, 0, 64)
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
 		frame.BackgroundTransparency = 0.25
 		frame.BorderSizePixel = 0

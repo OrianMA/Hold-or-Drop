@@ -12,6 +12,9 @@ local ROOT_NAME = "TutorialSkip"
 local BUTTON_NAME = "TextButton"
 local root
 local connected = false
+-- setVisible() appelle findRoot() à chaque step : si le frame Studio est absent, on ne
+-- veut avertir qu'une fois, pas spammer l'output à chaque changement d'étape.
+local warnedMissing = false
 local function findRoot()
 	if root and root.Parent ~= nil then
 		return root
@@ -23,8 +26,9 @@ local function findRoot()
 		_result = _result:IsA("Frame")
 	end
 	root = if _result then found else nil
-	if not root then
+	if not root and not warnedMissing then
 		warn(`TutorialSkipButton: {ROOT_NAME} introuvable sous PlayerGui`)
+		warnedMissing = true
 	end
 	return root
 end
