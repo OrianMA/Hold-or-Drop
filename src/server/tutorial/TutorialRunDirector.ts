@@ -1,3 +1,4 @@
+import { Players } from "@rbxts/services";
 import { Room } from "server/rooms/Room";
 import { RocketLauncher } from "server/modules/RocketLauncher";
 import { ButtonSessionService } from "server/services/ButtonSessionService";
@@ -26,8 +27,21 @@ export interface ScriptedRunHandle {
 
 const activeHandles = new Map<Player, { abort: () => void }>();
 
+// Identité du run courant par joueur (compteur incrémenté à chaque begin()). Sans ça, un
+// timer de gel programmé par un run précédent — écrasé dans activeHandles par un nouveau
+// begin() sans abort() intermédiaire — ne serait retenu que par stillRunning(), qui ne
+// vérifie que la room, pas l'identité du run. Le timer périmé pourrait alors geler le
+// NOUVEAU run avec la config de l'ANCIEN, sans que le flag `frozen` du nouveau run ne
+// bouge : la fusée resterait gelée pour toujours.
+const runGenerations = new Map<Player, number>();
+
 export const TutorialRunDirector = {
 	begin(player: Player, room: Room, run: ScriptedRun): ScriptedRunHandle {
+		const generation = (runGenerations.get(player) ?? 0) + 1;
+		runGenerations.set(player, generation);
+		// Ce run n'est plus le run courant du joueur si begin() a été rappelé entre-temps.
+		const isCurrentRun = (): boolean => runGenerations.get(player) === generation;
+
 		const startedAt = os.clock();
 		// noRisk (ou rien de précisé) → aucune explosion tant que le script n'en programme
 		// pas une. explodeAt fixe l'instant depuis le décollage.
@@ -40,6 +54,9 @@ export const TutorialRunDirector = {
 
 		if (run.freezeAt !== undefined) {
 			task.delay(run.freezeAt, () => {
+				// Deux gardes distinctes : isCurrentRun (« c'est toujours MON run ? ») et
+				// stillRunning (« un run quelconque tourne-t-il encore pour ce joueur ? »).
+				if (!isCurrentRun()) return;
 				if (!stillRunning()) return;
 				RocketLauncher.freeze(room);
 				frozen = true;
@@ -86,3 +103,12 @@ export const TutorialRunDirector = {
 // Le service annonce la fin du tutorial ; le director résout le run en vol. Enregistré à
 // la première charge du module (ButtonInGameModule → TutorialHooks → ici).
 TutorialService.setRunAbortHandler((player) => TutorialRunDirector.abort(player));
+
+// Un joueur qui se déconnecte en plein run truqué ne passe jamais par abort() : sans ce
+// nettoyage, activeHandles et runGenerations grossiraient indéfiniment sur la durée de
+// vie du serveur. Enregistré ici en effet de bord au chargement du module, comme
+// setRunAbortHandler ci-dessus (ce module n'a pas d'init()).
+Players.PlayerRemoving.Connect((player) => {
+	activeHandles.delete(player);
+	runGenerations.delete(player);
+});
