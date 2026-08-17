@@ -47,8 +47,11 @@ TutorialUI = {
 		screenGui = gui
 		local frame = Instance.new("Frame")
 		frame.Name = "InstructionBanner"
-		frame.AnchorPoint = Vector2.new(0.5, 1)
-		frame.Position = UDim2.new(0.5, 0, 1, -24)
+		-- Positionner le bandeau dans la bande libre y ∈ [0.147, 0.505] (viewport-relatif)
+		-- pour éviter le HUD du jeu (multipliers, barre de progression) et les éléments
+		-- popup (boutons Claim/Start). 0.22 = ~199px sur un viewport de 905px de hauteur.
+		frame.AnchorPoint = Vector2.new(0.5, 0)
+		frame.Position = UDim2.new(0.5, 0, 0.22, 0)
 		frame.Size = UDim2.new(0.9, 0, 0, 64)
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
 		frame.BackgroundTransparency = 0.25
