@@ -54,12 +54,16 @@ export const TutorialUI = {
 		//   StartButton   y 0.505→0.605
 		//   Claim/Result  y 0.71→0.84
 		//   BottomList    y 0.855→0.945              (scale pur)
-		// Le bandeau tient donc dans x 0.27→0.73 et y 0.34→0.42 : sous MoneyParent, au-dessus
-		// de Start, et à 3 points de la colonne ButtonsFrame. Ces trois nombres (Y, largeur,
-		// hauteur) sont les seuls leviers — les garder en scale, jamais en offset.
+		// Le bandeau se glisse dans le couloir libre entre Start et Claim : y 0.625→0.685,
+		// soit 0.02 de marge de chaque côté. Le milieu de l'écran est INTERDIT : c'est là que
+		// se projettent les cibles monde, donc la traînée de flèches (mesuré à y≈0.38 pour le
+		// bouton de la room) — un bandeau centré verticalement la recouvrait entièrement.
+		// Largeur 0.46 centrée (x 0.27→0.73) pour laisser 3 points à la colonne ButtonsFrame.
+		// Ces trois nombres (Y, largeur, hauteur) sont les seuls leviers — les garder en
+		// scale, jamais en offset : un offset en pixels rend la marge dépendante du viewport.
 		frame.AnchorPoint = new Vector2(0.5, 0);
-		frame.Position = new UDim2(0.5, 0, 0.34, 0);
-		frame.Size = new UDim2(0.46, 0, 0.08, 0);
+		frame.Position = new UDim2(0.5, 0, 0.625, 0);
+		frame.Size = new UDim2(0.46, 0, 0.06, 0);
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20);
 		frame.BackgroundTransparency = 0.25;
 		frame.BorderSizePixel = 0;
