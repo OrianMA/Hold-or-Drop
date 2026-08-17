@@ -50,6 +50,10 @@ let claimPulseStroke: UIStroke | undefined;
 let claimPulseStrokeTween: Tween | undefined;
 let sessionClaimCount = 0;
 
+// Pendant le tutorial c'est lui qui met le bouton Claim en avant (TutorialFocus) : deux
+// animations concurrentes sur le même bouton se battraient.
+let tutorialActive = false;
+
 // Lighting effects — created once in init()
 let bloomEffect: BloomEffect | undefined;
 
@@ -212,6 +216,11 @@ function resetPostProcess(instant = false): void {
 		TweenService.Create(camera, fovTi, { FieldOfView: baseFov }).Play();
 	}
 	shakeAmplitude = 0;
+}
+
+export function setTutorialActive(active: boolean): void {
+	tutorialActive = active;
+	if (active) stopClaimPulse();
 }
 
 // Called once at startup — all event listeners live here, gated by isGameActive
@@ -446,6 +455,7 @@ function stopClaimPulse(): void {
 // À appeler APRÈS la restauration de claimButton.Size dans setup(), sinon la taille
 // d'origine serait écrasée par une frame de pulse.
 function startClaimPulse(): void {
+	if (tutorialActive) return;
 	if (sessionClaimCount >= CLAIM_PULSE_RUNS) return;
 	if (!claimButton || !buttonOriginalSize) return;
 

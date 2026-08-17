@@ -8,6 +8,9 @@ local TutorialSkipButton = TS.import(script, script.Parent, "TutorialSkipButton"
 local TutorialTriggers = TS.import(script, script.Parent, "TutorialTriggers").TutorialTriggers
 local TutorialArrow = TS.import(script, script.Parent, "TutorialArrow").TutorialArrow
 local TutorialTargets = TS.import(script, script.Parent, "TutorialTargets").TutorialTargets
+local TutorialFocus = TS.import(script, script.Parent, "TutorialFocus").TutorialFocus
+local TutorialGate = TS.import(script, script.Parent, "TutorialGate").TutorialGate
+local setTutorialActive = TS.import(script, script.Parent.Parent, "behaviors", "RocketLaunchBehavior").setTutorialActive
 -- Orchestre le rendu du tutorial côté client. Le serveur publie l'étape courante dans
 -- l'attribut répliqué TutorialStep ("" = terminé) ; ce contrôleur la lit, monte la mise
 -- en scène du step, et remonte la complétion via TutorialAdvanceEvent.
@@ -22,6 +25,8 @@ local function clearStep()
 		teardown = nil
 	end
 	TutorialArrow:clear()
+	TutorialFocus:clear()
+	TutorialGate:unlock()
 	TutorialUI:hideBanner()
 end
 local function showStep(step)
@@ -35,6 +40,10 @@ local function showStep(step)
 		local gui = TutorialTargets:resolveGui(target.path)
 		if gui then
 			TutorialArrow:pointAtGui(gui)
+			if step.focus ~= nil then
+				TutorialFocus:apply(gui, step.focus)
+				TutorialGate:lockGui(gui)
+			end
 		else
 			warn(`TutorialController: cible GUI introuvable "{target.path}"`)
 		end
@@ -51,7 +60,15 @@ local function showStep(step)
 				return nil
 			end
 			TutorialArrow:pointAtWorld(part)
+			TutorialGate:lockPrompts(part)
 		end)
+	else
+		-- Steps sans cible (watch-launch, claim-explode) : rien à pointer, mais tout doit
+		-- rester verrouillé. C'est ce qui bloque "Go Home" pendant le step post-claim —
+		-- un clic chanceux dans la fenêtre de re-arm sauterait l'explosion que le tutorial
+		-- veut montrer — et empêche un claim prématuré avant le gel.
+		-- Le bouton Skip est explicitement épargné par lockGui.
+		TutorialGate:lockGui(nil)
 	end
 	-- La complétion est remontée au serveur, qui valide que c'est bien le step courant.
 	local stopWatching = TutorialTriggers:watch(step, function()
@@ -70,6 +87,7 @@ local function render()
 	if stepId == "" then
 		-- Tutorial terminé : on démonte tout, plus une seule connexion active.
 		clearStep()
+		setTutorialActive(false)
 		TutorialSkipButton:setVisible(false)
 		TutorialUI:destroy()
 		return nil
@@ -85,6 +103,7 @@ local function render()
 		TutorialSkipButton:setVisible(false)
 		return nil
 	end
+	setTutorialActive(true)
 	TutorialSkipButton:setVisible(true)
 	showStep(step)
 end

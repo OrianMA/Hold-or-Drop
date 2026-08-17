@@ -51,6 +51,9 @@ local claimPulseTween
 local claimPulseStroke
 local claimPulseStrokeTween
 local sessionClaimCount = 0
+-- Pendant le tutorial c'est lui qui met le bouton Claim en avant (TutorialFocus) : deux
+-- animations concurrentes sur le même bouton se battraient.
+local tutorialActive = false
 -- Lighting effects — created once in init()
 local bloomEffect
 -- Per-game state
@@ -231,8 +234,14 @@ local function resetPostProcess(instant)
 	end
 	shakeAmplitude = 0
 end
--- Called once at startup — all event listeners live here, gated by isGameActive
 local stopClaimPulse
+local function setTutorialActive(active)
+	tutorialActive = active
+	if active then
+		stopClaimPulse()
+	end
+end
+-- Called once at startup — all event listeners live here, gated by isGameActive
 local function init()
 	-- Précharge le son de cash pour que même le TOUT premier claim de la session soit
 	-- instantané (les suivants sont déjà en cache). 100 % client : aucune latence réseau.
@@ -473,6 +482,9 @@ end
 -- À appeler APRÈS la restauration de claimButton.Size dans setup(), sinon la taille
 -- d'origine serait écrasée par une frame de pulse.
 local function startClaimPulse()
+	if tutorialActive then
+		return nil
+	end
 	if sessionClaimCount >= CLAIM_PULSE_RUNS then
 		return nil
 	end
@@ -706,6 +718,7 @@ local function setup(inGameUI)
 	end)
 end
 return {
+	setTutorialActive = setTutorialActive,
 	init = init,
 	setup = setup,
 }
