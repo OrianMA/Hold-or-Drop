@@ -15,6 +15,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 		text: "Appuie sur START pour faire décoller ta fusée",
 		target: { kind: "gui", path: "ButtonMenu/StartButton" },
 		focus: "dim",
+		// Bandeau relevé (0.46→0.52) : StartButton commence à y 0.570, ça laisse 0.05 de marge.
+		textY: 0.46,
 		// Le run truqué est porté par le step DEPUIS lequel le décollage part.
 		run: {
 			freezeAt: 2.5,
@@ -55,6 +57,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 		text: "Achète Rocket Speed : ta fusée montera plus vite",
 		target: { kind: "gui", path: "ShopMenu/Body/ARocketSpeed" },
 		focus: "dim",
+		// Le panneau ShopMenu occupe y 0.150→0.885 : seule la bande au-dessus reste libre.
+		textY: 0.06,
 		complete: { kind: "attribute", attribute: "RocketSpeedLevel", increaseBy: 1 },
 	},
 	{

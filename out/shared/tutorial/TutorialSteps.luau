@@ -21,6 +21,7 @@ local TUTORIAL_STEPS = { {
 		path = "ButtonMenu/StartButton",
 	},
 	focus = "dim",
+	textY = 0.46,
 	run = {
 		freezeAt = 2.5,
 		advanceToOnFreeze = "claim",
@@ -82,6 +83,7 @@ local TUTORIAL_STEPS = { {
 		path = "ShopMenu/Body/ARocketSpeed",
 	},
 	focus = "dim",
+	textY = 0.06,
 	complete = {
 		kind = "attribute",
 		attribute = "RocketSpeedLevel",

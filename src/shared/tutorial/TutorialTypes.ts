@@ -47,4 +47,10 @@ export interface TutorialStep {
 	readonly focus?: TutorialFocus;
 	readonly run?: ScriptedRun;
 	readonly complete: TutorialTrigger;
+	// Bord SUPÉRIEUR du bandeau, en scale (0..1), dans le repère du ScreenGui du tutorial
+	// (voir TutorialUI.originOffset). Omis → défaut du module (TutorialUI.DEFAULT_BANNER_Y).
+	// Existe parce que la zone d'écran libre varie selon le step : un step dont la cible
+	// est un panneau plein écran n'en a presque plus. Voir le bloc de mesures dans
+	// TutorialUI.ts pour les rectangles occupés par chaque élément de jeu.
+	readonly textY?: number;
 }

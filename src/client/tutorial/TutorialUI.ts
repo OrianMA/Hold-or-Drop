@@ -8,6 +8,9 @@ const GUI_NAME = "TutorialUI";
 const IN_GAME_UI = "InGameUI";
 // Au-dessus de InGameUI (mesuré à DisplayOrder = 1).
 const DISPLAY_ORDER = 100;
+// Bord supérieur par défaut du bandeau, en scale — utilisé quand le step n'a pas de
+// TutorialStep.textY. Voir le bloc de mesures ci-dessous dans ensure().
+export const DEFAULT_BANNER_Y = 0.5;
 
 let screenGui: ScreenGui | undefined;
 let banner: Frame | undefined;
@@ -63,22 +66,35 @@ export const TutorialUI = {
 		// bas du bandeau touchait le bouton Start dès que la hauteur d'écran passait sous
 		// ~388 px.
 		//
-		// Bandes occupées par le jeu, mesurées dans Studio et exprimées en fractions :
-		//   MoneyParent   y 0.21→0.29  (sa LARGEUR dépend d'un UIAspectRatioConstraint,
-		//                               donc du viewport : seule sa bande verticale est fiable)
-		//   ButtonsFrame  x 0.013→0.24, y 0.31→0.75   (scale pur)
-		//   StartButton   y 0.505→0.605
-		//   Claim/Result  y 0.71→0.84
-		//   BottomList    y 0.855→0.945              (scale pur)
-		// Le bandeau se glisse dans le couloir libre entre Start et Claim : y 0.625→0.685,
-		// soit 0.02 de marge de chaque côté. Le milieu de l'écran est INTERDIT : c'est là que
-		// se projettent les cibles monde, donc la traînée de flèches (mesuré à y≈0.38 pour le
-		// bouton de la room) — un bandeau centré verticalement la recouvrait entièrement.
+		// Bandes occupées par le jeu, mesurées dans Studio et exprimées en fractions
+		// d'écran, DÉJÀ corrigées par originOffset() (repère du ScreenGui du tutorial, pas
+		// celui de InGameUI — une mesure prise dans le mauvais repère est précisément ce qui
+		// faisait chevaucher StartButton avant ce correctif) :
+		//   ButtonMenu/StartButton           y 0.570→0.670
+		//   ButtonMenu/QuitButton            y 0.750→0.850
+		//   RocketLaunch/MultiplierText      y 0.105→0.227
+		//   RocketLaunch/ClaimButtonFrame    y 0.771→0.908
+		//   RocketLaunch/ResultMultiplier    y 0.799→0.849
+		//   ButtonFinishGame/FinishText      y 0.110→0.190
+		//   ButtonFinishGame/MultiplierText  y 0.283→0.383
+		//   ButtonFinishGame/BaseCashText    y 0.748→0.848
+		//   ShopMenu (panneau entier)        y 0.150→0.885
+		//   HUD/MoneyParent                  y 0.211→0.289  (x 0.030→0.241 seulement)
+		//   HUD/BottomList                   y 0.855→0.945
+		// Le milieu de l'écran est INTERDIT par défaut : c'est là que se projettent les
+		// cibles monde, donc la traînée de flèches (mesuré à y≈0.38 pour le bouton de la
+		// room) — un bandeau centré verticalement la recouvrait entièrement. DEFAULT_BANNER_Y
+		// place donc le bandeau juste sous ce milieu (0.50→0.56), qui reste libre sur la
+		// plupart des steps.
+		// Certains steps n'ont pas cette chance (ex. buy-rocket-speed : le panneau ShopMenu
+		// couvre presque tout l'écran) ou ont une cible juste sous le milieu (ex. press-start :
+		// StartButton). Pour ceux-là, TutorialStep.textY (voir TutorialTypes.ts) fixe le bord
+		// supérieur du bandeau step par step ; setText() en tient compte.
 		// Largeur 0.46 centrée (x 0.27→0.73) pour laisser 3 points à la colonne ButtonsFrame.
-		// Ces trois nombres (Y, largeur, hauteur) sont les seuls leviers — les garder en
-		// scale, jamais en offset : un offset en pixels rend la marge dépendante du viewport.
+		// Position Y, largeur et hauteur sont les seuls leviers — les garder en scale, jamais
+		// en offset : un offset en pixels rend la marge dépendante du viewport.
 		frame.AnchorPoint = new Vector2(0.5, 0);
-		frame.Position = new UDim2(0.5, 0, 0.625, 0);
+		frame.Position = new UDim2(0.5, 0, DEFAULT_BANNER_Y, 0);
 		frame.Size = new UDim2(0.46, 0, 0.06, 0);
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20);
 		frame.BackgroundTransparency = 0.25;
@@ -126,11 +142,13 @@ export const TutorialUI = {
 		return originFrame ? originFrame.AbsolutePosition : new Vector2(0, 0);
 	},
 
-	setText(value: string): void {
+	setText(value: string, y?: number): void {
 		TutorialUI.ensure();
 		if (!banner || !label) return;
 		label.Text = value;
 		banner.Visible = value !== "";
+		const position = banner.Position;
+		banner.Position = new UDim2(position.X.Scale, position.X.Offset, y ?? DEFAULT_BANNER_Y, 0);
 	},
 
 	hideBanner(): void {

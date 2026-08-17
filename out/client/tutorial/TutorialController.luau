@@ -32,7 +32,7 @@ end
 local function showStep(step)
 	clearStep()
 	TutorialUI:ensure()
-	TutorialUI:setText(step.text)
+	TutorialUI:setText(step.text, step.textY)
 	-- Pointage. Le monde peut yielder (streaming) → task.spawn, et on vérifie que le
 	-- step n'a pas changé entre-temps avant d'afficher quoi que ce soit.
 	local target = step.target
