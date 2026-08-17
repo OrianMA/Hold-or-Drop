@@ -28,6 +28,7 @@ local MusicController = TS.import(script, script.Parent, "audio", "MusicControll
 local initUiClickSound = TS.import(script, script.Parent, "audio", "UiClickSound").init
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
+local initTutorial = TS.import(script, script.Parent, "tutorial", "TutorialController").init
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
 -- references each behavior caches at startup — leaving ButtonMenu and the rest
@@ -62,3 +63,4 @@ MusicController:init()
 initUiClickSound()
 initAudioVisualizer()
 initNeonPipePulse()
+initTutorial()

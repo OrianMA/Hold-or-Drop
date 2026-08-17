@@ -24,6 +24,7 @@ import { MusicController } from "./audio/MusicController";
 import { init as initUiClickSound } from "./audio/UiClickSound";
 import { init as initAudioVisualizer } from "./ui/AudioVisualizer";
 import { init as initNeonPipePulse } from "./ui/NeonPipePulse";
+import { init as initTutorial } from "./tutorial/TutorialController";
 
 // Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 // ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
@@ -60,3 +61,4 @@ MusicController.init();
 initUiClickSound();
 initAudioVisualizer();
 initNeonPipePulse();
+initTutorial();
