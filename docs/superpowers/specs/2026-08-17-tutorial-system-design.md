@@ -340,13 +340,64 @@ un step), et « rocket speed highlighted » + « player upgrades » sont deux fa
   veille pendant le tuto : le tuto pilote déjà la mise en avant du bouton, deux animations
   concurrentes sur le même bouton se battraient.
 - **Économie du step 7** : après le run guidé (gel à 2,5 s → multiplicateur ~×1,09) le joueur a
-  ~109 $ ; RocketSpeed niveau 1 coûte 75 $ → il peut en acheter **un**. Le step passe au 1er achat
-  et le step 8 ne bloque pas la boutique, donc rien n'empêche d'en acheter plus tard. Pour rendre 3
-  achats réellement atteignables il faudrait geler vers 12-15 s (~400 $) — pas retenu, le step
-  d'observation deviendrait long.
+  ~109 $. Les 2 premiers niveaux de RocketSpeed sont ramenés à **25 $ et 50 $** (§11), soit 75 $
+  pour les deux → il peut en acheter **deux** et sentir la différence dès le run suivant. Le step
+  passe au 1er achat et le step 8 ne bloque pas la boutique : le 2e achat se fait librement.
 - Après le step 8 le 2e run est **entièrement libre** : vrai risque, explosion aléatoire.
 
-## 11. Cheat
+## 11. Prix des 2 premiers niveaux de Rocket Speed
+
+Changement d'**économie**, pas de tuto : les 2 premières améliorations passent à **25 $ et 50 $**,
+puis la courbe actuelle reprend inchangée.
+
+| Niveau | Avant | Après |
+|---|---|---|
+| L0 → 1 | 75 $ | **25 $** |
+| L1 → 2 | 127 $ | **50 $** |
+| L2 → 3 | 216 $ | 216 $ (inchangé) |
+| L3 → 4 | 368 $ | 368 $ (inchangé) |
+
+**Implémentation** — un tableau d'exceptions, pas une nouvelle formule :
+
+```ts
+// shared/ShopBalance.ts
+export const ROCKET_SPEED = {
+  baseValue: 1,
+  startPrice: 75,
+  priceGrowth: 1.7,
+  // Prix imposés des premiers niveaux (index = niveau de départ). Au-delà du tableau,
+  // la courbe startPrice * priceGrowth ^ level reprend telle quelle. Onboarding : les
+  // 2 premières améliorations doivent tenir dans le gain du premier run (~109 $).
+  firstLevelPrices: [25, 50],
+};
+
+// shared/ShopConfig.ts — priceForLevel consulte le tableau avant la formule
+export function priceForLevel(stat: ShopStat, level: number): number {
+  const cfg = STATS[stat];
+  const override = cfg.firstLevelPrices?.[level];
+  if (override !== undefined) return override;
+  return math.floor(cfg.startPrice * cfg.priceGrowth ** level);
+}
+```
+
+`firstLevelPrices` devient un champ optionnel de `StatConfig` (les deux autres stats ne le
+définissent pas). Tout le reste passe déjà par `priceForLevel` — affichage client, validation
+serveur, `priceForItem` — donc **un seul point de vérité** et aucun risque de désaccord
+client/serveur.
+
+**Conséquences assumées**
+
+- Les niveaux resettant à chaque rebirth, les 2 premiers RocketSpeed sont **de nouveau à 25/50 $
+  après chaque rebirth**. C'est cohérent avec l'objectif de re-climb rapide du rééquilibrage du
+  2026-07-22 (le joueur ne doit pas passer son cycle à racheter l'existant).
+- La marche 50 $ → 216 $ se sent au 3e achat. C'est voulu : le mur de progression reste intact,
+  seul l'amorçage est offert.
+- **`tools/economy-sim.js` doit apprendre le tableau** : il relit `startPrice`/`priceGrowth` dans
+  `ShopBalance.ts` et réimplémente la formule, donc il faut y ajouter la lecture de
+  `firstLevelPrices` et l'override correspondant, puis relancer `node tools/economy-sim.js` pour
+  vérifier que les critères de balance passent toujours.
+
+## 12. Cheat
 
 Dans `CheatConfig.ts` :
 
@@ -361,7 +412,7 @@ Plus deux fonctions dev appelables depuis la barre de commande / `execute_luau`,
 `TutorialService.devGoto(player, stepId)` (saute à un step pour tester sa mise en scène sans
 refaire tout le tuto).
 
-## 12. Points de contact avec le jeu de base
+## 13. Points de contact avec le jeu de base
 
 | Fichier | Changement | Retour arrière |
 |---|---|---|
@@ -373,12 +424,16 @@ refaire tout le tuto).
 | `client/behaviors/RocketLaunchBehavior.ts` | pulse Claim en veille pendant le tuto | 1 condition |
 | `server/modules/CheatConfig.ts` | `forceTutorial` | 1 constante |
 | `shared/Event.ts` | `TutorialAdvanceEvent` | 1 déclaration |
-| `ARCHITECTURE.md` | nouvelle section tutorial (+ correction §6.8 : `BButtonMoney`/`ARocketSpeed`, périmé) | — |
+| `shared/ShopBalance.ts` | `ROCKET_SPEED.firstLevelPrices = [25, 50]` (§11) | 1 champ |
+| `shared/ShopConfig.ts` | `firstLevelPrices` dans `StatConfig` + `priceForLevel` (§11) | 3 lignes |
+| `tools/economy-sim.js` | lit + applique `firstLevelPrices` (§11) | ~5 lignes |
+| `ARCHITECTURE.md` | nouvelle section tutorial, prix RocketSpeed (§8), correction §6.8 (`BButtonMoney`/`ARocketSpeed`, périmé) | — |
 
 **Suppression du tuto** = supprimer les 3 dossiers `tutorial/` + révert de ce tableau. Aucun autre
-fichier n'importe quoi que ce soit du tuto, aucun `if (tutorial)` dispersé.
+fichier n'importe quoi que ce soit du tuto, aucun `if (tutorial)` dispersé. Le changement de prix
+(§11) est **indépendant du tuto** : il reste en place même si le tuto est retiré.
 
-## 13. Vérification
+## 14. Vérification
 
 Pas de framework de test dans le projet : validation en Studio (single-player, MCP
 `start_stop_play`), avec `forceTutorial = true` + `resetData = true`.
@@ -391,17 +446,21 @@ Checklist :
 3. La fusée se gèle à 2,5 s : moteur éteint, son coupé, **multiplicateur figé**.
 4. Le claim relance la fusée et l'explosion tombe **1 s après** (± un tick), pas avant.
 5. Le payout du run truqué crédite bien l'argent (chemin normal), et le montant affiché = crédité.
-6. Le step 7 passe au 1er achat de RocketSpeed ; le step 8 laisse la boutique utilisable.
-7. Step 8 : déclencher le bouton termine le tuto (`done`), et le 2e run a une explosion
+6. Le step 7 passe au 1er achat de RocketSpeed ; le step 8 laisse la boutique utilisable, et le
+   joueur a bien de quoi acheter le **2e** niveau (25 $ puis 50 $ affichés, et facturés, des deux
+   côtés).
+7. `node tools/economy-sim.js` passe toujours ses critères après le changement de prix (§11), et le
+   3e niveau est bien revenu à 216 $.
+8. Step 8 : déclencher le bouton termine le tuto (`done`), et le 2e run a une explosion
    **aléatoire** (le director est inerte).
-8. Relog en cours de tuto → reprise au même step, `elapsed` conservé, **même `runId`**.
-9. Skip → `done`, UI détruite, `TutorialSkip` masqué, prompts et boutons restaurés.
-10. Le Skip reste cliquable **pendant le run guidé** (il est hors du HUD, §6).
-11. `forceTutorial = false` + save `done` → **rien** ne s'affiche, `TutorialSkip` invisible, et un
+9. Relog en cours de tuto → reprise au même step, `elapsed` conservé, **même `runId`**.
+10. Skip → `done`, UI détruite, `TutorialSkip` masqué, prompts et boutons restaurés.
+11. Le Skip reste cliquable **pendant le run guidé** (il est hors du HUD, §6).
+12. `forceTutorial = false` + save `done` → **rien** ne s'affiche, `TutorialSkip` invisible, et un
     run normal retrouve un `explosionAt` aléatoire (hook inerte).
-12. Mobile : bandeau lisible, flèches visibles, cible cliquable, dim non bloquant sur la cible.
-13. Deux joueurs simultanés, l'un en tuto l'autre non : aucune interférence (état par joueur, gel
+13. Mobile : bandeau lisible, flèches visibles, cible cliquable, dim non bloquant sur la cible.
+14. Deux joueurs simultanés, l'un en tuto l'autre non : aucune interférence (état par joueur, gel
     d'une room n'affecte pas l'autre).
-14. Analytics : les 4 compteurs + le funnel partent (vérifiables via un `print` de debug — le
+15. Analytics : les 4 compteurs + le funnel partent (vérifiables via un `print` de debug — le
     dashboard Roblox ne montre rien en Play Solo et met ~24 h, §6.19 d'`ARCHITECTURE.md`). Un tuto
     complété ne logge **jamais** `TutorialSkipped`, et inversement.
