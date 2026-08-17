@@ -26,6 +26,10 @@ local states = {}
 -- Seuls les joueurs dont le load a réussi sont sauvegardables — un échec transitoire
 -- ne doit jamais écraser une progression existante.
 local loadedPlayers = {}
+-- Appelé quand le tutorial se termine, pour qu'un run truqué encore en vol puisse se
+-- conclure (sinon une fusée sans risque volerait indéfiniment). Enregistré par
+-- TutorialRunDirector — un callback plutôt qu'un import, pour éviter un cycle de require.
+local runAbortHandler
 local function keyFor(player)
 	return `Player_{player.UserId}`
 end
@@ -135,6 +139,9 @@ local function finishTutorial(player, state, skipped)
 	state.done = true
 	state.step = ""
 	publish(player, "")
+	if runAbortHandler ~= nil then
+		runAbortHandler(player)
+	end
 	savePlayer(player)
 end
 -- Avance d'exactement un step (ou termine si c'était le dernier).
@@ -303,6 +310,9 @@ TutorialService = {
 			return nil
 		end
 		finishTutorial(player, state, skipped)
+	end,
+	setRunAbortHandler = function(self, handler)
+		runAbortHandler = handler
 	end,
 	devRestart = function(self, player)
 		local _object = table.clone(freshSave())

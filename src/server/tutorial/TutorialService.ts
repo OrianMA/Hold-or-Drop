@@ -33,6 +33,11 @@ const states = new Map<Player, TutorialState>();
 // ne doit jamais écraser une progression existante.
 const loadedPlayers = new Set<Player>();
 
+// Appelé quand le tutorial se termine, pour qu'un run truqué encore en vol puisse se
+// conclure (sinon une fusée sans risque volerait indéfiniment). Enregistré par
+// TutorialRunDirector — un callback plutôt qu'un import, pour éviter un cycle de require.
+let runAbortHandler: ((player: Player) => void) | undefined;
+
 function keyFor(player: Player): string {
 	return `Player_${player.UserId}`;
 }
@@ -115,6 +120,7 @@ function finishTutorial(player: Player, state: TutorialState, skipped: boolean):
 	state.done = true;
 	state.step = "";
 	publish(player, "");
+	if (runAbortHandler !== undefined) runAbortHandler(player);
 	savePlayer(player);
 }
 
@@ -250,6 +256,11 @@ export const TutorialService = {
 		const state = states.get(player);
 		if (!state || state.done) return;
 		finishTutorial(player, state, skipped);
+	},
+
+	// Enregistre le handler d'annulation de run truqué (voir runAbortHandler).
+	setRunAbortHandler(handler: (player: Player) => void): void {
+		runAbortHandler = handler;
 	},
 
 	// ── Dev (barre de commande / execute_luau) ────────────────────────────────

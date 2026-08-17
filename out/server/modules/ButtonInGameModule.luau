@@ -12,6 +12,7 @@ local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptServi
 local AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService").AnalyticsService
 local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
 local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
+local TutorialHooks = TS.import(script, game:GetService("ServerScriptService"), "TS", "tutorial", "TutorialHooks").TutorialHooks
 local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RocketGameConfig")
 local RISK_RAMP_DURATION = _RocketGameConfig.RISK_RAMP_DURATION
 local MULTIPLIER_TICK_RATE = _RocketGameConfig.MULTIPLIER_TICK_RATE
@@ -151,6 +152,10 @@ local function startButtonGame(player, session)
 	-- Preload the "chance" at launch: precompute the exact instant the rocket will
 	-- explode (tick-aligned, same distribution as the old per-tick roll). The run then
 	-- fires the explosion at this scheduled moment — no per-tick RNG, no discovery delay.
+	-- Tutorial : si le step courant impose un scénario (gel, explosion programmée), le
+	-- director le joue et fournit la deadline d'explosion — qu'il peut réécrire au claim.
+	-- undefined hors tutorial → comportement normal intégral.
+	local scripted = TutorialHooks:beginRun(player, room)
 	-- invincible ⇒ never explodes.
 	local explosionAt = if invincible then math.huge else rollExplosionTime(riskParams)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
@@ -174,6 +179,10 @@ local function startButtonGame(player, session)
 		claimed = true
 		claimedMultiplier = currentMultiplier
 		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier)
+		local _result = scripted
+		if _result ~= nil then
+			_result.onClaim()
+		end
 		-- Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
 		AnalyticsService:custom(player, "RunClaimed", claimedMultiplier)
 		AnalyticsService:runStep(player, runId, 2, "Claim")
@@ -230,15 +239,17 @@ local function startButtonGame(player, session)
 	task.spawn(function()
 		local timeHeld = 0
 		while isActive do
+			-- La deadline est relue à CHAQUE tour : le tutorial la réécrit au claim.
+			local deadline = if scripted ~= nil then scripted.explosionAt() else explosionAt
 			-- Avance jusqu'au prochain pas sans jamais dépasser l'instant d'explosion
-			-- précalculé → l'explosion tombe pile à `explosionAt`.
-			local nextStep = math.min(timeHeld + TICK_RATE, explosionAt)
+			-- précalculé → l'explosion tombe pile à l'heure.
+			local nextStep = math.min(timeHeld + TICK_RATE, deadline)
 			task.wait(nextStep - timeHeld)
 			if not isActive then
 				break
 			end
 			timeHeld = nextStep
-			if not invincible and timeHeld >= explosionAt then
+			if not invincible and timeHeld >= deadline then
 				isActive = false
 				claimConn:Disconnect()
 				goHomeConn:Disconnect()

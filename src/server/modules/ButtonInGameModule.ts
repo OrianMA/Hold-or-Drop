@@ -8,6 +8,7 @@ import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { AnalyticsService } from "server/services/AnalyticsService";
 import { RocketLauncher } from "server/modules/RocketLauncher";
 import { RocketPlacer } from "server/modules/RocketPlacer";
+import { TutorialHooks } from "server/tutorial/TutorialHooks";
 import {
 	RISK_RAMP_DURATION,
 	MULTIPLIER_TICK_RATE,
@@ -160,6 +161,11 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// Preload the "chance" at launch: precompute the exact instant the rocket will
 	// explode (tick-aligned, same distribution as the old per-tick roll). The run then
 	// fires the explosion at this scheduled moment — no per-tick RNG, no discovery delay.
+	// Tutorial : si le step courant impose un scénario (gel, explosion programmée), le
+	// director le joue et fournit la deadline d'explosion — qu'il peut réécrire au claim.
+	// undefined hors tutorial → comportement normal intégral.
+	const scripted = TutorialHooks.beginRun(player, room);
+
 	// invincible ⇒ never explodes.
 	const explosionAt = invincible ? math.huge : rollExplosionTime(riskParams);
 
@@ -185,6 +191,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		claimed = true;
 		claimedMultiplier = currentMultiplier; // valeur autoritative exacte au moment du claim
 		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier);
+		scripted?.onClaim(); // tutorial : relance la fusée gelée + programme l'explosion
 
 		// Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
 		AnalyticsService.custom(player, "RunClaimed", claimedMultiplier);
@@ -246,15 +253,17 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		let timeHeld = 0;
 
 		while (isActive) {
+			// La deadline est relue à CHAQUE tour : le tutorial la réécrit au claim.
+			const deadline = scripted !== undefined ? scripted.explosionAt() : explosionAt;
 			// Avance jusqu'au prochain pas sans jamais dépasser l'instant d'explosion
-			// précalculé → l'explosion tombe pile à `explosionAt`.
-			const nextStep = math.min(timeHeld + TICK_RATE, explosionAt);
+			// précalculé → l'explosion tombe pile à l'heure.
+			const nextStep = math.min(timeHeld + TICK_RATE, deadline);
 			task.wait(nextStep - timeHeld);
 			if (!isActive) break;
 
 			timeHeld = nextStep;
 
-			if (!invincible && timeHeld >= explosionAt) {
+			if (!invincible && timeHeld >= deadline) {
 				isActive = false;
 				claimConn.Disconnect();
 				goHomeConn.Disconnect(); // la fusée explose : plus de retour à la base possible
