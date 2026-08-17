@@ -1,0 +1,12 @@
+-- Compiled with roblox-ts v3.0.0
+-- Types du système de tutorial. Données pures : aucun import serveur/client, pour que
+-- les deux côtés lisent la même liste de steps (shared/tutorial/TutorialSteps.ts).
+-- Cibles monde adressables par un step (résolues côté client).
+-- Frames de InGameUI dont l'ouverture/fermeture peut valider un step.
+-- Events serveur → client existants que le client sait déjà écouter.
+-- Comment la cible est mise en avant :
+--   "dim"       → overlay sombre troué + blocage (menus : la vue 3D n'a pas d'importance)
+--   "highlight" → contour pulsé, SANS assombrir (steps en vol : la fusée doit rester visible)
+--   absent      → aucune mise en avant (steps monde : on pointe, on ne masque rien)
+-- Scénario imposé au run lancé depuis un step. Lu UNE fois, au décollage.
+return nil
