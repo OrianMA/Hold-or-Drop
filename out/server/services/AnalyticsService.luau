@@ -60,6 +60,13 @@ local function buildFields(...)
 end
 -- Onboarding steps already sent this session (per player) — a step is logged at most once.
 local onboardingSent = {}
+-- One funnel step, whatever the funnel. pcall'd: throttled analytics must never break
+-- gameplay.
+local function logFunnelStep(player, funnelName, sessionId, step, stepName)
+	pcall(function()
+		return RobloxAnalytics:LogFunnelStepEvent(player, funnelName, sessionId, step, stepName)
+	end)
+end
 local AnalyticsService
 AnalyticsService = {
 	init = function(self)
@@ -92,10 +99,11 @@ AnalyticsService = {
 		end)
 		return if ok then id else `{tick()}`
 	end,
+	funnelStep = function(self, player, funnelName, sessionId, step, stepName)
+		logFunnelStep(player, funnelName, sessionId, step, stepName)
+	end,
 	runStep = function(self, player, runId, step, stepName)
-		pcall(function()
-			return RobloxAnalytics:LogFunnelStepEvent(player, "CoreRun", runId, step, stepName)
-		end)
+		logFunnelStep(player, "CoreRun", runId, step, stepName)
 	end,
 	onboardingStep = function(self, player, step, stepName)
 		if not PlayerProgressionService:isFirstSession(player) then

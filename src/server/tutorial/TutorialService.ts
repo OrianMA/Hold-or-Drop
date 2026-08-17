@@ -3,6 +3,7 @@ import { Events } from "shared/Event";
 import { TutorialStep } from "shared/tutorial/TutorialTypes";
 import { TUTORIAL_STEPS, firstStepId, stepById, stepIndexById } from "shared/tutorial/TutorialSteps";
 import { forceTutorial } from "server/modules/CheatConfig";
+import { TutorialAnalytics } from "./TutorialAnalytics";
 
 // État du tutorial par joueur. Le SERVEUR est la source de vérité de l'étape courante :
 // il la publie via l'attribut répliqué `TutorialStep` (le client ne fait que lire et
@@ -96,10 +97,20 @@ function enterStep(player: Player, state: TutorialState, stepId: string): void {
 	state.step = stepId;
 	state.stepEnteredAt = os.time();
 	publish(player, stepId);
+	const index = stepIndexById(stepId);
+	if (index !== undefined) TutorialAnalytics.stepEntered(player, state.runId, index, stepId);
 }
 
-function finishTutorial(player: Player, state: TutorialState): void {
-	closeStep(state);
+// `skipped` distingue les deux fins : un tutorial complété ne logge JAMAIS
+// TutorialSkipped, et inversement.
+function finishTutorial(player: Player, state: TutorialState, skipped: boolean): void {
+	const lastStep = state.step;
+	const spent = closeStep(state);
+	if (skipped) TutorialAnalytics.skipped(player, lastStep, state.elapsed);
+	else {
+		TutorialAnalytics.stepDone(player, lastStep, spent);
+		TutorialAnalytics.completed(player, state.runId, state.elapsed);
+	}
 	state.done = true;
 	state.step = "";
 	publish(player, "");
@@ -110,14 +121,16 @@ function finishTutorial(player: Player, state: TutorialState): void {
 function advanceOne(player: Player, state: TutorialState): void {
 	const index = stepIndexById(state.step);
 	if (index === undefined) {
-		finishTutorial(player, state);
+		finishTutorial(player, state, false);
 		return;
 	}
-	closeStep(state);
+	const leaving = state.step;
+	const spent = closeStep(state);
+	TutorialAnalytics.stepDone(player, leaving, spent);
 
 	const nextIndex = index + 1;
 	if (nextIndex >= TUTORIAL_STEPS.size()) {
-		finishTutorial(player, state);
+		finishTutorial(player, state, false);
 		return;
 	}
 	enterStep(player, state, TUTORIAL_STEPS[nextIndex].id);
@@ -146,6 +159,12 @@ function setupPlayer(player: Player): void {
 	const state: TutorialState = { ...resolved, stepEnteredAt: os.time() };
 	states.set(player, state);
 	publish(player, state.step);
+
+	// "Resumed" = le joueur reprend un tutorial commencé dans une session précédente.
+	const resumed = state.step !== firstStepId() || state.elapsed > 0;
+	TutorialAnalytics.started(player, resumed);
+	const index = stepIndexById(state.step);
+	if (index !== undefined) TutorialAnalytics.stepEntered(player, state.runId, index, state.step);
 }
 
 export const TutorialService = {
@@ -226,10 +245,10 @@ export const TutorialService = {
 		}
 	},
 
-	finish(player: Player, _skipped: boolean): void {
+	finish(player: Player, skipped: boolean): void {
 		const state = states.get(player);
 		if (!state || state.done) return;
-		finishTutorial(player, state);
+		finishTutorial(player, state, skipped);
 	},
 
 	// ── Dev (barre de commande / execute_luau) ────────────────────────────────
@@ -237,7 +256,7 @@ export const TutorialService = {
 		const state: TutorialState = { ...freshSave(), stepEnteredAt: os.time() };
 		states.set(player, state);
 		loadedPlayers.add(player);
-		publish(player, state.step);
+		enterStep(player, state, state.step);
 		savePlayer(player);
 	},
 

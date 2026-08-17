@@ -53,6 +53,18 @@ function buildFields(...values: Array<string | number | undefined>): object | un
 // Onboarding steps already sent this session (per player) — a step is logged at most once.
 const onboardingSent = new Map<Player, Set<number>>();
 
+// One funnel step, whatever the funnel. pcall'd: throttled analytics must never break
+// gameplay.
+function logFunnelStep(
+	player: Player,
+	funnelName: string,
+	sessionId: string,
+	step: number,
+	stepName: string,
+): void {
+	pcall(() => RobloxAnalytics.LogFunnelStepEvent(player, funnelName, sessionId, step, stepName));
+}
+
 export const AnalyticsService = {
 	init(): void {
 		const onJoin = (player: Player): void => {
@@ -78,8 +90,13 @@ export const AnalyticsService = {
 		return ok ? (id as string) : `${tick()}`;
 	},
 
+	// Generic funnel (any funnel name) — used by the tutorial.
+	funnelStep(player: Player, funnelName: string, sessionId: string, step: number, stepName: string): void {
+		logFunnelStep(player, funnelName, sessionId, step, stepName);
+	},
+
 	runStep(player: Player, runId: string, step: number, stepName: string): void {
-		pcall(() => RobloxAnalytics.LogFunnelStepEvent(player, "CoreRun", runId, step, stepName));
+		logFunnelStep(player, "CoreRun", runId, step, stepName);
 	},
 
 	// ── Onboarding funnel (first-session players only, each step once) ───────────

@@ -11,6 +11,7 @@ local firstStepId = _TutorialSteps.firstStepId
 local stepById = _TutorialSteps.stepById
 local stepIndexById = _TutorialSteps.stepIndexById
 local forceTutorial = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").forceTutorial
+local TutorialAnalytics = TS.import(script, game:GetService("ServerScriptService"), "TS", "tutorial", "TutorialAnalytics").TutorialAnalytics
 -- État du tutorial par joueur. Le SERVEUR est la source de vérité de l'étape courante :
 -- il la publie via l'attribut répliqué `TutorialStep` (le client ne fait que lire et
 -- rendre), la persiste dans son propre store et l'avance sur signal client.
@@ -114,9 +115,22 @@ local function enterStep(player, state, stepId)
 	state.step = stepId
 	state.stepEnteredAt = os.time()
 	publish(player, stepId)
+	local index = stepIndexById(stepId)
+	if index ~= nil then
+		TutorialAnalytics:stepEntered(player, state.runId, index, stepId)
+	end
 end
-local function finishTutorial(player, state)
-	closeStep(state)
+-- `skipped` distingue les deux fins : un tutorial complété ne logge JAMAIS
+-- TutorialSkipped, et inversement.
+local function finishTutorial(player, state, skipped)
+	local lastStep = state.step
+	local spent = closeStep(state)
+	if skipped then
+		TutorialAnalytics:skipped(player, lastStep, state.elapsed)
+	else
+		TutorialAnalytics:stepDone(player, lastStep, spent)
+		TutorialAnalytics:completed(player, state.runId, state.elapsed)
+	end
 	state.done = true
 	state.step = ""
 	publish(player, "")
@@ -126,13 +140,15 @@ end
 local function advanceOne(player, state)
 	local index = stepIndexById(state.step)
 	if index == nil then
-		finishTutorial(player, state)
+		finishTutorial(player, state, false)
 		return nil
 	end
-	closeStep(state)
+	local leaving = state.step
+	local spent = closeStep(state)
+	TutorialAnalytics:stepDone(player, leaving, spent)
 	local nextIndex = index + 1
 	if nextIndex >= #TUTORIAL_STEPS then
-		finishTutorial(player, state)
+		finishTutorial(player, state, false)
 		return nil
 	end
 	enterStep(player, state, TUTORIAL_STEPS[nextIndex + 1].id)
@@ -169,6 +185,13 @@ local function setupPlayer(player)
 	local _player = player
 	states[_player] = state
 	publish(player, state.step)
+	-- "Resumed" = le joueur reprend un tutorial commencé dans une session précédente.
+	local resumed = state.step ~= firstStepId() or state.elapsed > 0
+	TutorialAnalytics:started(player, resumed)
+	local index = stepIndexById(state.step)
+	if index ~= nil then
+		TutorialAnalytics:stepEntered(player, state.runId, index, state.step)
+	end
 end
 local TutorialService
 TutorialService = {
@@ -272,13 +295,13 @@ TutorialService = {
 			end
 		end
 	end,
-	finish = function(self, player, _skipped)
+	finish = function(self, player, skipped)
 		local _player = player
 		local state = states[_player]
 		if not state or state.done then
 			return nil
 		end
-		finishTutorial(player, state)
+		finishTutorial(player, state, skipped)
 	end,
 	devRestart = function(self, player)
 		local _object = table.clone(freshSave())
@@ -289,7 +312,7 @@ TutorialService = {
 		states[_player] = state
 		local _player_1 = player
 		loadedPlayers[_player_1] = true
-		publish(player, state.step)
+		enterStep(player, state, state.step)
 		savePlayer(player)
 	end,
 	devGoto = function(self, player, stepId)
