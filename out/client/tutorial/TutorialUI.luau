@@ -47,12 +47,19 @@ TutorialUI = {
 		screenGui = gui
 		local frame = Instance.new("Frame")
 		frame.Name = "InstructionBanner"
-		-- Positionner le bandeau dans la bande libre y ∈ [0.147, 0.505] (viewport-relatif)
-		-- pour éviter le HUD du jeu (multipliers, barre de progression) et les éléments
-		-- popup (boutons Claim/Start). 0.22 = ~199px sur un viewport de 905px de hauteur.
+		-- Placement mesuré dans Studio (viewport 1627x905) pour ne recouvrir AUCUN élément
+		-- du jeu, run en cours ou pas :
+		--   • verticalement, la bande y ∈ [0.22, 0.29] passe sous le MultiplierText
+		--     (y 36→147) et au-dessus des boutons Start (457) / Claim (639) et de
+		--     HUD/BottomList (715→797) ;
+		--   • horizontalement, la colonne gauche du HUD (MoneyParent puis ButtonsFrame /
+		--     Rebirth) occupe x 21→390 de y 122 à 620 — d'où une largeur de 0.52 centrée
+		--     (x 390→1236 ici) plutôt que pleine largeur.
+		-- Ces deux nombres sont les seuls leviers de placement : les retoucher ne demande
+		-- aucun autre changement.
 		frame.AnchorPoint = Vector2.new(0.5, 0)
 		frame.Position = UDim2.new(0.5, 0, 0.22, 0)
-		frame.Size = UDim2.new(0.9, 0, 0, 64)
+		frame.Size = UDim2.new(0.52, 0, 0, 64)
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
 		frame.BackgroundTransparency = 0.25
 		frame.BorderSizePixel = 0
