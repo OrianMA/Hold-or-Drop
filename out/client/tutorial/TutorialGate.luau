@@ -6,6 +6,12 @@ local TutorialUI = TS.import(script, script.Parent, "TutorialUI").TutorialUI
 -- l'UX, pas de la sécurité (le tutorial ne donne rien de plus que le jeu normal, et le
 -- serveur valide de toute façon chaque action).
 --
+-- Division des responsabilités avec TutorialFocus : le dim MONTRE (assombrit, purement
+-- visuel, Active = false), TutorialGate BLOQUE (Interactable = false sur tout GuiButton
+-- hors cible/Skip). C'est l'UNIQUE mécanisme de blocage — ne pas réintroduire de frame
+-- "Active = true" dans TutorialFocus pour ça, ça repasserait au-dessus du bouton Skip
+-- (TutorialUI est à DisplayOrder 100, au-dessus de InGameUI) et le rendrait injoignable.
+--
 -- L'état d'origine de chaque instance touchée est mémorisé et restauré — jamais de
 -- valeur "par défaut" réécrite à l'aveugle.
 local lockedButtons = {}

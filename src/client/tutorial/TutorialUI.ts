@@ -12,14 +12,15 @@ const DISPLAY_ORDER = 100;
 let screenGui: ScreenGui | undefined;
 let banner: Frame | undefined;
 let label: TextLabel | undefined;
+let originFrame: Frame | undefined;
 
 function playerGui(): PlayerGui {
 	return Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui;
 }
 
 export const TutorialUI = {
-	// Le ScreenGui du jeu — sert de référence de coordonnées (même GuiInset) et de
-	// racine pour résoudre les cibles GUI.
+	// Le ScreenGui du jeu — racine pour résoudre les cibles GUI. Son repère de
+	// coordonnées N'EST PAS celui de TutorialUI (voir originOffset ci-dessous).
 	getInGameUI(): ScreenGui | undefined {
 		const found = playerGui().FindFirstChild(IN_GAME_UI);
 		return found?.IsA("ScreenGui") ? found : undefined;
@@ -37,6 +38,21 @@ export const TutorialUI = {
 		gui.IgnoreGuiInset = TutorialUI.getInGameUI()?.IgnoreGuiInset ?? false;
 		gui.Parent = playerGui();
 		screenGui = gui;
+
+		// Repère de coordonnées de CE ScreenGui. InGameUI et TutorialUI n'ont pas la même
+		// origine (mesuré en Studio : InGameUI.HUD rapporte AbsolutePosition.Y = -58 alors
+		// que TutorialUI démarre à 0) — aligner IgnoreGuiInset ne corrige pas cet écart.
+		// Ce cadre plein écran, transparent et non-interactif sert uniquement à lire son
+		// AbsolutePosition : soustraire cette valeur convertit un point du repère de
+		// InGameUI vers celui de TutorialUI, quelle qu'en soit la cause sur l'appareil.
+		const origin = new Instance("Frame");
+		origin.Name = "TutorialOrigin";
+		origin.Size = new UDim2(1, 0, 1, 0);
+		origin.Position = new UDim2(0, 0, 0, 0);
+		origin.BackgroundTransparency = 1;
+		origin.Active = false;
+		origin.Parent = gui;
+		originFrame = origin;
 
 		const frame = new Instance("Frame");
 		frame.Name = "InstructionBanner";
@@ -101,6 +117,15 @@ export const TutorialUI = {
 		return gui;
 	},
 
+	// Décalage entre le repère de InGameUI et celui de TutorialUI, à soustraire de tout
+	// AbsolutePosition lu dans InGameUI avant de l'utiliser dans TutorialUI. Recréé si le
+	// ScreenGui a été reconstruit, donc à appeler à chaque fois (jamais mise en cache par
+	// l'appelant) — voir la note sur la boucle par frame dans TutorialFocus.
+	originOffset(): Vector2 {
+		TutorialUI.ensure();
+		return originFrame ? originFrame.AbsolutePosition : new Vector2(0, 0);
+	},
+
 	setText(value: string): void {
 		TutorialUI.ensure();
 		if (!banner || !label) return;
@@ -117,5 +142,6 @@ export const TutorialUI = {
 		screenGui = undefined;
 		banner = undefined;
 		label = undefined;
+		originFrame = undefined;
 	},
 };

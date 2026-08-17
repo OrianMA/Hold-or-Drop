@@ -11,6 +11,7 @@ local DISPLAY_ORDER = 100
 local screenGui
 local banner
 local label
+local originFrame
 local function playerGui()
 	return Players.LocalPlayer:WaitForChild("PlayerGui")
 end
@@ -45,6 +46,20 @@ TutorialUI = {
 		gui.IgnoreGuiInset = _condition
 		gui.Parent = playerGui()
 		screenGui = gui
+		-- Repère de coordonnées de CE ScreenGui. InGameUI et TutorialUI n'ont pas la même
+		-- origine (mesuré en Studio : InGameUI.HUD rapporte AbsolutePosition.Y = -58 alors
+		-- que TutorialUI démarre à 0) — aligner IgnoreGuiInset ne corrige pas cet écart.
+		-- Ce cadre plein écran, transparent et non-interactif sert uniquement à lire son
+		-- AbsolutePosition : soustraire cette valeur convertit un point du repère de
+		-- InGameUI vers celui de TutorialUI, quelle qu'en soit la cause sur l'appareil.
+		local origin = Instance.new("Frame")
+		origin.Name = "TutorialOrigin"
+		origin.Size = UDim2.new(1, 0, 1, 0)
+		origin.Position = UDim2.new(0, 0, 0, 0)
+		origin.BackgroundTransparency = 1
+		origin.Active = false
+		origin.Parent = gui
+		originFrame = origin
 		local frame = Instance.new("Frame")
 		frame.Name = "InstructionBanner"
 		-- Placement ENTIÈREMENT en scale — position ET taille — pour que le rectangle occupe
@@ -102,6 +117,10 @@ TutorialUI = {
 		textSize.Parent = text
 		return gui
 	end,
+	originOffset = function(self)
+		TutorialUI:ensure()
+		return if originFrame then originFrame.AbsolutePosition else Vector2.new(0, 0)
+	end,
 	setText = function(self, value)
 		TutorialUI:ensure()
 		if not banner or not label then
@@ -122,6 +141,7 @@ TutorialUI = {
 		screenGui = nil
 		banner = nil
 		label = nil
+		originFrame = nil
 	end,
 }
 return {

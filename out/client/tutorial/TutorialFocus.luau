@@ -3,9 +3,13 @@ local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_incl
 local RunService = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").RunService
 local TutorialUI = TS.import(script, script.Parent, "TutorialUI").TutorialUI
 -- Mise en avant d'une cible GUI.
---   "dim"       → 4 frames autour du rectangle de la cible : la cible reste CLIQUABLE
---                 (rien par-dessus), tout le reste est couvert par des frames qui
---                 absorbent l'input (Active = true).
+--   "dim"       → 4 frames autour du rectangle de la cible : la cible reste visible,
+--                 tout le reste est assombri. PUREMENT VISUEL (Active = false) : le
+--                 dim MONTRE où regarder, il ne bloque plus rien — c'est TutorialGate
+--                 (lockGui) qui est l'unique mécanisme de blocage de l'input. Ne pas
+--                 repasser Active à true en pensant "restaurer" un blocage : il n'y en
+--                 a jamais eu ici, et ça recouvrirait le bouton Skip (DisplayOrder 100
+--                 de TutorialUI est au-dessus de InGameUI).
 --   "highlight" → contour pulsé sur la cible, SANS assombrir (steps en vol : la fusée
 --                 doit rester visible). On ne touche JAMAIS à la taille de la cible :
 --                 une interruption laisserait le GUI du jeu déformé.
@@ -26,7 +30,7 @@ local function makeDimFrame(parent)
 	frame.BackgroundColor3 = DIM_COLOR
 	frame.BackgroundTransparency = DIM_TRANSPARENCY
 	frame.BorderSizePixel = 0
-	frame.Active = true
+	frame.Active = false
 	frame.Parent = parent
 	return frame
 end
@@ -35,7 +39,13 @@ local function layoutDim(target)
 	if #dimFrames < 4 then
 		return nil
 	end
-	local pos = target.AbsolutePosition
+	-- La cible vit dans InGameUI, les bandes dans TutorialUI : deux ScreenGuis, deux
+	-- repères de coordonnées différents (voir TutorialUI.originOffset). On lit l'offset
+	-- à CHAQUE appel plutôt que de le mettre en cache — l'appel se fait déjà à chaque
+	-- frame (voir RenderStepped ci-dessous), donc toute reconstruction de TutorialUI
+	-- (cadre de référence recréé) est automatiquement suivie.
+	local origin = TutorialUI:originOffset()
+	local pos = target.AbsolutePosition - origin
 	local size = target.AbsoluteSize
 	-- haut
 	dimFrames[1].Position = UDim2.new(0, 0, 0, 0)

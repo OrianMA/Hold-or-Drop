@@ -3,9 +3,13 @@ import { TutorialFocus as FocusMode } from "shared/tutorial/TutorialTypes";
 import { TutorialUI } from "./TutorialUI";
 
 // Mise en avant d'une cible GUI.
-//   "dim"       → 4 frames autour du rectangle de la cible : la cible reste CLIQUABLE
-//                 (rien par-dessus), tout le reste est couvert par des frames qui
-//                 absorbent l'input (Active = true).
+//   "dim"       → 4 frames autour du rectangle de la cible : la cible reste visible,
+//                 tout le reste est assombri. PUREMENT VISUEL (Active = false) : le
+//                 dim MONTRE où regarder, il ne bloque plus rien — c'est TutorialGate
+//                 (lockGui) qui est l'unique mécanisme de blocage de l'input. Ne pas
+//                 repasser Active à true en pensant "restaurer" un blocage : il n'y en
+//                 a jamais eu ici, et ça recouvrirait le bouton Skip (DisplayOrder 100
+//                 de TutorialUI est au-dessus de InGameUI).
 //   "highlight" → contour pulsé sur la cible, SANS assombrir (steps en vol : la fusée
 //                 doit rester visible). On ne touche JAMAIS à la taille de la cible :
 //                 une interruption laisserait le GUI du jeu déformé.
@@ -29,7 +33,7 @@ function makeDimFrame(parent: Instance): Frame {
 	frame.BackgroundColor3 = DIM_COLOR;
 	frame.BackgroundTransparency = DIM_TRANSPARENCY;
 	frame.BorderSizePixel = 0;
-	frame.Active = true; // absorbe les clics
+	frame.Active = false; // purement visuel — TutorialGate.lockGui bloque l'input
 	frame.Parent = parent;
 	return frame;
 }
@@ -37,7 +41,13 @@ function makeDimFrame(parent: Instance): Frame {
 // Place les 4 bandes autour du rectangle (x, y, w, h) de la cible.
 function layoutDim(target: GuiObject): void {
 	if (dimFrames.size() < 4) return;
-	const pos = target.AbsolutePosition;
+	// La cible vit dans InGameUI, les bandes dans TutorialUI : deux ScreenGuis, deux
+	// repères de coordonnées différents (voir TutorialUI.originOffset). On lit l'offset
+	// à CHAQUE appel plutôt que de le mettre en cache — l'appel se fait déjà à chaque
+	// frame (voir RenderStepped ci-dessous), donc toute reconstruction de TutorialUI
+	// (cadre de référence recréé) est automatiquement suivie.
+	const origin = TutorialUI.originOffset();
+	const pos = target.AbsolutePosition.sub(origin);
 	const size = target.AbsoluteSize;
 
 	// haut
