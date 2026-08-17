@@ -38,6 +38,9 @@ export interface StatConfig {
 	readonly levelAttribute: string;
 	readonly startPrice: number; // price of the very first level (level 0 → 1)
 	readonly priceGrowth: number; // multiplicateur de prix par niveau (propre à la stat)
+	// Prix imposés des premiers niveaux (index = niveau de départ) ; au-delà, la formule
+	// reprend. Sert l'onboarding — voir ShopBalance.ROCKET_SPEED.firstLevelPrices.
+	readonly firstLevelPrices?: readonly number[];
 	readonly maxLevel?: number; // inclusive cap; undefined = uncapped
 	// Effective value at a given level. Property (not method) so it matches the
 	// arrow-function assignments below — roblox-ts separates `.` and `:` calls.
@@ -61,6 +64,7 @@ export const STATS: { readonly [K in ShopStat]: StatConfig } = {
 		levelAttribute: "RocketSpeedLevel",
 		startPrice: ROCKET_SPEED.startPrice,
 		priceGrowth: ROCKET_SPEED.priceGrowth,
+		firstLevelPrices: ROCKET_SPEED.firstLevelPrices,
 		valueFor: (level) => ROCKET_SPEED.baseValue + level,
 		// Vitesse brute seule (le multiplicateur entre parenthèses a été retiré).
 		display: (value) => `${value}`,
@@ -101,9 +105,12 @@ export const ITEMS: { readonly [K in ShopItemId]: ShopItem } = {
 export const ITEM_ORDER: readonly ShopItemId[] = ["RocketSpeed", "BaseCash", "Resistance"];
 
 // Prix pour passer de `level` à `level + 1`. Entier déterministe pour que client et
-// serveur soient toujours d'accord. Chaque stat a sa propre croissance de prix.
+// serveur soient toujours d'accord. Chaque stat a sa propre croissance de prix, et peut
+// imposer les prix de ses premiers niveaux (firstLevelPrices).
 export function priceForLevel(stat: ShopStat, level: number): number {
 	const cfg = STATS[stat];
+	const override = cfg.firstLevelPrices?.[level];
+	if (override !== undefined) return override;
 	return math.floor(cfg.startPrice * cfg.priceGrowth ** level);
 }
 

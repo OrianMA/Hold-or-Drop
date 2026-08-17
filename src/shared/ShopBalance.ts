@@ -37,6 +37,11 @@ export const ROCKET_SPEED = {
 	baseValue: 1,
 	startPrice: 75,
 	priceGrowth: 1.7,
+	// Prix IMPOSÉS des premiers niveaux (index = niveau de départ). Au-delà du tableau,
+	// la courbe startPrice * priceGrowth ^ level reprend telle quelle (L2→3 = 216 $).
+	// Onboarding : les 2 premières améliorations doivent tenir dans le gain du premier
+	// run guidé (~109 $) — voir le spec tutorial §11.
+	firstLevelPrices: [25, 50] as readonly number[],
 };
 
 // Resistance — 0..100. Achetée +1 par niveau. Le nombre n'est PAS un pourcentage : il

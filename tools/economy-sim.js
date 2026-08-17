@@ -103,6 +103,35 @@ C.BC_PRICE_GROWTH = priceGrowthOf("BASE_CASH");
 C.RS_PRICE_GROWTH = priceGrowthOf("ROCKET_SPEED");
 C.RES_PRICE_GROWTH = priceGrowthOf("RESISTANCE");
 
+// Prix imposés des premiers niveaux (ShopBalance.ROCKET_SPEED.firstLevelPrices) — un
+// tableau d'exceptions consulté avant la formule, pour que l'onboarding soit abordable.
+function firstLevelPricesOf(block) {
+	const src = S_BAL.match(
+		new RegExp(`export const ${block}[\\s\\S]*?firstLevelPrices:\\s*\\[([^\\]]*)\\]`),
+	);
+	if (!src) return [];
+	return src[1]
+		.split(",")
+		.map((n) => Number(n.trim()))
+		.filter((n) => Number.isFinite(n));
+}
+C.RS_FIRST_PRICES = firstLevelPricesOf("ROCKET_SPEED");
+
+// Vérifie l'invariant d'onboarding : les 2 premiers niveaux de Rocket Speed doivent
+// tenir dans le gain du premier run guidé (~109 $, voir le spec tutorial §10).
+function assertOnboardingPrices() {
+	const p0 = C.RS_FIRST_PRICES[0];
+	const p1 = C.RS_FIRST_PRICES[1];
+	if (p0 === undefined || p1 === undefined) {
+		throw new Error("ROCKET_SPEED.firstLevelPrices doit définir les 2 premiers niveaux");
+	}
+	if (p0 + p1 > 109) {
+		throw new Error(`Les 2 premiers Rocket Speed coûtent ${p0 + p1} $ > 109 $ (run guidé)`);
+	}
+	console.log(`OK onboarding: Rocket Speed L1=${p0}$ L2=${p1}$ (total ${p0 + p1}$ <= 109$)`);
+}
+assertOnboardingPrices();
+
 // multGrowth (Task 6). Avant Task 6, la table multTable/multTail est encore en place.
 let REBIRTH_MULT;
 try {
@@ -116,7 +145,12 @@ try {
 
 // ── Modèle ───────────────────────────────────────────────────────────────────────
 
-const price = (start, growth, lvl) => Math.floor(start * growth ** lvl);
+// `overrides` = prix imposés par niveau (ShopConfig.priceForLevel fait pareil côté jeu).
+const price = (start, growth, lvl, overrides) => {
+	const forced = overrides?.[lvl];
+	if (forced !== undefined) return forced;
+	return Math.floor(start * growth ** lvl);
+};
 const baseCashVal = (lvl) => Math.floor(C.BC_BASE * C.BC_GROWTH ** lvl);
 const speedVal = (lvl) => C.RS_BASE + lvl;
 const rebirthCost = (R) => Math.floor(C.RB_BASE_COST * C.RB_COST_GROWTH ** R);
@@ -208,7 +242,7 @@ function simulate(maxRebirths) {
 			const cur = ev(Lb, Ls, Lr, R).ev;
 			const opts = [
 				{ p: price(C.BC_PRICE, C.BC_PRICE_GROWTH, Lb), e: ev(Lb + 1, Ls, Lr, R).ev, f: () => Lb++ },
-				{ p: price(C.RS_PRICE, C.RS_PRICE_GROWTH, Ls), e: ev(Lb, Ls + 1, Lr, R).ev, f: () => Ls++ },
+				{ p: price(C.RS_PRICE, C.RS_PRICE_GROWTH, Ls, C.RS_FIRST_PRICES), e: ev(Lb, Ls + 1, Lr, R).ev, f: () => Ls++ },
 				{ p: price(C.RES_PRICE, C.RES_PRICE_GROWTH, Lr), e: ev(Lb, Ls, Lr + 1, R).ev, f: () => Lr++, cap: Lr >= C.RES_MAX_LEVEL },
 			];
 			let bo = null, br = 0;
@@ -256,7 +290,7 @@ console.log("");
 
 // 1 — le premier run rapporte assez pour un achat immédiat
 const first = bestClaim(baseCashVal(0) * REBIRTH_MULT(0), speedVal(0), 0);
-const cheapest = Math.min(C.BC_PRICE, C.RS_PRICE, C.RES_PRICE);
+const cheapest = Math.min(C.BC_PRICE, price(C.RS_PRICE, C.RS_PRICE_GROWTH, 0, C.RS_FIRST_PRICES), C.RES_PRICE);
 check("1. premier run ≥ 100$", first.ev >= 100, `${Math.round(first.ev)}$ (claim optimal ${first.T}s)`);
 check("1b. achat possible dès le run 1", first.ev >= cheapest, `revenu ${Math.round(first.ev)}$ vs upgrade la moins chère ${cheapest}$`);
 

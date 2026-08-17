@@ -40,6 +40,7 @@ local STATS = {
 		levelAttribute = "RocketSpeedLevel",
 		startPrice = ROCKET_SPEED.startPrice,
 		priceGrowth = ROCKET_SPEED.priceGrowth,
+		firstLevelPrices = ROCKET_SPEED.firstLevelPrices,
 		valueFor = function(level)
 			return ROCKET_SPEED.baseValue + level
 		end,
@@ -87,9 +88,18 @@ local ITEMS = {
 -- Iteration order for the client (matches the A/B/D frame ordering).
 local ITEM_ORDER = { "RocketSpeed", "BaseCash", "Resistance" }
 -- Prix pour passer de `level` à `level + 1`. Entier déterministe pour que client et
--- serveur soient toujours d'accord. Chaque stat a sa propre croissance de prix.
+-- serveur soient toujours d'accord. Chaque stat a sa propre croissance de prix, et peut
+-- imposer les prix de ses premiers niveaux (firstLevelPrices).
 local function priceForLevel(stat, level)
 	local cfg = STATS[stat]
+	local _override = cfg.firstLevelPrices
+	if _override ~= nil then
+		_override = _override[level + 1]
+	end
+	local override = _override
+	if override ~= nil then
+		return override
+	end
 	return math.floor(cfg.startPrice * cfg.priceGrowth ^ level)
 end
 -- Total price to buy a whole item from `fromLevel` (strict sum of each level —

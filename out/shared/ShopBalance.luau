@@ -35,6 +35,7 @@ local ROCKET_SPEED = {
 	baseValue = 1,
 	startPrice = 75,
 	priceGrowth = 1.7,
+	firstLevelPrices = { 25, 50 },
 }
 -- Resistance — 0..100. Achetée +1 par niveau. Le nombre n'est PAS un pourcentage : il
 -- alimente la courbe de shared/ResistanceCurve.ts, qui le convertit en SECONDES DE VOL
