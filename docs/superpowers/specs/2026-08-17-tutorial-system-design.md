@@ -16,8 +16,9 @@ Contraintes posées :
 3. **Cheat de forçage**, utilisable avec `resetData`.
 
 Décisions validées : blocage `dim + focus` réglable par step · tuto pour tout joueur sans le flag
-`done` (donc aussi les joueurs actuels) · UI créée **en code**, 100 % client · **bouton Skip**
-discret.
+`done` (donc aussi les joueurs actuels) · UI créée **en code**, 100 % client, **sauf le bouton
+Skip** qui est authoré dans Studio et seulement piloté par le code (§6) · analytics détaillées
+(§9).
 
 Les steps eux-mêmes ne sont **pas** dans ce design : le système est agnostique, la liste arrive
 ensuite dans `shared/tutorial/TutorialSteps.ts` (schéma en §4).
@@ -31,13 +32,15 @@ src/shared/tutorial/
 
 src/server/tutorial/
 ├── TutorialService.ts    # étape courante, avancement, persistance, attribut TutorialStep
+├── TutorialAnalytics.ts  # toute la sémantique analytics du tuto (funnel + compteurs)
 └── TutorialHooks.ts      # API lue par le jeu de base (inerte si le joueur n'est pas en tuto)
 
 src/client/tutorial/
 ├── TutorialController.ts # lit l'attribut → orchestre UI + gating, détecte les complétions
-├── TutorialUI.ts         # construit le ScreenGui TutorialUI (overlay, flèche, bandeau, Skip)
+├── TutorialUI.ts         # construit le ScreenGui TutorialUI (overlay, flèche, bandeau)
 ├── TutorialArrow.ts      # pointage : cible GUI (écran) ou cible monde (BillboardGui)
 ├── TutorialFocus.ts      # dim « troué » + pulse de la cible
+├── TutorialSkipButton.ts # pilote le bouton Skip authoré dans Studio (visibilité + clic)
 └── TutorialGate.ts       # coupe les interactions hors-scope (boutons, prompts)
 ```
 
@@ -139,13 +142,38 @@ Un seul `ScreenGui` **`TutorialUI`** (`ResetOnSpawn = false`, `DisplayOrder` au-
   Cible `gui` : positionnée au bord du rectangle, orientée vers lui, repositionnée chaque frame
   seulement si le rect a bougé. Cible `world` : un `BillboardGui` attaché à la part visée, plus un
   **chevron de bord d'écran** quand la part est hors champ (le joueur doit savoir où tourner).
-- **Bandeau** — le texte du step, bas de l'écran (safe area mobile), + le bouton **Skip** discret.
+- **Bandeau** — le texte du step, bas de l'écran (safe area mobile). Le bouton Skip **n'est pas
+  ici** : il est authoré dans Studio (§6).
 - Tout est détruit à la fin du tuto (`TutorialStep == ""`) — plus une seule connexion active.
 
 Perf mobile : une seule boucle `RenderStepped` pour toute l'UI tuto, et elle ne tourne que
 pendant un step visible.
 
-## 6. Gating (`TutorialGate`)
+## 6. Bouton Skip (authoré dans Studio)
+
+Le visuel est **à toi** ; le code ne fait que l'allumer, l'éteindre et écouter le clic.
+
+**Contrat** — un `Frame` nommé **`SkipTutorialFrame`** contenant un `GuiButton` nommé
+**`SkipTutorialButton`** (le reste du contenu est libre : label, stroke, image, animation…).
+`TutorialSkipButton.ts` le résout par **nom, n'importe où sous `InGameUI`**
+(`FindFirstChild(name, true)`) — tu le places où tu veux, tu peux le déplacer plus tard sans
+toucher au code. Il gère :
+
+- `SkipTutorialFrame.Visible = true` pendant le tuto, `false` dès que le tuto est fini (ou si
+  aucun tuto n'est en cours au join) ;
+- le clic → `TutorialAdvanceEvent("skip")` (le serveur marque `done`).
+
+> **Placement : à mettre en dehors du `HUD`.** `InGameUIController` cache tout le Frame `HUD`
+> pendant un run actif (§6.7 d'`ARCHITECTURE.md`) — un Skip enfant du HUD disparaîtrait donc
+> pendant le run guidé, précisément le moment où un joueur bloqué voudrait sortir. Le placer en
+> **enfant direct de `InGameUI`** (frère du `HUD`) le rend indépendant du HUD, exactement comme le
+> second `MoneyParent` de la boutique (§6.8) — précédent existant dans le projet. Si le tuto est
+> fini, le frame est simplement invisible et n'occupe rien.
+>
+> `ResetOnSpawn = false` est déjà garanti par `InGameUI` (§6.7), et `UiClickSound` hookera le
+> bouton automatiquement (aucun câblage son à faire).
+
+## 7. Gating (`TutorialGate`)
 
 Purement client — c'est de l'UX, pas de la sécurité (rien à exploiter : le tuto ne donne rien de
 plus que le jeu normal).
@@ -159,9 +187,18 @@ plus que le jeu normal).
 - **Jamais de blocage du mouvement** ni de la caméra : le joueur garde le contrôle de son
   personnage, sinon la démo devient une cinématique.
 
-## 7. Persistance & état serveur
+## 8. Persistance & état serveur
 
-Store **dédié** `PlayerTutorial_v1`, clé `Player_{UserId}`, valeur `{ step: string, done: boolean }` :
+Store **dédié** `PlayerTutorial_v1`, clé `Player_{UserId}` :
+
+```ts
+type TutorialSave = {
+  step: string;    // id du step courant ("" une fois terminé)
+  done: boolean;   // tuto fini (complété OU skippé) → module inerte à vie
+  runId: string;   // GUID de la tentative — garde le même funnel analytics après un relog (§9)
+  elapsed: number; // secondes cumulées passées dans le tuto, hors temps hors-ligne (§9)
+};
+```
 
 - Store séparé ⇒ **aucune migration** ni risque sur `PlayerData_v1` / `PlayerProgression_v2`, et
   la suppression du tuto ne laisse qu'un store orphelin inoffensif.
@@ -174,7 +211,59 @@ Store **dédié** `PlayerTutorial_v1`, clé `Player_{UserId}`, valeur `{ step: s
   (il lira éventuellement `isFirstSession`) et **avant `RoomService`** (le step 1 peut cibler le
   bouton dès l'assignation de la room).
 
-## 8. Cheat
+**Mesure du temps** (alimente §9) : à l'entrée d'un step le serveur note `stepEnteredAt = os.time()` ;
+à l'avance il fait `elapsed += os.time() - stepEnteredAt`. Le temps **hors-ligne n'est jamais
+compté** — `elapsed` est du temps réellement passé en jeu dans le tuto, même étalé sur plusieurs
+sessions.
+
+## 9. Analytics
+
+Tout passe par `AnalyticsService` (server-only, chaque appel en `pcall` — une analytics qui échoue
+ne casse jamais le tuto). **Une seule primitive générique est ajoutée au service partagé** :
+
+```ts
+// AnalyticsService — généralise runStep(), qui devient un appel à celle-ci (comportement inchangé)
+funnelStep(player: Player, funnelName: string, sessionId: string, step: number, stepName: string): void
+```
+
+Toute la sémantique tuto vit dans `server/tutorial/TutorialAnalytics.ts` (supprimable avec le
+reste ; le jeu de base ne gagne qu'un helper générique).
+
+### 9.1 Funnel `"Tutorial"` — chaque step franchi
+
+`funnelSessionId` = le `runId` **persisté** dans la save (§8) : un joueur qui se déconnecte au step
+3 et revient reprend **le même funnel**, il ne compte pas comme un second joueur.
+
+- Step loggé **à l'entrée** de chaque step : numéro = `index + 1`, nom = l'id du step.
+- Dernier step du funnel = `steps.size() + 1`, nom `"Done"`, loggé à la complétion.
+- Conséquence : le **drop-off entre N et N+1 = les joueurs qui abandonnent pendant le step N**. Le
+  dashboard te donne directement le step qui fait fuir les joueurs, sans calcul.
+- Un re-log du même step après un relog est inoffensif (même `sessionId`, même numéro).
+
+### 9.2 Compteurs custom
+
+| Événement | `value` | Champ de breakdown | Répond à |
+|---|---|---|---|
+| `TutorialStarted` | 1 | `"Fresh"` \| `"Resumed"` | dénominateur : combien de joueurs commencent |
+| `TutorialStepDone` | secondes passées **sur ce step** | id du step | quel step est long / bloquant |
+| `TutorialCompleted` | **durée totale** du tuto (s) | `"NoSkip"` | combien finissent sans skip, et en combien de temps |
+| `TutorialSkipped` | durée écoulée avant le skip (s) | **id du step où il a skippé** | combien skippent, et **où** |
+
+### 9.3 Lecture des 4 questions posées
+
+| Question | Où la lire |
+|---|---|
+| Joueurs qui skippent | compteur `TutorialSkipped` (et son breakdown = le step de sortie) |
+| Temps total du tuto | `value` moyen de `TutorialCompleted` (temps en jeu, hors-ligne exclu) |
+| Chaque step passé | funnel `"Tutorial"` (§9.1) + durées par step via `TutorialStepDone` |
+| Finis **sans** skip | `TutorialCompleted` (n'est jamais loggé sur un skip) ; taux = `TutorialCompleted` / `TutorialStarted`, ou la dernière marche du funnel |
+
+Le **funnel onboarding existant** (`Joined → Launch → Claim → Purchase → Rebirth`, gaté sur
+`isFirstSession`, §6.19 d'`ARCHITECTURE.md`) n'est **pas** touché : c'est un funnel distinct, et le
+tuto s'adresse à un public plus large (tout joueur sans le flag `done`). Les deux se lisent côte à
+côte sans se contredire.
+
+## 10. Cheat
 
 Dans `CheatConfig.ts` :
 
@@ -189,7 +278,7 @@ Plus une fonction dev appelable depuis la barre de commande / `execute_luau`, su
 `TutorialService.devGoto(player, stepId)` (saute directement à un step pour tester sa mise en
 scène sans refaire tout le tuto).
 
-## 9. Points de contact avec le jeu de base
+## 11. Points de contact avec le jeu de base
 
 | Fichier | Changement | Retour arrière |
 |---|---|---|
@@ -198,11 +287,14 @@ scène sans refaire tout le tuto).
 | `client/main.client.ts` | `initTutorial()` | 1 ligne |
 | `server/modules/CheatConfig.ts` | `forceTutorial` | 1 constante |
 | `shared/Event.ts` | `TutorialAdvanceEvent` | 1 déclaration |
+| `server/services/AnalyticsService.ts` | helper générique `funnelStep` (`runStep` devient un appel à lui) | 1 méthode |
+| Studio | `SkipTutorialFrame/SkipTutorialButton` sous `InGameUI` (§6) | supprimer le frame |
 
 **Suppression du tuto** = supprimer les 3 dossiers `tutorial/` + révert de ce tableau. Aucun autre
-fichier n'importe quoi que ce soit du tuto, aucun `if (tutorial)` dispersé.
+fichier n'importe quoi que ce soit du tuto, aucun `if (tutorial)` dispersé. `funnelStep` peut même
+rester : c'est un helper générique utile, sans référence au tuto.
 
-## 10. Vérification
+## 12. Vérification
 
 Pas de framework de test dans le projet : validation en Studio (single-player, MCP
 `start_stop_play`), avec `forceTutorial = true` + `resetData = true`.
@@ -213,9 +305,15 @@ Checklist :
 2. Chaque step avance sur sa vraie condition — et **pas** sur une action hors-scope.
 3. Le run truqué explose à `explodeAt` ± un tick (0,5 s) et l'ascension se fige à `stopAt`.
 4. Le payout du run truqué crédite bien l'argent (chemin normal).
-5. Relog en cours de tuto → reprise au même step.
-6. Skip → `done`, UI détruite, plus aucune connexion.
-7. `forceTutorial = false` + save `done` → **rien** ne s'affiche, et un run normal retrouve un
-   `explosionAt` aléatoire (le hook est inerte).
-8. Mobile : bandeau lisible, flèche visible, cible cliquable, dim non bloquant sur la cible.
-9. Deux joueurs en même temps, l'un en tuto l'autre non : aucune interférence (état par joueur).
+5. Relog en cours de tuto → reprise au même step, `elapsed` conservé, **même `runId`** (funnel
+   continu).
+6. Skip → `done`, UI détruite, `SkipTutorialFrame` masqué, plus aucune connexion active.
+7. `forceTutorial = false` + save `done` → **rien** ne s'affiche, `SkipTutorialFrame` invisible, et
+   un run normal retrouve un `explosionAt` aléatoire (le hook est inerte).
+8. Le Skip reste **cliquable pendant le run guidé** (vérifie le placement hors `HUD`, §6).
+9. Mobile : bandeau lisible, flèche visible, cible cliquable, dim non bloquant sur la cible.
+10. Deux joueurs en même temps, l'un en tuto l'autre non : aucune interférence (état par joueur).
+11. Analytics : les 4 compteurs + le funnel partent bien (vérifiables en Studio via un `print` de
+    debug dans `TutorialAnalytics` — le dashboard Roblox ne montre rien en Play Solo et met ~24 h,
+    §6.19 d'`ARCHITECTURE.md`). Un tuto complété ne logge **jamais** `TutorialSkipped`, et
+    inversement.
