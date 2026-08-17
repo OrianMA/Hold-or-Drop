@@ -226,12 +226,16 @@ local RocketLauncher = {
 		local state = {
 			conn = nil,
 			velocity = 0,
+			paused = false,
 			steer = 0,
 			tilt = 0,
 			basePivot = basePivot,
 			pos = basePivot.Position,
 		}
 		state.conn = RunService.Heartbeat:Connect(function(dt)
+			if state.paused then
+				return nil
+			end
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed)
 			-- Roll authority ramps with altitude: near-zero at the pad (STEER_ROT_SPEED_GROUND),
 			-- full once the rocket reaches space (STEER_ROT_SPEED_SPACE at STEER_SPACE_HEIGHT).
@@ -266,15 +270,11 @@ local RocketLauncher = {
 	end,
 	getVelocity = function(self, room)
 		local _room = room
-		local _result = states[_room]
-		if _result ~= nil then
-			_result = _result.velocity
+		local state = states[_room]
+		if not state or state.paused then
+			return 0
 		end
-		local _condition = _result
-		if _condition == nil then
-			_condition = 0
-		end
-		return _condition
+		return state.velocity
 	end,
 	setSteer = function(self, room, dir)
 		local _room = room
@@ -283,6 +283,42 @@ local RocketLauncher = {
 			return nil
 		end
 		state.steer = if dir > 0 then 1 elseif dir < 0 then -1 else 0
+	end,
+	freeze = function(self, room)
+		local _room = room
+		local state = states[_room]
+		if not state or state.paused then
+			return nil
+		end
+		state.paused = true
+		setNitroEnabled(room, false)
+		local _room_1 = room
+		local sound = launchSounds[_room_1]
+		if sound then
+			sound:Pause()
+		end
+	end,
+	unfreeze = function(self, room)
+		local _room = room
+		local state = states[_room]
+		if not state or not state.paused then
+			return nil
+		end
+		state.paused = false
+		setNitroEnabled(room, true)
+		local _room_1 = room
+		local sound = launchSounds[_room_1]
+		if sound then
+			sound:Resume()
+		end
+	end,
+	isFrozen = function(self, room)
+		local _room = room
+		local _result = states[_room]
+		if _result ~= nil then
+			_result = _result.paused
+		end
+		return _result == true
 	end,
 	stop = function(self, room)
 		stopRoom(room)

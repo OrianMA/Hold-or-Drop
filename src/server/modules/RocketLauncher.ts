@@ -60,6 +60,10 @@ interface RocketPart {
 interface RocketState {
 	conn: RBXScriptConnection;
 	velocity: number;
+	// Vol gelé sur place (tutorial) : la boucle d'ascension ne bouge plus mais la
+	// vélocité acquise est CONSERVÉE pour la reprise. getVelocity renvoie 0 pendant
+	// le gel, donc le multiplicateur du jeu se fige aussi — c'est voulu.
+	paused: boolean;
 	// Player's current left/right steering intent: -1 (left) / 0 / +1 (right). Set by
 	// setSteer from the client's native movement input; released (0) leaves the tilt as-is.
 	steer: number;
@@ -216,12 +220,14 @@ export const RocketLauncher = {
 		const state: RocketState = {
 			conn: undefined!,
 			velocity: 0,
+			paused: false,
 			steer: 0,
 			tilt: 0,
 			basePivot,
 			pos: basePivot.Position,
 		};
 		state.conn = RunService.Heartbeat.Connect((dt) => {
+			if (state.paused) return; // vol gelé : on ne touche ni à la vélocité ni au pivot
 			state.velocity = math.min(state.velocity + accel * dt, maxSpeed);
 
 			// Roll authority ramps with altitude: near-zero at the pad (STEER_ROT_SPEED_GROUND),
@@ -249,10 +255,13 @@ export const RocketLauncher = {
 		if (sound) sound.Play(); // son de décollage en boucle (3D, suit la fusée)
 	},
 
-	// Current ascent velocity (studs/s) for a room, or 0 if not flying. Read by the
-	// game loop's multiplier tick so the payout multiplier tracks the rocket's speed.
+	// Current ascent velocity (studs/s) for a room, or 0 if not flying / gelé. Read by
+	// the game loop's multiplier tick so the payout multiplier tracks the rocket's speed
+	// — un vol gelé ne fait donc pas grimper le multiplicateur.
 	getVelocity(room: Room): number {
-		return states.get(room)?.velocity ?? 0;
+		const state = states.get(room);
+		if (!state || state.paused) return 0;
+		return state.velocity;
 	},
 
 	// Set the player's left/right steering intent for a flying rocket: dir < 0 = left,
@@ -263,6 +272,32 @@ export const RocketLauncher = {
 		const state = states.get(room);
 		if (!state) return;
 		state.steer = dir > 0 ? 1 : dir < 0 ? -1 : 0;
+	},
+
+	// Gèle le vol sur place : moteur éteint, roar en pause, plus aucun déplacement — la
+	// vélocité acquise est gardée pour unfreeze. Utilisé par la mise en scène du tutorial
+	// (aucun autre appelant). No-op si la room ne vole pas.
+	freeze(room: Room): void {
+		const state = states.get(room);
+		if (!state || state.paused) return;
+		state.paused = true;
+		setNitroEnabled(room, false);
+		const sound = launchSounds.get(room);
+		if (sound) sound.Pause();
+	},
+
+	// Reprend un vol gelé à la vélocité qu'il avait.
+	unfreeze(room: Room): void {
+		const state = states.get(room);
+		if (!state || !state.paused) return;
+		state.paused = false;
+		setNitroEnabled(room, true);
+		const sound = launchSounds.get(room);
+		if (sound) sound.Resume();
+	},
+
+	isFrozen(room: Room): boolean {
+		return states.get(room)?.paused === true;
 	},
 
 	// Stop the ascent in place (no reset) — used on a win/release.
