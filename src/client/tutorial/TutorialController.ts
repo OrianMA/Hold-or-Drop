@@ -4,6 +4,7 @@ import { TutorialStep } from "shared/tutorial/TutorialTypes";
 import { stepById } from "shared/tutorial/TutorialSteps";
 import { TutorialUI } from "./TutorialUI";
 import { TutorialSkipButton } from "./TutorialSkipButton";
+import { TutorialTriggers } from "./TutorialTriggers";
 
 // Orchestre le rendu du tutorial côté client. Le serveur publie l'étape courante dans
 // l'attribut répliqué TutorialStep ("" = terminé) ; ce contrôleur la lit, monte la mise
@@ -29,6 +30,12 @@ function showStep(step: TutorialStep): void {
 	clearStep();
 	TutorialUI.ensure();
 	TutorialUI.setText(step.text);
+
+	// La complétion est remontée au serveur, qui valide que c'est bien le step courant.
+	const stopWatching = TutorialTriggers.watch(step, () => {
+		Events.TutorialAdvanceEvent.FireServer(step.id);
+	});
+	teardown = () => stopWatching();
 }
 
 function render(): void {

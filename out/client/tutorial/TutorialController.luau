@@ -5,6 +5,7 @@ local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Ev
 local stepById = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "tutorial", "TutorialSteps").stepById
 local TutorialUI = TS.import(script, script.Parent, "TutorialUI").TutorialUI
 local TutorialSkipButton = TS.import(script, script.Parent, "TutorialSkipButton").TutorialSkipButton
+local TutorialTriggers = TS.import(script, script.Parent, "TutorialTriggers").TutorialTriggers
 -- Orchestre le rendu du tutorial côté client. Le serveur publie l'étape courante dans
 -- l'attribut répliqué TutorialStep ("" = terminé) ; ce contrôleur la lit, monte la mise
 -- en scène du step, et remonte la complétion via TutorialAdvanceEvent.
@@ -24,6 +25,13 @@ local function showStep(step)
 	clearStep()
 	TutorialUI:ensure()
 	TutorialUI:setText(step.text)
+	-- La complétion est remontée au serveur, qui valide que c'est bien le step courant.
+	local stopWatching = TutorialTriggers:watch(step, function()
+		Events.TutorialAdvanceEvent:FireServer(step.id)
+	end)
+	teardown = function()
+		return stopWatching()
+	end
 end
 local function render()
 	local _condition = (player:GetAttribute(STEP_ATTR))
