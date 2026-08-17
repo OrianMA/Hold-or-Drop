@@ -13,8 +13,7 @@ local TutorialUI = TS.import(script, script.Parent, "TutorialUI").TutorialUI
 -- Une seule boucle RenderStepped, active uniquement pendant un step qui pointe.
 local ARROW_IMAGE = "rbxassetid://104204322044198"
 local ARROW_COUNT = 6
-local ARROW_SPACING = 8
-local ARROW_START_OFFSET = 6
+local MIN_SPACING = 3
 local ARROW_SIZE = 5
 local ARROW_HEIGHT = 3
 local CHASE_PERIOD = 1.2
@@ -136,21 +135,31 @@ TutorialArrow = {
 				chev.Visible = false
 				return nil
 			end
-			-- Répartition régulière sur la ligne joueur → cible ; la traînée se raccourcit
-			-- en approchant plutôt que de se densifier.
+			-- Répartition PROPORTIONNELLE à la distance : selon le step, la cible est entre
+			-- ~10 studs (bouton) et ~90 studs (boutique), donc un pas fixe est soit trop
+			-- dense sur les trajets courts, soit trop court sur les longs (la traînée
+			-- s'arrêterait avant la cible). On calcule combien de flèches tiennent avec un
+			-- espacement minimum, puis on les étale à pas égal entre le joueur et la cible ;
+			-- la dernière s'arrête un peu avant la cible plutôt que de se superposer dessus.
 			local flat = Vector3.new(target.X - from.X, 0, target.Z - from.Z)
 			local distance = flat.Magnitude
 			local direction = if distance > 0.1 then flat.Unit else Vector3.new(0, 0, 1)
 			local phase = (elapsed % CHASE_PERIOD) / CHASE_PERIOD
+			local visibleCount = math.clamp(math.floor(distance / MIN_SPACING), 1, ARROW_COUNT)
+			local pitch = distance / (visibleCount + 1)
+			-- Chenillard calculé sur les flèches VISIBLES uniquement : sur un trajet court
+			-- (peu de flèches allumées), indexer sur les 6 rangs comptait aussi les flèches
+			-- masquées et la traînée affichée restait figée en sourdine au lieu de balayer.
+			local lit = math.floor(phase * visibleCount)
 			for i = 0, #worldArrows - 1 do
 				local arrow = worldArrows[i + 1]
-				local along = ARROW_START_OFFSET + i * ARROW_SPACING
-				-- Au-delà de la cible → flèche masquée (traînée plus courte de près).
-				local beyond = along > distance - 1
-				arrow.image.Visible = not beyond
-				if beyond then
+				-- Au-delà du nombre de flèches visibles pour cette distance → masquée.
+				if i >= visibleCount then
+					arrow.image.Visible = false
 					continue
 				end
+				arrow.image.Visible = true
+				local along = pitch * (i + 1)
 				local _arg0 = direction * along
 				local _exp = from + _arg0
 				local _vector3 = Vector3.new(0, ARROW_HEIGHT, 0)
@@ -158,15 +167,15 @@ TutorialArrow = {
 				arrow.part.Position = pos
 				-- Chenillard : la flèche dont le rang correspond à la phase est pleine, les
 				-- autres sont estompées.
-				local lit = math.floor(phase * #worldArrows)
 				arrow.image.ImageTransparency = if i == lit then 0 else DIM_TRANSPARENCY
 				-- Orientation écran : vers la flèche suivante (ou vers la cible pour la
 				-- dernière visible).
+				local isLast = i == visibleCount - 1
 				local _result
-				if along + ARROW_SPACING > distance - 1 then
+				if isLast then
 					_result = target
 				else
-					local _arg0_1 = along + ARROW_SPACING
+					local _arg0_1 = pitch * (i + 2)
 					local _arg0_2 = direction * _arg0_1
 					local _exp_1 = from + _arg0_2
 					local _vector3_1 = Vector3.new(0, ARROW_HEIGHT, 0)

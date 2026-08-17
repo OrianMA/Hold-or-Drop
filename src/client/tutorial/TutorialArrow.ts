@@ -11,8 +11,7 @@ import { TutorialUI } from "./TutorialUI";
 const ARROW_IMAGE = "rbxassetid://104204322044198";
 
 const ARROW_COUNT = 6; // longueur max de la traînée
-const ARROW_SPACING = 8; // studs entre deux flèches
-const ARROW_START_OFFSET = 6; // studs devant le joueur pour la première flèche
+const MIN_SPACING = 3; // studs minimum entre deux flèches
 const ARROW_SIZE = 5; // studs (taille du BillboardGui)
 const ARROW_HEIGHT = 3; // studs au-dessus du sol/de la cible
 const CHASE_PERIOD = 1.2; // secondes pour un aller de chenillard
@@ -131,35 +130,47 @@ export const TutorialArrow = {
 				return;
 			}
 
-			// Répartition régulière sur la ligne joueur → cible ; la traînée se raccourcit
-			// en approchant plutôt que de se densifier.
+			// Répartition PROPORTIONNELLE à la distance : selon le step, la cible est entre
+			// ~10 studs (bouton) et ~90 studs (boutique), donc un pas fixe est soit trop
+			// dense sur les trajets courts, soit trop court sur les longs (la traînée
+			// s'arrêterait avant la cible). On calcule combien de flèches tiennent avec un
+			// espacement minimum, puis on les étale à pas égal entre le joueur et la cible ;
+			// la dernière s'arrête un peu avant la cible plutôt que de se superposer dessus.
 			const flat = new Vector3(target.X - from.X, 0, target.Z - from.Z);
 			const distance = flat.Magnitude;
 			const direction = distance > 0.1 ? flat.Unit : new Vector3(0, 0, 1);
 			const phase = (elapsed % CHASE_PERIOD) / CHASE_PERIOD;
 
+			const visibleCount = math.clamp(math.floor(distance / MIN_SPACING), 1, ARROW_COUNT);
+			const pitch = distance / (visibleCount + 1);
+			// Chenillard calculé sur les flèches VISIBLES uniquement : sur un trajet court
+			// (peu de flèches allumées), indexer sur les 6 rangs comptait aussi les flèches
+			// masquées et la traînée affichée restait figée en sourdine au lieu de balayer.
+			const lit = math.floor(phase * visibleCount);
+
 			for (let i = 0; i < worldArrows.size(); i++) {
 				const arrow = worldArrows[i];
-				const along = ARROW_START_OFFSET + i * ARROW_SPACING;
-				// Au-delà de la cible → flèche masquée (traînée plus courte de près).
-				const beyond = along > distance - 1;
-				arrow.image.Visible = !beyond;
-				if (beyond) continue;
+				// Au-delà du nombre de flèches visibles pour cette distance → masquée.
+				if (i >= visibleCount) {
+					arrow.image.Visible = false;
+					continue;
+				}
+				arrow.image.Visible = true;
 
+				const along = pitch * (i + 1);
 				const pos = from.add(direction.mul(along)).add(new Vector3(0, ARROW_HEIGHT, 0));
 				arrow.part.Position = pos;
 
 				// Chenillard : la flèche dont le rang correspond à la phase est pleine, les
 				// autres sont estompées.
-				const lit = math.floor(phase * worldArrows.size());
 				arrow.image.ImageTransparency = i === lit ? 0 : DIM_TRANSPARENCY;
 
 				// Orientation écran : vers la flèche suivante (ou vers la cible pour la
 				// dernière visible).
-				const nextWorld =
-					along + ARROW_SPACING > distance - 1
-						? target
-						: from.add(direction.mul(along + ARROW_SPACING)).add(new Vector3(0, ARROW_HEIGHT, 0));
+				const isLast = i === visibleCount - 1;
+				const nextWorld = isLast
+					? target
+					: from.add(direction.mul(pitch * (i + 2))).add(new Vector3(0, ARROW_HEIGHT, 0));
 				const [here] = camera.WorldToViewportPoint(pos);
 				const [nextPoint] = camera.WorldToViewportPoint(nextWorld);
 				arrow.image.Rotation = angleOf(new Vector2(nextPoint.X - here.X, nextPoint.Y - here.Y));
