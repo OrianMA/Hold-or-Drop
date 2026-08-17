@@ -11,6 +11,7 @@ import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
 import { LeaderboardService } from "./LeaderboardService";
 import { AnalyticsService } from "./AnalyticsService";
+import { TutorialService } from "server/tutorial/TutorialService";
 import { RoomService } from "server/rooms/RoomService";
 import { PopupConfig } from "server/UI/PopupConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
@@ -42,6 +43,10 @@ export const services: Array<{ init(): void }> = [
 	// economy/funnel/progression/custom events. Needs PlayerProgression ready
 	// (reads isFirstSession for the onboarding funnel gate). No Studio setup.
 	AnalyticsService,
+	// Tutorial (satellite) — publie l'étape courante via l'attribut TutorialStep.
+	// Après PlayerProgression (mêmes attributs lus par les steps), avant RoomService :
+	// le premier step cible le bouton dès l'assignation de la room.
+	TutorialService,
 	RoomService,
 	// Binds a ButtonModule per room — must run after RoomService builds them.
 	ButtonTriggerService,

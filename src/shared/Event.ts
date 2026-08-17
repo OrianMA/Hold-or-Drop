@@ -83,4 +83,10 @@ export namespace Events {
 	// triggered the CommunityJoinPart). The server re-checks membership (fresh,
 	// via GetGroupsAsync) and grants the ×2 — it never trusts the event blindly.
 	export const CommunityJoinedEvent = DefineEvent("CommunityJoinedEvent", script);
+
+	// Tutorial — client → server. Arg: stepId (string). Le client signale que la
+	// condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
+	// correspond pas au step courant (anti double-avance / event en retard).
+	// L'id spécial "skip" termine le tutorial (bouton TutorialSkip).
+	export const TutorialAdvanceEvent = DefineEvent("TutorialAdvanceEvent", script);
 }

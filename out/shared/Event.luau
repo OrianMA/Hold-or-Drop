@@ -95,6 +95,12 @@ do
 	-- via GetGroupsAsync) and grants the ×2 — it never trusts the event blindly.
 	local CommunityJoinedEvent = DefineEvent("CommunityJoinedEvent", script)
 	_container.CommunityJoinedEvent = CommunityJoinedEvent
+	-- Tutorial — client → server. Arg: stepId (string). Le client signale que la
+	-- condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
+	-- correspond pas au step courant (anti double-avance / event en retard).
+	-- L'id spécial "skip" termine le tutorial (bouton TutorialSkip).
+	local TutorialAdvanceEvent = DefineEvent("TutorialAdvanceEvent", script)
+	_container.TutorialAdvanceEvent = TutorialAdvanceEvent
 end
 return {
 	Events = Events,
