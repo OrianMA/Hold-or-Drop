@@ -40,17 +40,26 @@ export const TutorialUI = {
 
 		const frame = new Instance("Frame");
 		frame.Name = "InstructionBanner";
-		// Placement en scale pour rester valide sur tout viewport (le jeu est mobile-first).
-		// Le levier qui compte est le Y : MoneyParent a sa largeur pilotée par un
-		// UIAspectRatioConstraint, donc dépendante du viewport (large sur téléphone, étroite
-		// sur desktop) — on ne peut se fier qu'à sa bande verticale, qui elle est stable. Le
-		// bandeau est placé juste sous cette bande, avant les boutons Start/Claim. Pour la
-		// largeur, ButtonsFrame et BottomList sont en scale pur : leurs fractions tiennent sur
-		// n'importe quel écran, d'où une largeur centrée qui garde une vraie marge avec
-		// ButtonsFrame. Position Y et largeur sont les deux seuls leviers de placement.
+		// Placement ENTIÈREMENT en scale — position ET taille — pour que le rectangle occupe
+		// la même fraction d'écran partout (le jeu est mobile-first, et le paysage
+		// téléphone descend vers 375 px de haut). Le moindre offset en pixels rendrait la
+		// marge dépendante de la hauteur du viewport : avec une hauteur fixe de 64 px, le
+		// bas du bandeau touchait le bouton Start dès que la hauteur d'écran passait sous
+		// ~388 px.
+		//
+		// Bandes occupées par le jeu, mesurées dans Studio et exprimées en fractions :
+		//   MoneyParent   y 0.21→0.29  (sa LARGEUR dépend d'un UIAspectRatioConstraint,
+		//                               donc du viewport : seule sa bande verticale est fiable)
+		//   ButtonsFrame  x 0.013→0.24, y 0.31→0.75   (scale pur)
+		//   StartButton   y 0.505→0.605
+		//   Claim/Result  y 0.71→0.84
+		//   BottomList    y 0.855→0.945              (scale pur)
+		// Le bandeau tient donc dans x 0.27→0.73 et y 0.34→0.42 : sous MoneyParent, au-dessus
+		// de Start, et à 3 points de la colonne ButtonsFrame. Ces trois nombres (Y, largeur,
+		// hauteur) sont les seuls leviers — les garder en scale, jamais en offset.
 		frame.AnchorPoint = new Vector2(0.5, 0);
 		frame.Position = new UDim2(0.5, 0, 0.34, 0);
-		frame.Size = new UDim2(0.46, 0, 0, 64);
+		frame.Size = new UDim2(0.46, 0, 0.08, 0);
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20);
 		frame.BackgroundTransparency = 0.25;
 		frame.BorderSizePixel = 0;
