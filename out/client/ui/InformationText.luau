@@ -40,7 +40,6 @@ local STYLES = {
 	Common = {
 		height = 0.08,
 		hold = 5,
-		sound = AudioConfig.sfx.information,
 	},
 	Rare = {
 		height = 0.09,
@@ -232,7 +231,9 @@ local InformationText = {
 		}
 		local myToken = entry.token
 		table.insert(active, entry)
-		playSound(style.sound)
+		if style.sound then
+			playSound(style.sound)
+		end
 		local fadeIn = TweenService:Create(instance, FADE_IN_TI, {
 			GroupTransparency = 0,
 		})

@@ -28,7 +28,7 @@ local simulatedOwnedPassIds = {}
 -- Force le tutorial à la connexion en IGNORANT la sauvegarde tuto (le joueur le
 -- refait même s'il l'a déjà terminé). À utiliser avec `resetData` pour re-tester
 -- l'onboarding complet. MUST be false before publishing.
-local forceTutorial = true
+local forceTutorial = false
 return {
 	invincible = invincible,
 	resetData = resetData,

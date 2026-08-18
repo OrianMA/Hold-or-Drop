@@ -51,11 +51,13 @@ interface RarityStyle {
 	// Temps à pleine opacité, hors fondus (+0.7 s au total). Surchargeable par
 	// `holdSeconds` à l'appel.
 	hold: number;
-	sound: { id: string; volume: number };
+	// `undefined` = silencieux. Common l'est : c'est le bandeau le plus fréquent
+	// (refus d'achat, hints…), un son à chaque fois devient vite pénible.
+	sound?: { id: string; volume: number };
 }
 
 const STYLES: Record<InformationRarity, RarityStyle> = {
-	Common: { height: 0.08, hold: 5, sound: AudioConfig.sfx.information },
+	Common: { height: 0.08, hold: 5 },
 	Rare: { height: 0.09, hold: 5, gradient: "RareGradient", sound: AudioConfig.sfx.information },
 	Epic: { height: 0.1, hold: 5, gradient: "EpicGradient", sound: AudioConfig.sfx.information },
 	Legendary: { height: 0.12, hold: 6.5, legendary: true, sound: AudioConfig.sfx.informationLegendary },
@@ -213,7 +215,7 @@ export const InformationText = {
 		const myToken = entry.token;
 		active.push(entry);
 
-		playSound(style.sound);
+		if (style.sound) playSound(style.sound);
 
 		const fadeIn = TweenService.Create(instance, FADE_IN_TI, { GroupTransparency: 0 });
 		entry.tweens.push(fadeIn);

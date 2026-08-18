@@ -1023,7 +1023,7 @@ déclinés en **4 raretés**. Purement présentation, 100 % client.
 
   | Rareté | Hauteur (fraction d'écran) | Hold | Gradient | Son |
   |---|---|---|---|---|
-  | `Common` | 0.08 | 5 s | aucun (la couleur passée s'applique) | `sfx.information` |
+  | `Common` | 0.08 | 5 s | aucun (la couleur passée s'applique) | **aucun** (bandeau le plus fréquent) |
   | `Rare` | 0.09 | 5 s | `RareGradient` | `sfx.information` |
   | `Epic` | 0.10 | 5 s | `EpicGradient` | `sfx.information` |
   | `Legendary` | 0.12 | 6,5 s | TextLabel dédié `LegendaryText` + `RainbowText` | `sfx.informationLegendary` |
