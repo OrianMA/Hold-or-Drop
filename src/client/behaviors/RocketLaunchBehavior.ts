@@ -606,6 +606,10 @@ export function setup(inGameUI: ScreenGui): void {
 		// est verrouillé, le joueur peut rentrer à la base au lieu d'attendre l'explosion.
 		// Annulé si la partie s'est terminée entre-temps (explosion) ou si une nouvelle
 		// partie a démarré (runId).
+		// PAS pendant le tutorial : le step claim-explode veut MONTRER l'explosion, et un
+		// bouton "Go Home" rallumé (mais bloqué par TutorialGate) ne ferait qu'inviter à un
+		// clic sans effet. Le bouton reste donc éteint, tel que le claim l'a laissé.
+		if (tutorialActive) return;
 		const myRun = runId;
 		task.delay(CLAIM_REARM_DELAY, () => {
 			if (myRun !== runId || !isGameActive || !claimButton) return;

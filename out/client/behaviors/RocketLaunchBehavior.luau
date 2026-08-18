@@ -660,6 +660,12 @@ local function setup(inGameUI)
 		-- est verrouillé, le joueur peut rentrer à la base au lieu d'attendre l'explosion.
 		-- Annulé si la partie s'est terminée entre-temps (explosion) ou si une nouvelle
 		-- partie a démarré (runId).
+		-- PAS pendant le tutorial : le step claim-explode veut MONTRER l'explosion, et un
+		-- bouton "Go Home" rallumé (mais bloqué par TutorialGate) ne ferait qu'inviter à un
+		-- clic sans effet. Le bouton reste donc éteint, tel que le claim l'a laissé.
+		if tutorialActive then
+			return nil
+		end
 		local myRun = runId
 		task.delay(CLAIM_REARM_DELAY, function()
 			if myRun ~= runId or not isGameActive or not claimButton then

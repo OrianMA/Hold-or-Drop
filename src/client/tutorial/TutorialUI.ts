@@ -8,6 +8,14 @@ const GUI_NAME = "TutorialUI";
 const IN_GAME_UI = "InGameUI";
 // Au-dessus de InGameUI (mesuré à DisplayOrder = 1).
 const DISPLAY_ORDER = 100;
+// Empilement à l'intérieur de TutorialUI. Sans ZIndex explicite, tout vaut 1 et c'est
+// l'ORDRE DE CRÉATION qui décide : les bandes de dim, créées après le bandeau, passaient
+// donc par-dessus et assombrissaient l'instruction elle-même.
+// Ces valeurs n'ordonnent QUE des frères : elles supposent ZIndexBehavior = Sibling,
+// fixé explicitement dans ensure() (voir le commentaire là-bas).
+export const Z_DIM = 1;
+export const Z_ARROW = 5;
+export const Z_BANNER = 10;
 // Bord supérieur par défaut du bandeau, en scale — utilisé quand le step n'a pas de
 // TutorialStep.textY. Voir le bloc de mesures ci-dessous dans ensure().
 export const DEFAULT_BANNER_Y = 0.12;
@@ -46,6 +54,12 @@ export const TutorialUI = {
 		gui.Name = GUI_NAME;
 		gui.ResetOnSpawn = false;
 		gui.DisplayOrder = DISPLAY_ORDER;
+		// EXPLICITE, ne pas retirer : en ZIndexBehavior.Global tous les GuiObject sont triés
+		// à plat, donc le cadre du bandeau (Z_BANNER) passerait DEVANT son propre TextLabel
+		// (ZIndex 1) et son fond noir à 0.25 de transparence grisait le texte. En Sibling,
+		// un descendant est toujours dessiné au-dessus de son parent et les constantes
+		// Z_* n'ordonnent que les frères — c'est ce qu'elles décrivent.
+		gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		// Aligner l'inset sur celui du GUI du jeu, sinon tous les rectangles de cible
 		// seraient décalés de la hauteur de la barre Roblox.
 		gui.IgnoreGuiInset = TutorialUI.getInGameUI()?.IgnoreGuiInset ?? false;
@@ -109,6 +123,7 @@ export const TutorialUI = {
 		frame.AnchorPoint = new Vector2(0.5, 0);
 		frame.Position = new UDim2(0.5, 0, DEFAULT_BANNER_Y, topInsetPixels());
 		frame.Size = new UDim2(0.58, 0, 0.08, 0);
+		frame.ZIndex = Z_BANNER;
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20);
 		frame.BackgroundTransparency = 0.25;
 		frame.BorderSizePixel = 0;

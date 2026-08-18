@@ -10,6 +10,14 @@ local GUI_NAME = "TutorialUI"
 local IN_GAME_UI = "InGameUI"
 -- Au-dessus de InGameUI (mesuré à DisplayOrder = 1).
 local DISPLAY_ORDER = 100
+-- Empilement à l'intérieur de TutorialUI. Sans ZIndex explicite, tout vaut 1 et c'est
+-- l'ORDRE DE CRÉATION qui décide : les bandes de dim, créées après le bandeau, passaient
+-- donc par-dessus et assombrissaient l'instruction elle-même.
+-- Ces valeurs n'ordonnent QUE des frères : elles supposent ZIndexBehavior = Sibling,
+-- fixé explicitement dans ensure() (voir le commentaire là-bas).
+local Z_DIM = 1
+local Z_ARROW = 5
+local Z_BANNER = 10
 -- Bord supérieur par défaut du bandeau, en scale — utilisé quand le step n'a pas de
 -- TutorialStep.textY. Voir le bloc de mesures ci-dessous dans ensure().
 local DEFAULT_BANNER_Y = 0.12
@@ -53,6 +61,12 @@ TutorialUI = {
 		gui.Name = GUI_NAME
 		gui.ResetOnSpawn = false
 		gui.DisplayOrder = DISPLAY_ORDER
+		-- EXPLICITE, ne pas retirer : en ZIndexBehavior.Global tous les GuiObject sont triés
+		-- à plat, donc le cadre du bandeau (Z_BANNER) passerait DEVANT son propre TextLabel
+		-- (ZIndex 1) et son fond noir à 0.25 de transparence grisait le texte. En Sibling,
+		-- un descendant est toujours dessiné au-dessus de son parent et les constantes
+		-- Z_* n'ordonnent que les frères — c'est ce qu'elles décrivent.
+		gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 		-- Aligner l'inset sur celui du GUI du jeu, sinon tous les rectangles de cible
 		-- seraient décalés de la hauteur de la barre Roblox.
 		local _result = TutorialUI:getInGameUI()
@@ -122,6 +136,7 @@ TutorialUI = {
 		frame.AnchorPoint = Vector2.new(0.5, 0)
 		frame.Position = UDim2.new(0.5, 0, DEFAULT_BANNER_Y, topInsetPixels())
 		frame.Size = UDim2.new(0.58, 0, 0.08, 0)
+		frame.ZIndex = Z_BANNER
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
 		frame.BackgroundTransparency = 0.25
 		frame.BorderSizePixel = 0
@@ -189,6 +204,9 @@ TutorialUI = {
 	end,
 }
 return {
+	Z_DIM = Z_DIM,
+	Z_ARROW = Z_ARROW,
+	Z_BANNER = Z_BANNER,
 	DEFAULT_BANNER_Y = DEFAULT_BANNER_Y,
 	TutorialUI = TutorialUI,
 }

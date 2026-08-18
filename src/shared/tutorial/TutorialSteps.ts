@@ -28,6 +28,9 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 	{
 		id: "watch-launch",
 		text: "Your rocket is flying! The higher it goes, the bigger your multiplier",
+		// Steps en vol : le multiplicateur (RocketLaunch/MultiplierText, y 0.105→0.227)
+		// occupe la position par défaut du bandeau. On descend donc juste sous lui.
+		textY: 0.16,
 		target: { kind: "none" },
 		complete: { kind: "server" }, // le director saute à "claim" au gel (2,5 s)
 	},
@@ -35,12 +38,17 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 		id: "claim",
 		text: "Press CLAIM to secure your cash",
 		target: { kind: "gui", path: "RocketLaunch/ClaimButtonFrame/ClaimButton" },
-		focus: "highlight", // pas de dim : la fusée doit rester visible
+		// Dim : au gel la fusée est à l'arrêt, il n'y a plus rien à regarder dans la scène —
+		// assombrir tout sauf le bouton Claim (qui garde son contour pulsé) le désigne sans
+		// ambiguïté. Les steps de vol AVANT le gel, eux, ne doivent pas être assombris.
+		focus: "dim",
+		textY: 0.16, // sous le multiplicateur, comme watch-launch
 		complete: { kind: "event", event: "ClaimAccepted" },
 	},
 	{
 		id: "claim-explode",
 		text: "Cash secured! Even if the rocket blows up, you keep it all",
+		textY: 0.16, // entre ButtonFinishGame/FinishText (→0.190) et son MultiplierText (0.283→)
 		target: { kind: "none" },
 		complete: { kind: "popupClosed", popup: "ButtonFinishGame" },
 	},
@@ -55,9 +63,10 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 		text: "Buy Rocket Speed: your rocket will climb faster",
 		target: { kind: "gui", path: "ShopMenu/Body/ARocketSpeed" },
 		focus: "dim",
-		// Le panneau ShopMenu occupe y 0.150→0.885 : le bandeau remonte tout en haut,
-		// au-dessus du panneau, au lieu de la position par défaut (0.18) qu'il recouvrirait.
-		textY: 0.02,
+		// Le panneau ShopMenu occupe y 0.150→0.885 : le bandeau remonte tout en haut, contre
+		// la barre Roblox (0 = juste sous l'inset), au lieu de la position par défaut qu'il
+		// recouvrirait.
+		textY: 0,
 		complete: { kind: "attribute", attribute: "RocketSpeedLevel", increaseBy: 1 },
 	},
 	{

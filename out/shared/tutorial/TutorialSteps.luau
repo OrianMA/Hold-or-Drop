@@ -35,6 +35,7 @@ local TUTORIAL_STEPS = { {
 }, {
 	id = "watch-launch",
 	text = "Your rocket is flying! The higher it goes, the bigger your multiplier",
+	textY = 0.16,
 	target = {
 		kind = "none",
 	},
@@ -48,7 +49,8 @@ local TUTORIAL_STEPS = { {
 		kind = "gui",
 		path = "RocketLaunch/ClaimButtonFrame/ClaimButton",
 	},
-	focus = "highlight",
+	focus = "dim",
+	textY = 0.16,
 	complete = {
 		kind = "event",
 		event = "ClaimAccepted",
@@ -56,6 +58,7 @@ local TUTORIAL_STEPS = { {
 }, {
 	id = "claim-explode",
 	text = "Cash secured! Even if the rocket blows up, you keep it all",
+	textY = 0.16,
 	target = {
 		kind = "none",
 	},
@@ -82,7 +85,7 @@ local TUTORIAL_STEPS = { {
 		path = "ShopMenu/Body/ARocketSpeed",
 	},
 	focus = "dim",
-	textY = 0.02,
+	textY = 0,
 	complete = {
 		kind = "attribute",
 		attribute = "RocketSpeedLevel",

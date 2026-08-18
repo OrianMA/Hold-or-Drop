@@ -4,24 +4,36 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local Players = _services.Players
 local RunService = _services.RunService
 local Workspace = _services.Workspace
-local TutorialUI = TS.import(script, script.Parent, "TutorialUI").TutorialUI
+local _TutorialUI = TS.import(script, script.Parent, "TutorialUI")
+local TutorialUI = _TutorialUI.TutorialUI
+local Z_ARROW = _TutorialUI.Z_ARROW
 -- Le pointage du tutorial. Deux modes :
---   • monde  → une TRAÎNÉE de BillboardGui du joueur jusqu'à la cible, qui s'allument
---              l'une après l'autre (chenillard), plus un chevron de bord d'écran quand
---              la cible est hors champ (sinon le joueur ne sait pas où tourner).
+--   • monde  → un RUBAN tendu des pieds du joueur JUSQU'À la cible : UNE seule part plate
+--              dont un SurfaceGui tuile le chevron à taille fixe. Le ruban s'allonge ou se
+--              rétracte avec la distance, les chevrons ne se déforment jamais, ils défilent
+--              vers la cible. Il est tendu en 3D, pas à l'horizontale : son extrémité reste
+--              posée sur l'objet, donc il plonge quand la cible est plus bas (saut) et monte
+--              quand elle est plus haut. Plus un chevron de bord d'écran quand la cible est
+--              hors champ (sinon le joueur ne sait pas où tourner).
 --   • GUI    → une flèche à côté du rectangle de la cible, orientée vers elle.
 -- Une seule boucle RenderStepped, active uniquement pendant un step qui pointe.
 local ARROW_IMAGE = "rbxassetid://104204322044198"
-local ARROW_COUNT = 6
-local MIN_SPACING = 3
-local ARROW_SIZE = 5
-local ARROW_HEIGHT = 3
-local CHASE_PERIOD = 1.2
-local DIM_TRANSPARENCY = 0.75
+-- --- Ruban monde ------------------------------------------------------------------
+local TRAIL_WIDTH = 3.5
+local TRAIL_TILE = 4
+local TRAIL_PIXELS_PER_STUD = 24
+local TRAIL_THICKNESS = 0.2
+local TRAIL_START_OFFSET = 0
+local TARGET_GROUND_PROBE = 60
+local TARGET_GROUND_LIFT = 1.7
+local TRAIL_MIN_LENGTH = 3
+local SCROLL_PERIOD = 0.6
+local TILE_PIXELS = TRAIL_TILE * TRAIL_PIXELS_PER_STUD
+-- --- Flèches écran ----------------------------------------------------------------
 local GUI_ARROW_SIZE = 64
 local GUI_ARROW_GAP = 12
 local GUI_BOB = 8
-local worldArrows = {}
+local trail
 local chevron
 local guiArrow
 local renderConn
@@ -34,47 +46,73 @@ local function makeImage(parent, size)
 	image.Size = size
 	image.AnchorPoint = Vector2.new(0.5, 0.5)
 	image.Position = UDim2.new(0.5, 0, 0.5, 0)
+	image.ZIndex = Z_ARROW
 	image.Parent = parent
 	return image
 end
-local function makeWorldArrow()
-	-- Une part invisible sert d'ancre au BillboardGui (créée côté client : elle n'existe
-	-- que pour ce joueur).
+local function makeTrail()
+	-- Part support créée côté CLIENT : elle n'existe que pour ce joueur, donc aucune
+	-- réplication ni gestion par joueur côté serveur.
 	local part = Instance.new("Part")
-	part.Name = "TutorialArrowAnchor"
-	part.Size = Vector3.new(0.2, 0.2, 0.2)
+	part.Name = "TutorialTrail"
+	-- Repère LOCAL de la plaque : X = largeur, Y = longueur, Z = épaisseur. Elle est ensuite
+	-- couchée à plat par son CFrame (voir layoutTrail).
+	part.Size = Vector3.new(TRAIL_WIDTH, 1, TRAIL_THICKNESS)
 	part.Transparency = 1
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
 	part.CanTouch = false
+	part.CastShadow = false
 	part.Locked = true
 	part.Parent = Workspace
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "TutorialArrow"
-	-- Taille en STUDS (offset nul) : la flèche garde sa taille apparente avec la distance.
-	billboard.Size = UDim2.new(ARROW_SIZE, 0, ARROW_SIZE, 0)
-	billboard.AlwaysOnTop = true
-	billboard.LightInfluence = 0
-	billboard.MaxDistance = 500
-	billboard.Adornee = part
-	billboard.Parent = part
-	local image = makeImage(billboard, UDim2.new(1, 0, 1, 0))
-	image.Visible = false
+	local surface = Instance.new("SurfaceGui")
+	surface.Name = "TutorialTrailSurface"
+	-- Face FRONT, pas Top : c'est la seule face dont l'orientation du GUI est garantie
+	-- (haut du GUI = +Y de la part, jamais tournée ni miroir). Sur la face Top les axes du
+	-- GUI sont transposés (X du GUI = Z de la part) — mesuré en Studio. On couche donc la
+	-- plaque pour que sa face avant regarde le ciel et que son +Y vise la cible : la flèche,
+	-- dessinée pointe en haut, pointe alors vers la cible sans hypothèse à vérifier.
+	surface.Face = Enum.NormalId.Front
+	-- PixelsPerStud FIXE : c'est ce qui garantit qu'un chevron mesure toujours TRAIL_TILE
+	-- studs, que le ruban fasse 10 ou 90 studs de long. Seul leur NOMBRE change.
+	surface.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	surface.PixelsPerStud = TRAIL_PIXELS_PER_STUD
+	-- Pas d'AlwaysOnTop : le ruban se fait masquer par le décor comme n'importe quel objet.
+	surface.LightInfluence = 0
+	surface.Adornee = part
+	surface.Parent = part
+	-- L'image déborde d'une tuile pour pouvoir défiler sans laisser de trou : ce cadre la
+	-- recoupe aux dimensions exactes du ruban.
+	local clip = Instance.new("Frame")
+	clip.Name = "TrailClip"
+	clip.Size = UDim2.new(1, 0, 1, 0)
+	clip.BackgroundTransparency = 1
+	clip.ClipsDescendants = true
+	clip.Parent = surface
+	local image = Instance.new("ImageLabel")
+	image.Name = "TrailImage"
+	image.Image = ARROW_IMAGE
+	image.BackgroundTransparency = 1
+	image.ScaleType = Enum.ScaleType.Tile
+	-- Largeur : toute la largeur du ruban. Hauteur : une longueur FIXE en pixels, donc en
+	-- studs (PixelsPerStud constant) — la tuile ne s'étire jamais.
+	image.TileSize = UDim2.new(1, 0, 0, TILE_PIXELS)
+	image.Size = UDim2.new(1, 0, 1, TILE_PIXELS)
+	image.Position = UDim2.new(0, 0, 0, 0)
+	image.Parent = clip
 	return {
 		part = part,
+		surface = surface,
 		image = image,
 	}
 end
-local function ensureWorldArrows()
-	if #worldArrows > 0 then
-		return nil
+local function ensureTrail()
+	if trail and trail.part.Parent ~= nil then
+		return trail
 	end
-	for i = 0, ARROW_COUNT - 1 do
-		local _worldArrows = worldArrows
-		local _arg0 = makeWorldArrow()
-		table.insert(_worldArrows, _arg0)
-	end
+	trail = makeTrail()
+	return trail
 end
 local function ensureChevron()
 	-- `Parent !== undefined` ne suffit PAS : un ScreenGui détruit (TutorialUI.destroy) garde
@@ -112,7 +150,7 @@ end
 local function angleOf(delta)
 	return math.deg(math.atan2(delta.X, -delta.Y))
 end
-local function characterPosition()
+local function characterRoot()
 	local _hrp = Players.LocalPlayer.Character
 	if _hrp ~= nil then
 		_hrp = _hrp:FindFirstChild("HumanoidRootPart")
@@ -122,13 +160,62 @@ local function characterPosition()
 	if _result ~= nil then
 		_result = _result:IsA("BasePart")
 	end
-	return if _result then hrp.Position else nil
+	return if _result then hrp else nil
+end
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Exclude
+-- Le groupe auquel appartient la cible : son Model s'il y en a un (ButtonModel), sinon son
+-- dossier (Shop). Jamais le Workspace, ce qui reviendrait à exclure la scène entière.
+local function targetGroup(part)
+	local model = part:FindFirstAncestorOfClass("Model")
+	if model then
+		return model
+	end
+	local parent = part.Parent
+	return if parent ~= nil and parent ~= Workspace then parent else part
+end
+-- Point visé : le SOL sous la cible, pas son centre — le ruban finit donc presque à plat
+-- au pied de l'objet au lieu de s'arrêter en l'air à mi-hauteur. On part du dessous de la
+-- cible et on sonde vers le bas. La demi-hauteur est mesurée dans le repère du MONDE — les
+-- trois axes de la part projetés sur Y — et non via Size.Y, qui ne serait la verticale que
+-- si la cible n'était pas tournée.
+local function targetAimPoint(part)
+	local cf = part.CFrame
+	local size = part.Size
+	local halfHeight = 0.5 * (math.abs(cf.XVector.Y) * size.X + math.abs(cf.YVector.Y) * size.Y + math.abs(cf.ZVector.Y) * size.Z)
+	local _position = part.Position
+	local _vector3 = Vector3.new(0, halfHeight, 0)
+	local base = _position - _vector3
+	-- On exclut tout le GROUPE de la cible, pas seulement sa part : sinon la sonde s'arrête
+	-- aussitôt sur le socle du bouton ou sur le mobilier de la boutique (mesuré : 0 stud de
+	-- chute sous ButtonPart) et le ruban n'atteint jamais le sol. Le personnage et le ruban
+	-- lui-même sont exclus pour la même raison.
+	local excluded = { targetGroup(part) }
+	local character = Players.LocalPlayer.Character
+	if character then
+		table.insert(excluded, character)
+	end
+	if trail then
+		local _part = trail.part
+		table.insert(excluded, _part)
+	end
+	groundParams.FilterDescendantsInstances = excluded
+	local hit = Workspace:Raycast(base, Vector3.new(0, -TARGET_GROUND_PROBE, 0), groundParams)
+	-- Sans sol trouvé (cible au-dessus du vide), on se rabat sur son pied.
+	local _result
+	if hit then
+		local _position_1 = hit.Position
+		local _vector3_1 = Vector3.new(0, TARGET_GROUND_LIFT, 0)
+		_result = _position_1 + _vector3_1
+	else
+		_result = base
+	end
+	return _result
 end
 local TutorialArrow
 TutorialArrow = {
 	pointAtWorld = function(self, part)
 		TutorialArrow:clear()
-		ensureWorldArrows()
 		renderConn = RunService.RenderStepped:Connect(function(dt)
 			elapsed += dt
 			-- Le chevron vit dans le ScreenGui du tutorial, qui peut être détruit puis
@@ -136,68 +223,50 @@ TutorialArrow = {
 			-- frame, jamais capturé hors boucle — sinon on écrit dans une instance orpheline
 			-- pendant que le vrai chevron reste invisible.
 			local chev = ensureChevron()
-			local from = characterPosition()
-			local target = part.Position
-			-- La caméra doit être lue à chaque frame car elle est nil au spawn
+			local ribbon = ensureTrail()
+			local root = characterRoot()
+			local target = targetAimPoint(part)
+			-- La caméra doit être lue à chaque frame car elle est nil au spawn.
 			local camera = Workspace.CurrentCamera
-			if not from or not camera then
-				-- Masquer toutes les flèches si on n'est pas prêt
-				for _, arrow in worldArrows do
-					arrow.image.Visible = false
-				end
+			if not root or not camera then
+				ribbon.surface.Enabled = false
 				chev.Visible = false
 				return nil
 			end
-			-- Répartition PROPORTIONNELLE à la distance : selon le step, la cible est entre
-			-- ~10 studs (bouton) et ~90 studs (boutique), donc un pas fixe est soit trop
-			-- dense sur les trajets courts, soit trop court sur les longs (la traînée
-			-- s'arrêterait avant la cible). On calcule combien de flèches tiennent avec un
-			-- espacement minimum, puis on les étale à pas égal entre le joueur et la cible ;
-			-- la dernière s'arrête un peu avant la cible plutôt que de se superposer dessus.
-			local flat = Vector3.new(target.X - from.X, 0, target.Z - from.Z)
-			local distance = flat.Magnitude
-			local direction = if distance > 0.1 then flat.Unit else Vector3.new(0, 0, 1)
-			local phase = (elapsed % CHASE_PERIOD) / CHASE_PERIOD
-			local visibleCount = math.clamp(math.floor(distance / MIN_SPACING), 1, ARROW_COUNT)
-			local pitch = distance / (visibleCount + 1)
-			-- Chenillard calculé sur les flèches VISIBLES uniquement : sur un trajet court
-			-- (peu de flèches allumées), indexer sur les 6 rangs comptait aussi les flèches
-			-- masquées et la traînée affichée restait figée en sourdine au lieu de balayer.
-			local lit = math.floor(phase * visibleCount)
-			for i = 0, #worldArrows - 1 do
-				local arrow = worldArrows[i + 1]
-				-- Au-delà du nombre de flèches visibles pour cette distance → masquée.
-				if i >= visibleCount then
-					arrow.image.Visible = false
-					continue
-				end
-				arrow.image.Visible = true
-				local along = pitch * (i + 1)
-				local _arg0 = direction * along
-				local _exp = from + _arg0
-				local _vector3 = Vector3.new(0, ARROW_HEIGHT, 0)
-				local pos = _exp + _vector3
-				arrow.part.Position = pos
-				-- Chenillard : la flèche dont le rang correspond à la phase est pleine, les
-				-- autres sont estompées.
-				arrow.image.ImageTransparency = if i == lit then 0 else DIM_TRANSPARENCY
-				-- Orientation écran : vers la flèche suivante (ou vers la cible pour la
-				-- dernière visible).
-				local isLast = i == visibleCount - 1
-				local _result
-				if isLast then
-					_result = target
-				else
-					local _arg0_1 = pitch * (i + 2)
-					local _arg0_2 = direction * _arg0_1
-					local _exp_1 = from + _arg0_2
-					local _vector3_1 = Vector3.new(0, ARROW_HEIGHT, 0)
-					_result = _exp_1 + _vector3_1
-				end
-				local nextWorld = _result
-				local here = camera:WorldToViewportPoint(pos)
-				local nextPoint = camera:WorldToViewportPoint(nextWorld)
-				arrow.image.Rotation = angleOf(Vector2.new(nextPoint.X - here.X, nextPoint.Y - here.Y))
+			-- Départ au TORSE du joueur (le HumanoidRootPart), arrivée au SOL sous la cible : le
+			-- ruban est tendu en 3D, pas rabattu à l'horizontale. C'est ce qui fait qu'il plonge
+			-- vers la cible quand le joueur saute, au lieu de monter avec lui en restant plat.
+			local _position = root.Position
+			local _vector3 = Vector3.new(0, TRAIL_START_OFFSET, 0)
+			local start = _position + _vector3
+			local span = target - start
+			local length = span.Magnitude
+			if length < TRAIL_MIN_LENGTH then
+				-- Arrivé : plus rien à montrer, et à cette distance le ruban serait plus large
+				-- que long.
+				ribbon.surface.Enabled = false
+			else
+				ribbon.surface.Enabled = true
+				local direction = span.Unit
+				local _arg0 = span * 0.5
+				local mid = start + _arg0
+				-- Seules la LONGUEUR (Y local) et la position changent : largeur et épaisseur
+				-- sont constantes, et PixelsPerStud étant fixe, allonger le ruban AJOUTE des
+				-- chevrons au lieu de les étirer.
+				ribbon.part.Size = Vector3.new(TRAIL_WIDTH, length, TRAIL_THICKNESS)
+				-- Le +Y local — le haut du GUI — vise la cible. La largeur (X local) reste
+				-- HORIZONTALE : la plaque bascule donc comme une rampe, mais ne roule jamais
+				-- sur elle-même. Cible à la verticale = projection au sol nulle : largeur
+				-- arbitraire, l'orientation n'a alors plus de sens de toute façon.
+				local flat = Vector3.new(direction.X, 0, direction.Z)
+				local side = if flat.Magnitude > 0.001 then Vector3.new(flat.Z, 0, -flat.X).Unit else Vector3.new(1, 0, 0)
+				-- vZ = X × Y : la face avant (-Z), celle qui porte le GUI, regarde vers le haut,
+				-- inclinée du même angle que le ruban.
+				ribbon.part.CFrame = CFrame.fromMatrix(mid, side, direction, side:Cross(direction))
+				-- Défilement : l'image fait une tuile de plus que le ruban et remonte d'une tuile
+				-- par cycle, donc les chevrons avancent vers la cible sans trou ni saut.
+				local phase = (elapsed % SCROLL_PERIOD) / SCROLL_PERIOD
+				ribbon.image.Position = UDim2.new(0, 0, 0, -math.floor(phase * TILE_PIXELS))
 			end
 			-- Chevron de bord d'écran quand la cible n'est pas visible.
 			local screen, onScreen = camera:WorldToViewportPoint(target)
@@ -218,7 +287,11 @@ TutorialArrow = {
 				local _vector2 = Vector2.new(math.clamp(dir.X * viewport.X, -center.X + margin, center.X - margin), math.clamp(dir.Y * viewport.Y, -center.Y + margin, center.Y - margin))
 				local clamped = center + _vector2
 				chev.Visible = true
-				chev.Position = UDim2.new(0, clamped.X, 0, clamped.Y)
+				-- `clamped` est en coordonnées VIEWPORT (origine sous la barre Roblox) et le
+				-- chevron vit dans TutorialUI (origine en haut de l'écran) : même conversion
+				-- que pour la flèche GUI, sinon le chevron est trop haut de l'inset.
+				local chevOrigin = TutorialUI:originOffset()
+				chev.Position = UDim2.new(0, clamped.X - chevOrigin.X, 0, clamped.Y - chevOrigin.Y)
 				chev.ImageTransparency = 0
 				chev.Rotation = angleOf(dir)
 			end
@@ -233,7 +306,13 @@ TutorialArrow = {
 			-- à chaque frame, plutôt que de la capturer hors boucle.
 			local arrow = ensureGuiArrow()
 			arrow.Visible = true
-			local pos = target.AbsolutePosition
+			-- La cible vit dans InGameUI, la flèche dans TutorialUI : deux ScreenGuis, deux
+			-- repères (voir TutorialUI.originOffset). Sans cette conversion — la même que dans
+			-- TutorialFocus.layoutDim — la flèche est décalée vers le haut de la hauteur de la
+			-- barre Roblox et ne vise plus le milieu de la cible. Lu à chaque frame, jamais
+			-- mis en cache : TutorialUI peut être reconstruit pendant que la boucle tourne.
+			local origin = TutorialUI:originOffset()
+			local pos = target.AbsolutePosition - origin
 			local size = target.AbsoluteSize
 			local bob = math.sin(elapsed * 4) * GUI_BOB
 			-- À gauche du bord gauche, centrée verticalement, pointant vers la droite (90°).
@@ -244,10 +323,10 @@ TutorialArrow = {
 	clear = function(self)
 		stopRender()
 		elapsed = 0
-		for _, arrow in worldArrows do
-			arrow.part:Destroy()
+		if trail then
+			trail.part:Destroy()
+			trail = nil
 		end
-		worldArrows = {}
 		if chevron then
 			chevron:Destroy()
 			chevron = nil
