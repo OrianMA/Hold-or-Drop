@@ -7,6 +7,7 @@ import { AudioConfig } from "shared/AudioConfig";
 import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import { RocketSteerController } from "client/behaviors/RocketSteerController";
+import { MoneyBurst } from "client/ui/MoneyBurst";
 import {
 	ContentProvider,
 	Lighting,
@@ -230,6 +231,8 @@ export function init(): void {
 	task.spawn(() => {
 		pcall(() => ContentProvider.PreloadAsync([claimCashSoundTemplate]));
 	});
+	// Même logique pour l'image des billets de l'explosion de cash au claim.
+	MoneyBurst.preload();
 
 	// Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
 	// valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
@@ -427,6 +430,8 @@ export function init(): void {
 		}
 		// Popup de gain verrouillé : fondu entrant + montée avec le montant exact.
 		revealClaimPopup(claimedCash);
+		// Gerbe de billets 2D : part du centre de l'écran, se disperse d'un coup, retombe.
+		MoneyBurst.play();
 	});
 
 	// La fusée explose sans claim : la partie est finie côté client (le claim ne peut

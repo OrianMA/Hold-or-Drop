@@ -72,7 +72,7 @@ src/
 │   │   └── ShopBehavior (open/close), ShopItemsController (4 upgrade buttons), ShopMoneyBuyBehavior (Robux money popup)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
 │   ├── audio/MusicController.ts  # BGM playlist + high-altitude ascent track
-│   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, etc.)
+│   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, MoneyBurst, etc.)
 └── shared/                  # ReplicatedStorage — code/data used by both sides
     ├── Event.ts             # RemoteEvent catalog (Events namespace)
     ├── Utils/DefineEvent.ts # Creates (server) / waits for (client) a RemoteEvent
@@ -269,7 +269,8 @@ colour), plays the **cash SFX** (`AudioConfig.sfx.moneyGain`, not the generic UI
 button carries a `NoUiClick` attribute so `UiClickSound` skips it), and is disabled (no
 double-claim). The strategic tension is now *claim before the rocket explodes*: claim too late
 and the explosion lands first (loss); claim in time and the explosion just collects your
-locked win.
+locked win. On `ClaimAcceptedEvent` the client also fires the **cash burst**
+(`MoneyBurst.play()`, §6.21) alongside the locked-gain popup.
 
 **Go Home** (`GoHomeEvent`): `CLAIM_REARM_DELAY` (0.6 s) after a claim the **same button
 re-arms**, with its side label (`ClaimButtonFrame.TextLabel`) swapped from `"Claim"` to
@@ -1044,6 +1045,23 @@ déclinés en **4 raretés**. Purement présentation, 100 % client.
 - **API** — `InformationText.show(text, { rarity?, color?, holdSeconds? })`
   (`InformationTextOptions`, partagé dans `shared/InformationRarity.ts`). Le serveur passe le
   même objet d'options via `InformationTextEvent`.
+
+### 6.21 Cash burst on claim (`client/ui/MoneyBurst.ts`)
+
+Purely client-side 2D particle burst played on `ClaimAcceptedEvent`: `PARTICLE_COUNT` (26)
+`ImageLabel`s of the money bill (`rbxassetid://18209585783`) spawn on the centre of the
+`InGameUI` ScreenGui, shoot outward over the full circle at `SPEED_MIN..SPEED_MAX` px/s, then
+fall back down. Not a `ParticleEmitter` — the bills must render over the HUD, so it is a small
+pixel simulation stepped in `RunService.RenderStepped` (a single connection, opened on the
+first burst and closed once the last bill dies).
+
+Per bill: exponential `DRAG` (fast burst → soft settle; terminal fall speed ≈ `GRAVITY / DRAG`),
+`GRAVITY`, a damped random `spin`, a sine `SWAY` for the paper-in-the-air feel, a `POP_TIME`
+scale-in, and a fade from `FADE_START` to `LIFETIME` (2.6 s) before `Destroy()`. All pixel
+constants are authored for `REFERENCE_HEIGHT` (900 px) and rescaled by the real viewport height,
+so the burst reads the same on mobile. `MoneyBurst.preload()` (called from
+`RocketLaunchBehavior.init`) warms the image so the first claim of the session is not blank;
+`MoneyBurst.clear()` wipes bills still in flight.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 

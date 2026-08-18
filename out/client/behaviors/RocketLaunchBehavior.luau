@@ -12,6 +12,7 @@ local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS"
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local RocketSteerController = TS.import(script, script.Parent, "RocketSteerController").RocketSteerController
+local MoneyBurst = TS.import(script, script.Parent.Parent, "ui", "MoneyBurst").MoneyBurst
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local Lighting = _services.Lighting
@@ -250,6 +251,8 @@ local function init()
 			return ContentProvider:PreloadAsync({ claimCashSoundTemplate })
 		end)
 	end)
+	-- Même logique pour l'image des billets de l'explosion de cash au claim.
+	MoneyBurst:preload()
 	-- Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
 	-- valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
 	-- nombres intermédiaires (lent au début, de plus en plus vite).
@@ -443,6 +446,8 @@ local function init()
 		end
 		-- Popup de gain verrouillé : fondu entrant + montée avec le montant exact.
 		revealClaimPopup(claimedCash)
+		-- Gerbe de billets 2D : part du centre de l'écran, se disperse d'un coup, retombe.
+		MoneyBurst:play()
 	end)
 	-- La fusée explose sans claim : la partie est finie côté client (le claim ne peut
 	-- plus rien verrouiller). PlayerKilledEvent, qui suit immédiatement, gère la caméra,
