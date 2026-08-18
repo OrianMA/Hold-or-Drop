@@ -132,6 +132,10 @@ end
 -- Cash threshold required to perform rebirth number R+1 (R = rebirths already done).
 local function rebirthCost(rebirths)
 	local r = math.max(0, math.floor(rebirths))
+	local override = REBIRTH.firstCosts[r + 1]
+	if override ~= nil then
+		return override
+	end
 	return math.floor(REBIRTH.baseCost * REBIRTH.costGrowth ^ r)
 end
 -- Multiplicateur d'argent permanent après `rebirths` rebirths. Géométrique : chaque

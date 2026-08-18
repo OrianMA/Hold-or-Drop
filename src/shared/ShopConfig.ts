@@ -135,6 +135,8 @@ export function isAtCap(stat: ShopStat, level: number): boolean {
 // Cash threshold required to perform rebirth number R+1 (R = rebirths already done).
 export function rebirthCost(rebirths: number): number {
 	const r = math.max(0, math.floor(rebirths));
+	const override = REBIRTH.firstCosts[r];
+	if (override !== undefined) return override;
 	return math.floor(REBIRTH.baseCost * REBIRTH.costGrowth ** r);
 }
 

@@ -105,9 +105,9 @@ C.RES_PRICE_GROWTH = priceGrowthOf("RESISTANCE");
 
 // Prix imposés des premiers niveaux (ShopBalance.ROCKET_SPEED.firstLevelPrices) — un
 // tableau d'exceptions consulté avant la formule, pour que l'onboarding soit abordable.
-function firstLevelPricesOf(block) {
+function firstLevelPricesOf(block, fieldName = "firstLevelPrices") {
 	const src = S_BAL.match(
-		new RegExp(`export const ${block}[\\s\\S]*?firstLevelPrices:\\s*\\[([^\\]]*)\\]`),
+		new RegExp(`export const ${block}[\\s\\S]*?${fieldName}:\\s*\\[([^\\]]*)\\]`),
 	);
 	if (!src) return [];
 	return src[1]
@@ -153,7 +153,9 @@ const price = (start, growth, lvl, overrides) => {
 };
 const baseCashVal = (lvl) => Math.floor(C.BC_BASE * C.BC_GROWTH ** lvl);
 const speedVal = (lvl) => C.RS_BASE + lvl;
-const rebirthCost = (R) => Math.floor(C.RB_BASE_COST * C.RB_COST_GROWTH ** R);
+C.RB_FIRST_COSTS = firstLevelPricesOf("REBIRTH", "firstCosts");
+const rebirthCost = (R) =>
+	C.RB_FIRST_COSTS[R] !== undefined ? C.RB_FIRST_COSTS[R] : Math.floor(C.RB_BASE_COST * C.RB_COST_GROWTH ** R);
 
 // Doit refléter shared/ResistanceCurve.ts. La forme de safeWindow est vérifiée par le
 // critère 2b ci-dessous (assertion sur la source), donc on code ici la forme cible.

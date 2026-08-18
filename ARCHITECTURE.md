@@ -587,7 +587,9 @@ are named `LossRewardFloatingText` so `FloatingCash` still drops them on a rebir
 A permanent money multiplier earned by resetting everything. It lives in its **own panel**
 (`InGameUI/RebirthMenu`), **independent of the shop** — opened from the HUD button
 `InGameUI/HUD/ButtonsFrame/RebirthFrame/ImageButton`, closed via `RebirthMenu/CloseFrame/CloseButton`.
-- `ShopConfig` exposes the pure pricing/reward: `rebirthCost(R) = floor(20 000 × 38^R)` and
+- `ShopConfig` exposes the pure pricing/reward: `rebirthCost(R) = floor(20 000 × 38^R)`, with
+  `REBIRTH.firstCosts` overriding the first entries (R0 = **1 000**, so the first rebirth lands
+  in ~6 runs / ~2.5 min and teaches the mechanic; R1+ untouched at 760 000, 28.9 M…), and
   `rebirthMult(R) = 8^R` (geometric — no lookup table). `multGrowth` = 8 is calibrated so a
   player recovers their pre-rebirth peak income in ~3 runs (they restart with all 3 stat
   levels at 0); `costGrowth` = 38 deliberately outpaces that, so rebirth cycles lengthen
@@ -1129,8 +1131,9 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `RESISTANCE_PASS` | `shared/ShopBalance.ts` | +20 lvls | Bonus resistance levels from the resistance game-pass (id 0 = inert) |
 | `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to the boosts factor, which is then MULTIPLIED by `MultRebirth` to form `MoneyMult` |
 | `MONEY_TIERS` | `shared/ShopBalance.ts` | ×2…×1024, highest owned wins | Game-pass money-tier multipliers (ids configured; sold via shop upsell + HUD MultiplierBuyButton) |
-| Rebirth base cost | `shared/ShopBalance.ts` | 20 000 | Cash for the 1st rebirth |
-| Rebirth cost growth | `shared/ShopBalance.ts` | ×38 / rebirth | `rebirthCost(R)=floor(20 000×38^R)` |
+| Rebirth base cost | `shared/ShopBalance.ts` | 20 000 | Base of the cost curve (used from R1 on) |
+| Rebirth first costs | `shared/ShopBalance.ts` | `[1 000]` | Imposed cost of the 1st rebirth (~6 runs / ~2.5 min) — overrides the curve at R0 only |
+| Rebirth cost growth | `shared/ShopBalance.ts` | ×38 / rebirth | `rebirthCost(R)=floor(20 000×38^R)` outside `firstCosts` |
 | Rebirth mult growth | `shared/ShopBalance.ts` | ×8 / rebirth | `rebirthMult(R)=8^R` (geometric, no lookup table) — the `MultRebirth` factor that MULTIPLIES the additive boosts factor in `MoneyMult` (see §6.6) |
 | `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
 | `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |

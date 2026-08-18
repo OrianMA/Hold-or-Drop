@@ -68,6 +68,7 @@ local REBIRTH = {
 	baseCost = 20000,
 	costGrowth = 38,
 	multGrowth = 8,
+	firstCosts = { 1000 },
 }
 -- ── Money multipliers (rebirth multiplicative, boosts additive) ───────────────
 -- Folded into BaseCash via shared/ShopConfig.moneyMult:

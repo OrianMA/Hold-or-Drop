@@ -76,6 +76,12 @@ export const REBIRTH = {
 	baseCost: 20000,
 	costGrowth: 38,
 	multGrowth: 8,
+	// Coûts IMPOSÉS des premiers rebirths (index = rebirths déjà faits). Au-delà du
+	// tableau, la courbe baseCost * costGrowth ^ R reprend telle quelle (R1 = 760 000,
+	// R2 = 28,9 M… inchangés). Le premier rebirth sert de TUTORIEL de la mécanique :
+	// 1 000 $ ≈ 6 runs / ~2.5 min, le joueur voit le ×8 avant de s'engager dans la
+	// vraie boucle (le cycle R0 passait 9,1 min à 20 000 $).
+	firstCosts: [1000] as readonly number[],
 };
 
 // ── Money multipliers (rebirth multiplicative, boosts additive) ───────────────
