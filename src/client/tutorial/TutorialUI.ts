@@ -1,4 +1,4 @@
-import { Players } from "@rbxts/services";
+import { GuiService, Players } from "@rbxts/services";
 
 // Le ScreenGui du tutorial, créé 100 % en code (rien à authorer dans Studio sauf le
 // bouton Skip — voir TutorialSkipButton). Contient l'overlay de focus, les flèches et
@@ -10,7 +10,7 @@ const IN_GAME_UI = "InGameUI";
 const DISPLAY_ORDER = 100;
 // Bord supérieur par défaut du bandeau, en scale — utilisé quand le step n'a pas de
 // TutorialStep.textY. Voir le bloc de mesures ci-dessous dans ensure().
-export const DEFAULT_BANNER_Y = 0.5;
+export const DEFAULT_BANNER_Y = 0.12;
 
 let screenGui: ScreenGui | undefined;
 let banner: Frame | undefined;
@@ -19,6 +19,16 @@ let originFrame: Frame | undefined;
 
 function playerGui(): PlayerGui {
 	return Players.LocalPlayer.WaitForChild("PlayerGui") as PlayerGui;
+}
+
+// SEUL offset en pixels autorisé sur le bandeau : la barre Roblox. Le ScreenGui du
+// tutorial recopie IgnoreGuiInset de InGameUI (= true), donc y = 0 tombe SOUS la barre
+// système. Cette hauteur est en pixels par nature (~36 px, indépendante du viewport) :
+// l'exprimer en scale masquerait le bandeau sur les écrans bas (paysage téléphone).
+function topInsetPixels(): number {
+	if (!screenGui?.IgnoreGuiInset) return 0;
+	const [topLeft] = GuiService.GetGuiInset();
+	return topLeft.Y;
 }
 
 export const TutorialUI = {
@@ -81,21 +91,24 @@ export const TutorialUI = {
 		//   ShopMenu (panneau entier)        y 0.150→0.885
 		//   HUD/MoneyParent                  y 0.211→0.289  (x 0.030→0.241 seulement)
 		//   HUD/BottomList                   y 0.855→0.945
-		// Le milieu de l'écran est INTERDIT par défaut : c'est là que se projettent les
-		// cibles monde, donc la traînée de flèches (mesuré à y≈0.38 pour le bouton de la
-		// room) — un bandeau centré verticalement la recouvrait entièrement. DEFAULT_BANNER_Y
-		// place donc le bandeau juste sous ce milieu (0.50→0.56), qui reste libre sur la
-		// plupart des steps.
-		// Certains steps n'ont pas cette chance (ex. buy-rocket-speed : le panneau ShopMenu
-		// couvre presque tout l'écran) ou ont une cible juste sous le milieu (ex. press-start :
-		// StartButton). Pour ceux-là, TutorialStep.textY (voir TutorialTypes.ts) fixe le bord
-		// supérieur du bandeau step par step ; setText() en tient compte.
-		// Largeur 0.46 centrée (x 0.27→0.73) pour laisser 3 points à la colonne ButtonsFrame.
-		// Position Y, largeur et hauteur sont les seuls leviers — les garder en scale, jamais
-		// en offset : un offset en pixels rend la marge dépendante du viewport.
+		// Le bandeau vit dans le TIERS HAUT de l'écran, sous le multiplicateur du run
+		// (RocketLaunch/MultiplierText occupe y 0.105→0.227, mais son texte ne remplit pas
+		// tout ce rectangle) : DEFAULT_BANNER_Y le pose en 0.12→0.20, + l'inset de la barre
+		// Roblox (voir topInsetPixels). Position validée en jeu sur le step claim.
+		// Le milieu est interdit (c'est là que se projettent les cibles monde, donc la
+		// traînée de flèches, mesurée à y≈0.38 pour le bouton de la room) et le bas est pris
+		// par les boutons d'action + le bouton Skip (y 0.87→0.95).
+		// Un step dont la cible mange ce tiers haut remonte le bandeau tout en haut via
+		// TutorialStep.textY (voir TutorialTypes.ts) — c'est le cas de buy-rocket-speed, dont
+		// le panneau ShopMenu démarre à y 0.150 ; setText() en tient compte.
+		// Largeur 0.58 centrée (x 0.21→0.79) : les colonnes latérales sont libres à cette
+		// hauteur (ButtonsFrame démarre à y 0.31), donc le bandeau peut être plus large
+		// qu'un bandeau centré — moins de retour à la ligne, donc un texte plus gros.
+		// Position Y, largeur et hauteur restent en scale (hors inset barre Roblox) : un
+		// offset en pixels rendrait la marge dépendante de la hauteur du viewport.
 		frame.AnchorPoint = new Vector2(0.5, 0);
-		frame.Position = new UDim2(0.5, 0, DEFAULT_BANNER_Y, 0);
-		frame.Size = new UDim2(0.46, 0, 0.06, 0);
+		frame.Position = new UDim2(0.5, 0, DEFAULT_BANNER_Y, topInsetPixels());
+		frame.Size = new UDim2(0.58, 0, 0.08, 0);
 		frame.BackgroundColor3 = Color3.fromRGB(12, 12, 20);
 		frame.BackgroundTransparency = 0.25;
 		frame.BorderSizePixel = 0;
@@ -127,7 +140,7 @@ export const TutorialUI = {
 		label = text;
 
 		const textSize = new Instance("UITextSizeConstraint");
-		textSize.MaxTextSize = 22;
+		textSize.MaxTextSize = 30;
 		textSize.Parent = text;
 
 		return gui;
@@ -148,7 +161,7 @@ export const TutorialUI = {
 		label.Text = value;
 		banner.Visible = value !== "";
 		const position = banner.Position;
-		banner.Position = new UDim2(position.X.Scale, position.X.Offset, y ?? DEFAULT_BANNER_Y, 0);
+		banner.Position = new UDim2(position.X.Scale, position.X.Offset, y ?? DEFAULT_BANNER_Y, topInsetPixels());
 	},
 
 	hideBanner(): void {

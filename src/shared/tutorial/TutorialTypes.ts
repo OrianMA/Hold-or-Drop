@@ -42,7 +42,7 @@ export interface ScriptedRun {
 
 export interface TutorialStep {
 	readonly id: string; // stable — c'est LUI qui est persisté
-	readonly text: string; // instruction affichée (FR)
+	readonly text: string; // instruction affichée au joueur (EN — langue du jeu)
 	readonly target: TutorialTarget;
 	readonly focus?: TutorialFocus;
 	readonly run?: ScriptedRun;

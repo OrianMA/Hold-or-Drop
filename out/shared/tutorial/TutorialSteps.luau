@@ -4,7 +4,7 @@
 -- Voir docs/superpowers/specs/2026-08-17-tutorial-system-design.md §10.
 local TUTORIAL_STEPS = { {
 	id = "go-to-button",
-	text = "Va appuyer sur ton bouton !",
+	text = "Go push your button",
 	target = {
 		kind = "world",
 		part = "RoomButton",
@@ -15,18 +15,17 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "press-start",
-	text = "Appuie sur START pour faire décoller ta fusée",
+	text = "Press START to launch your rocket !",
 	target = {
 		kind = "gui",
 		path = "ButtonMenu/StartButton",
 	},
 	focus = "dim",
-	textY = 0.46,
 	run = {
-		freezeAt = 2.5,
+		freezeAt = 5,
 		advanceToOnFreeze = "claim",
 		unfreezeOnClaim = true,
-		explodeAfterClaim = 1,
+		explodeAfterClaim = 2,
 		noRisk = true,
 	},
 	complete = {
@@ -35,7 +34,7 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "watch-launch",
-	text = "Ta fusée décolle ! Plus elle monte, plus ton multiplicateur grimpe",
+	text = "Your rocket is flying! The higher it goes, the bigger your multiplier",
 	target = {
 		kind = "none",
 	},
@@ -44,7 +43,7 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "claim",
-	text = "Appuie sur CLAIM pour sécuriser tes gains",
+	text = "Press CLAIM to secure your cash",
 	target = {
 		kind = "gui",
 		path = "RocketLaunch/ClaimButtonFrame/ClaimButton",
@@ -56,7 +55,7 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "claim-explode",
-	text = "Gains sécurisés ! Même si la fusée explose, tu gardes tout",
+	text = "Cash secured! Even if the rocket blows up, you keep it all",
 	target = {
 		kind = "none",
 	},
@@ -66,7 +65,7 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "go-to-shop",
-	text = "Direction la boutique pour améliorer ta fusée",
+	text = "Head to the shop to upgrade your rocket",
 	target = {
 		kind = "world",
 		part = "Shop",
@@ -77,13 +76,13 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "buy-rocket-speed",
-	text = "Achète Rocket Speed : ta fusée montera plus vite",
+	text = "Buy Rocket Speed: your rocket will climb faster",
 	target = {
 		kind = "gui",
 		path = "ShopMenu/Body/ARocketSpeed",
 	},
 	focus = "dim",
-	textY = 0.06,
+	textY = 0.02,
 	complete = {
 		kind = "attribute",
 		attribute = "RocketSpeedLevel",
@@ -91,7 +90,7 @@ local TUTORIAL_STEPS = { {
 	},
 }, {
 	id = "back-to-button",
-	text = "Retourne à ton bouton et rejoue — à toi de jouer !",
+	text = "Go back to your button and play again — you're on your own now!",
 	target = {
 		kind = "world",
 		part = "RoomButton",

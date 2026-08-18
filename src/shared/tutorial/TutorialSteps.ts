@@ -6,64 +6,63 @@ import { TutorialStep } from "./TutorialTypes";
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 	{
 		id: "go-to-button",
-		text: "Va appuyer sur ton bouton !",
+		text: "Go push your button",
 		target: { kind: "world", part: "RoomButton" },
 		complete: { kind: "event", event: "ButtonTrigger" },
 	},
 	{
 		id: "press-start",
-		text: "Appuie sur START pour faire décoller ta fusée",
+		text: "Press START to launch your rocket !",
 		target: { kind: "gui", path: "ButtonMenu/StartButton" },
 		focus: "dim",
-		// Bandeau relevé (0.46→0.52) : StartButton commence à y 0.570, ça laisse 0.05 de marge.
-		textY: 0.46,
 		// Le run truqué est porté par le step DEPUIS lequel le décollage part.
 		run: {
-			freezeAt: 2.5,
+			freezeAt: 5,
 			advanceToOnFreeze: "claim",
 			unfreezeOnClaim: true,
-			explodeAfterClaim: 1,
+			explodeAfterClaim: 2,
 			noRisk: true,
 		},
 		complete: { kind: "popup", popup: "RocketLaunch" },
 	},
 	{
 		id: "watch-launch",
-		text: "Ta fusée décolle ! Plus elle monte, plus ton multiplicateur grimpe",
+		text: "Your rocket is flying! The higher it goes, the bigger your multiplier",
 		target: { kind: "none" },
 		complete: { kind: "server" }, // le director saute à "claim" au gel (2,5 s)
 	},
 	{
 		id: "claim",
-		text: "Appuie sur CLAIM pour sécuriser tes gains",
+		text: "Press CLAIM to secure your cash",
 		target: { kind: "gui", path: "RocketLaunch/ClaimButtonFrame/ClaimButton" },
 		focus: "highlight", // pas de dim : la fusée doit rester visible
 		complete: { kind: "event", event: "ClaimAccepted" },
 	},
 	{
 		id: "claim-explode",
-		text: "Gains sécurisés ! Même si la fusée explose, tu gardes tout",
+		text: "Cash secured! Even if the rocket blows up, you keep it all",
 		target: { kind: "none" },
 		complete: { kind: "popupClosed", popup: "ButtonFinishGame" },
 	},
 	{
 		id: "go-to-shop",
-		text: "Direction la boutique pour améliorer ta fusée",
+		text: "Head to the shop to upgrade your rocket",
 		target: { kind: "world", part: "Shop" },
 		complete: { kind: "popup", popup: "ShopMenu" },
 	},
 	{
 		id: "buy-rocket-speed",
-		text: "Achète Rocket Speed : ta fusée montera plus vite",
+		text: "Buy Rocket Speed: your rocket will climb faster",
 		target: { kind: "gui", path: "ShopMenu/Body/ARocketSpeed" },
 		focus: "dim",
-		// Le panneau ShopMenu occupe y 0.150→0.885 : seule la bande au-dessus reste libre.
-		textY: 0.06,
+		// Le panneau ShopMenu occupe y 0.150→0.885 : le bandeau remonte tout en haut,
+		// au-dessus du panneau, au lieu de la position par défaut (0.18) qu'il recouvrirait.
+		textY: 0.02,
 		complete: { kind: "attribute", attribute: "RocketSpeedLevel", increaseBy: 1 },
 	},
 	{
 		id: "back-to-button",
-		text: "Retourne à ton bouton et rejoue — à toi de jouer !",
+		text: "Go back to your button and play again — you're on your own now!",
 		target: { kind: "world", part: "RoomButton" },
 		complete: { kind: "event", event: "ButtonTrigger" },
 	},
