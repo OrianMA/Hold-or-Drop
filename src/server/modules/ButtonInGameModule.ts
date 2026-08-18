@@ -173,7 +173,8 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 	// La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
 	// Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
-	RocketLauncher.launch(room, rocketSpeed);
+	// Un run scripté peut la ralentir (tutorial) ; hors tutorial le facteur vaut 1.
+	RocketLauncher.launch(room, rocketSpeed * (scripted?.speedFactor ?? 1));
 
 	// Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
 	AnalyticsService.custom(player, "RocketLaunched", rocketSpeed);

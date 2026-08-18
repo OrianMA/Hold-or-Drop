@@ -23,6 +23,9 @@ export interface ScriptedRunHandle {
 	explosionAt: () => number;
 	// Le joueur vient de claim.
 	onClaim: () => void;
+	// Multiplie la vitesse de décollage (1 = vitesse normale du joueur). Lu UNE fois, juste
+	// avant launch() — contrairement à la deadline, il n'a plus de sens une fois en vol.
+	speedFactor: number;
 }
 
 const activeHandles = new Map<Player, { abort: () => void }>();
@@ -80,6 +83,7 @@ export const TutorialRunDirector = {
 
 		return {
 			explosionAt: () => deadline,
+			speedFactor: run.speedFactor ?? 1,
 			onClaim: () => {
 				if (run.unfreezeOnClaim === true && frozen) {
 					RocketLauncher.unfreeze(room);

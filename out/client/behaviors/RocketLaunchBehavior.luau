@@ -81,7 +81,7 @@ local activatedConn
 -- qu'elle a grimpé HIGH_ALTITUDE_MUSIC_THRESHOLD studs, on crossfade la BGM vers la piste
 -- haute altitude (une seule fois par run). Pendant un run la caméra suit la fusée, donc son
 -- CameraSubject EST la part de la fusée : on lit son Y en direct, sans plomberie réseau.
-local HIGH_ALTITUDE_MUSIC_THRESHOLD = 50
+local HIGH_ALTITUDE_MUSIC_THRESHOLD = 65
 local rocketMusicSubject
 local rocketBaselineY = 0
 local highAltitudeReached = false

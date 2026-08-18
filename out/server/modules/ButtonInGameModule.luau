@@ -161,7 +161,16 @@ local function startButtonGame(player, session)
 	Events.MultiplierUpdateEvent:FireClient(player, currentMultiplier)
 	-- La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
 	-- Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
-	RocketLauncher:launch(room, rocketSpeed)
+	-- Un run scripté peut la ralentir (tutorial) ; hors tutorial le facteur vaut 1.
+	local _result = scripted
+	if _result ~= nil then
+		_result = _result.speedFactor
+	end
+	local _condition = _result
+	if _condition == nil then
+		_condition = 1
+	end
+	RocketLauncher:launch(room, rocketSpeed * _condition)
 	-- Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
 	AnalyticsService:custom(player, "RocketLaunched", rocketSpeed)
 	AnalyticsService:runStep(player, runId, 1, "Launch")
@@ -179,9 +188,9 @@ local function startButtonGame(player, session)
 		claimed = true
 		claimedMultiplier = currentMultiplier
 		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier)
-		local _result = scripted
-		if _result ~= nil then
-			_result.onClaim()
+		local _result_1 = scripted
+		if _result_1 ~= nil then
+			_result_1.onClaim()
 		end
 		-- Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
 		AnalyticsService:custom(player, "RunClaimed", claimedMultiplier)

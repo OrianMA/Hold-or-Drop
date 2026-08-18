@@ -38,6 +38,7 @@ export interface ScriptedRun {
 	readonly explodeAfterClaim?: number; // explosion N secondes après le claim
 	readonly explodeAt?: number; // explosion à t fixe depuis le décollage
 	readonly noRisk?: boolean; // aucun tirage aléatoire : seul le script peut faire exploser
+	readonly speedFactor?: number; // multiplie la vitesse de la fusée (1 = vitesse normale du joueur)
 }
 
 export interface TutorialStep {

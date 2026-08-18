@@ -663,7 +663,7 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   - **High-altitude music**: a **classic `Sound`** (looped), created + preloaded at init (no CDN
     stall on the first crossfade). `RocketLaunchBehavior` captures the rocket's Y at launch (the
     camera's `CameraSubject` **is** the rocket part during a run) and, once it has climbed
-    `HIGH_ALTITUDE_MUSIC_THRESHOLD` (50) studs, calls `enterHighAltitude()` **once per run** — which
+    `HIGH_ALTITUDE_MUSIC_THRESHOLD` (65) studs, calls `enterHighAltitude()` **once per run** — which
     crossfades: `AudioFader.Volume` → 0 while the high track fades in (0.8s). At the explosion,
     `stopRunMusic()` hard-cuts the high track and quickly ducks the base BGM to 0 (0.25s) so the run
     ends on silence, then `resumeBgm` brings the base BGM back. Called on `ButtonExplodedEvent`
@@ -870,7 +870,9 @@ recaptured on the next `launch`.
   up to `ROCKET_MAX_SPEED` and rises the model via `PivotTo` each frame (slow, accelerating,
   real-rocket feel). `ROCKET_ACCEL`/`ROCKET_MAX_SPEED` are **per Rocket-Speed unit** (3 / 30);
   `speedFactor` is the player's **`RocketSpeed`** stat value, so actual accel/max = value × those
-  (value 1 = level 0's default, reaches 30 studs/s in 10s; value 6 = accel 18 / max 180).
+  (value 1 = level 0's default, reaches 30 studs/s in 10s; value 6 = accel 18 / max 180). A scripted
+  tutorial run may scale it further via `ScriptedRun.speedFactor` (the first launch flies at ×0.5 so
+  the player can read what happens); outside the tutorial the factor is 1.
   **`getVelocity(room)`** exposes the live
   velocity (0 if not flying) — the game loop's multiplier tick reads it so the payout multiplier
   tracks the rocket's speed (§6.3).

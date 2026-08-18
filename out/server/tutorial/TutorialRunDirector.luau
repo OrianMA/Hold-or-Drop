@@ -87,20 +87,27 @@ local TutorialRunDirector = {
 				end
 			end,
 		}
-		return {
+		local _object = {
 			explosionAt = function()
 				return deadline
 			end,
-			onClaim = function()
-				if run.unfreezeOnClaim == true and frozen then
-					RocketLauncher:unfreeze(room)
-					frozen = false
-				end
-				if run.explodeAfterClaim ~= nil then
-					deadline = elapsed() + run.explodeAfterClaim
-				end
-			end,
 		}
+		local _left = "speedFactor"
+		local _condition_2 = run.speedFactor
+		if _condition_2 == nil then
+			_condition_2 = 1
+		end
+		_object[_left] = _condition_2
+		_object.onClaim = function()
+			if run.unfreezeOnClaim == true and frozen then
+				RocketLauncher:unfreeze(room)
+				frozen = false
+			end
+			if run.explodeAfterClaim ~= nil then
+				deadline = elapsed() + run.explodeAfterClaim
+			end
+		end
+		return _object
 	end,
 	abort = function(self, player)
 		local _player = player

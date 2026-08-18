@@ -22,6 +22,11 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 			unfreezeOnClaim: true,
 			explodeAfterClaim: 2,
 			noRisk: true,
+			// Décollage RALENTI : c'est la toute première fusée du joueur, il doit avoir le
+			// temps de lire ce qui se passe. Le run d'après (back-to-button) n'a pas de
+			// scénario, donc il repart à pleine vitesse — c'est justement ce qui fait sentir
+			// le niveau de Rocket Speed acheté entre les deux.
+			speedFactor: 0.5,
 		},
 		complete: { kind: "popup", popup: "RocketLaunch" },
 	},

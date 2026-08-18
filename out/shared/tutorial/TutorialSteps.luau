@@ -27,6 +27,7 @@ local TUTORIAL_STEPS = { {
 		unfreezeOnClaim = true,
 		explodeAfterClaim = 2,
 		noRisk = true,
+		speedFactor = 0.5,
 	},
 	complete = {
 		kind = "popup",
