@@ -30,12 +30,16 @@ local function handlePurchase(player, itemId)
 	local item = ITEMS[itemId]
 	local level = PlayerProgressionService:getLevel(player, item.stat)
 	if isAtCap(item.stat, level) then
-		Events.InformationTextEvent:FireClient(player, "Niveau maximum atteint", DENIED_COLOR)
+		Events.InformationTextEvent:FireClient(player, "Niveau maximum atteint", {
+			color = DENIED_COLOR,
+		})
 		return nil
 	end
 	local price = priceForItem(item, level)
 	if PlayerDataService:get(player, "Money") < price then
-		Events.InformationTextEvent:FireClient(player, "Pas assez d'argent", DENIED_COLOR)
+		Events.InformationTextEvent:FireClient(player, "Pas assez d'argent", {
+			color = DENIED_COLOR,
+		})
 		return nil
 	end
 	PlayerDataService:add(player, "Money", -price)

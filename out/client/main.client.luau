@@ -10,6 +10,7 @@ local initLossReward = TS.import(script, script.Parent, "behaviors", "LossReward
 local MoneyDisplay = TS.import(script, script.Parent, "ui", "MoneyDisplay").MoneyDisplay
 local FloatingCash = TS.import(script, script.Parent, "ui", "FloatingCash").FloatingCash
 local initInformationText = TS.import(script, script.Parent, "ui", "InformationText").init
+local initInformationTextTest = TS.import(script, script.Parent, "ui", "InformationTextTest").init
 local initRoomPrompts = TS.import(script, script.Parent, "rooms", "RoomPromptController").init
 local initOwnerIndicator = TS.import(script, script.Parent, "rooms", "OwnerIndicatorController").init
 local initCommunityJoin = TS.import(script, script.Parent, "rooms", "CommunityJoinController").init
@@ -44,6 +45,7 @@ initLossReward()
 MoneyDisplay:init()
 FloatingCash:init()
 initInformationText()
+initInformationTextTest()
 initRoomPrompts()
 initOwnerIndicator()
 initCommunityJoin()

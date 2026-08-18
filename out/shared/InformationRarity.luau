@@ -1,0 +1,11 @@
+-- Compiled with roblox-ts v3.0.0
+-- ── Raretés de l'InformationText ────────────────────────────────────────────────
+-- Partagé client/serveur : le serveur choisit la rareté d'un message et la passe
+-- telle quelle dans InformationTextEvent, le client (client/ui/InformationText)
+-- la traduit en taille / gradient / son.
+--
+--   Common    → pas de gradient, taille de base
+--   Rare      → RareGradient   (UIGradient posé sur le TextLabel en Studio)
+--   Epic      → EpicGradient
+--   Legendary → son propre TextLabel (LegendaryText + script RainbowText)
+return nil

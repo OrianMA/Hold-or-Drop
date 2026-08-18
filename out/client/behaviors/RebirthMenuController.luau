@@ -72,7 +72,9 @@ local function init()
 	end
 	buyButton.Activated:Connect(function()
 		if getMoney() < rebirthCost(getRebirths()) then
-			InformationText:show("Pas assez d'argent pour le Rebirth", DENIED_COLOR)
+			InformationText:show("Pas assez d'argent pour le Rebirth", {
+				color = DENIED_COLOR,
+			})
 			return nil
 		end
 		Events.RebirthEvent:FireServer()

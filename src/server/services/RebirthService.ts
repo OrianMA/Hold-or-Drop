@@ -20,7 +20,7 @@ function handleRebirth(player: Player): void {
 
 	const money = PlayerDataService.get(player, "Money");
 	if (money < cost) {
-		Events.InformationTextEvent.FireClient(player, "Pas assez d'argent pour le Rebirth", DENIED_COLOR);
+		Events.InformationTextEvent.FireClient(player, "Pas assez d'argent pour le Rebirth", { color: DENIED_COLOR });
 		return;
 	}
 

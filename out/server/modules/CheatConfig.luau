@@ -2,6 +2,8 @@
 -- ── Cheat Configuration ───────────────────────────────────────────────────────
 -- Mettre à true pour activer les cheats en développement.
 -- Penser à tout remettre à false avant de publier.
+-- Les cheats purement client (touches de test, etc.) vivent dans
+-- client/ClientCheatConfig — un module client ne peut pas importer ce fichier.
 local invincible = false
 -- Wipe the player's persisted data (Money + progression values) on join — they
 -- load in with the default profile every time, and the next regular save

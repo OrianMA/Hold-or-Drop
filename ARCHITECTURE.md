@@ -1000,6 +1000,51 @@ server at the exact point state truly changes.
 - **No new RemoteEvents** — everything is server-side (the economy is already server-authoritative),
   and no gameplay logic depends on analytics succeeding.
 
+### 6.20 Information banners (`shared/InformationRarity.ts`, `client/ui/InformationText.ts`)
+Bandeaux d'information du HUD (« Pas assez d'argent », « Finish », etc.), **empilables** et
+déclinés en **4 raretés**. Purement présentation, 100 % client.
+- **Studio** — `InGameUI/InformationTextCanvasGroup` n'est plus le bandeau mais le **conteneur**
+  de la pile : fond transparent, `GroupTransparency = 0`, `UIListLayout` vertical
+  (Top / Center, `SortOrder = LayoutOrder`). Il contient un unique template
+  `InformationEntry` (CanvasGroup, `Visible = false`) :
+  `InformationEntry → FrameParent` (le bandeau sombre + son `UIGradient`) `→ InformationText`
+  (TextLabel + `UIStroke` + `CommonGradient` / `RareGradient` / `EpicGradient`) et
+  `LegendaryText` (TextLabel + `UIStroke` + `UIGradient` + LocalScript `RainbowText`).
+  Le gradient ne peut PAS être posé sur le CanvasGroup lui-même (il teinterait tout le
+  groupe composité, texte compris) — d'où le `FrameParent` intermédiaire.
+- **Empilement** — chaque `show()` clone le template, lui donne un `LayoutOrder` croissant
+  (le nouveau bandeau apparaît **sous** le plus récent) et l'anime avec son propre fondu
+  (`GroupTransparency` par entrée). Plafond `MAX_ENTRIES = 5` : le plus ancien saute.
+  Après le fondu de sortie l'entrée est `Destroy()`ée ; `hide()` vide toute la pile d'un coup
+  (utilisé par `EndGameAnimation` §6.4).
+- **Raretés** (`STYLES` dans `InformationText.ts`) — chacune a sa **hauteur** (le texte est
+  `TextScaled`, donc la hauteur = la taille du texte), sa **durée d'affichage**, son gradient et
+  son son :
+
+  | Rareté | Hauteur (fraction d'écran) | Hold | Gradient | Son |
+  |---|---|---|---|---|
+  | `Common` | 0.08 | 5 s | aucun (la couleur passée s'applique) | `sfx.information` |
+  | `Rare` | 0.09 | 5 s | `RareGradient` | `sfx.information` |
+  | `Epic` | 0.10 | 5 s | `EpicGradient` | `sfx.information` |
+  | `Legendary` | 0.12 | 6,5 s | TextLabel dédié `LegendaryText` + `RainbowText` | `sfx.informationLegendary` |
+
+  Le *hold* est le temps à pleine opacité, hors fondus (+0,7 s au total) ; `holdSeconds` à
+  l'appel le surcharge. **Exception :** le flash `Finish` de fin de partie **séquence**
+  l'animation de paiement (§6.4 attend `FADE_IN_TIME + HOLD_TIME`), il repasse donc
+  explicitement `HOLD_TIME` (0,2 s) et garde sa durée courte historique.
+  Les hauteurs sont exprimées en fraction de l'**écran** et converties à la volée par rapport
+  au conteneur (`entryHeightScale`), donc redimensionner le conteneur en Studio reste sans effet
+  sur la taille des bandeaux. Un `CommonGradient` existe en Studio mais reste éteint (Common =
+  sans gradient) : le renseigner dans `STYLES` suffit à l'allumer.
+- **`RainbowText`** est un **LocalScript désactivé dans le template**, activé par le code
+  uniquement sur les bandeaux `Legendary` (une boucle par bandeau affiché, détruite avec lui).
+  Placeholder à retravailler (arc-en-ciel mouvant).
+- **Sons** — joués par code (clones de templates persistants en `SoundService`, comme
+  `UiClickSound` §6.10) depuis `AudioConfig.sfx.information` / `informationLegendary`.
+- **API** — `InformationText.show(text, { rarity?, color?, holdSeconds? })`
+  (`InformationTextOptions`, partagé dans `shared/InformationRarity.ts`). Le serveur passe le
+  même objet d'options via `InformationTextEvent`.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -1022,7 +1067,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `EndGameStartEvent` | S→C | Start payout animation (baseCash=EffectiveBaseCash, mult, lossMult) — `multRebirth` removed |
 | `EndGameFinishedEvent` | C→S | Animation (or floating text) done → server credits money, hides popup |
 | `EndGamePayoutFlushEvent` | S→C | Another popup opened → drop the finish screen; show the leftover as one fading "+amount" (§6.4) |
-| `InformationTextEvent` | S→C | Flash info text in HUD (e.g. "Not enough money") |
+| `InformationTextEvent` | S→C | Show an info banner in the HUD (args: `text`, `InformationTextOptions` — rarity/color/hold, §6.20) |
 | `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
 | `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |
 | `CommunityJoinedEvent` | C→S | Native join card returned Joined/AlreadyMember — server re-checks (GetGroupsAsync) + grants ×2 |
@@ -1073,7 +1118,7 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |
 | `VISIBLE_ROWS` | `shared/LeaderboardConfig.ts` | 15 | Rows visible before scrolling |
 
-## 9. Cheats (`modules/CheatConfig.ts`)
+## 9. Cheats (`server/modules/CheatConfig.ts`, `client/ClientCheatConfig.ts`)
 
 Dev-only flags — **must be `false`/disabled before publishing**:
 - `invincible` — button never explodes.
@@ -1084,6 +1129,14 @@ Dev-only flags — **must be `false`/disabled before publishing**:
 - `simulateGamePasses` + `simulatedOwnedPassIds` — when on, `BoostService` ignores real
   game-pass ownership and treats only the listed ids as owned (empty = own nothing), so the
   buy flow can be tested from a not-owned state even on an account that owns every pass (§6.6).
+- `forceTutorial` — le tutorial rejoue à la connexion en ignorant la sauvegarde tuto.
+
+Cheats **client** (`client/ClientCheatConfig.ts`) — un module client ne peut pas importer
+`ServerScriptService`, d'où le fichier séparé :
+- `informationTextKeys` — touches **J / K / L / M** = bandeau de test Common / Rare / Epic /
+  Legendary (`client/ui/InformationTextTest.ts`, §6.20). Appuyer plusieurs fois pour vérifier
+  l'empilement. ⚠️ éviter U/I/O/P : **I et O sont les touches de zoom caméra par défaut de
+  Roblox**, elles arrivent toujours avec `gameProcessed = true`.
 
 ## 10. Conventions (see also `CLAUDE.md`)
 

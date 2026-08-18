@@ -192,9 +192,13 @@ BoostService = {
 		if isIn and not wasIn then
 			-- Analytics: player just joined the community (grants ×2) — one-shot per join.
 			AnalyticsService:custom(player, "CommunityJoined")
-			Events.InformationTextEvent:FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR)
+			Events.InformationTextEvent:FireClient(player, "Communauté rejointe — x2 argent !", {
+				color = JOINED_COLOR,
+			})
 		elseif not isIn then
-			Events.InformationTextEvent:FireClient(player, "Rejoins la communauté Grorian's Studio pour x2 argent !", HINT_COLOR)
+			Events.InformationTextEvent:FireClient(player, "Rejoins la communauté Grorian's Studio pour x2 argent !", {
+				color = HINT_COLOR,
+			})
 		end
 	end,
 	devOwn = function(self, player, gamePassId)

@@ -75,7 +75,10 @@ function recount(player: Player): void {
 		if (tier.gamePassId > 0 && set.has(tier.gamePassId)) tierMult = math.max(tierMult, tier.mult);
 	}
 	player.SetAttribute(MONEY_TIER_MULT_ATTR, tierMult);
-	player.SetAttribute(HAS_RESISTANCE_PASS_ATTR, RESISTANCE_PASS.gamePassId > 0 && set.has(RESISTANCE_PASS.gamePassId));
+	player.SetAttribute(
+		HAS_RESISTANCE_PASS_ATTR,
+		RESISTANCE_PASS.gamePassId > 0 && set.has(RESISTANCE_PASS.gamePassId),
+	);
 	PlayerProgressionService.recompute(player);
 }
 
@@ -154,13 +157,13 @@ export const BoostService = {
 		if (isIn && !wasIn) {
 			// Analytics: player just joined the community (grants ×2) — one-shot per join.
 			AnalyticsService.custom(player, "CommunityJoined");
-			Events.InformationTextEvent.FireClient(player, "Communauté rejointe — x2 argent !", JOINED_COLOR);
+			Events.InformationTextEvent.FireClient(player, "Communauté rejointe — x2 argent !", {
+				color: JOINED_COLOR,
+			});
 		} else if (!isIn) {
-			Events.InformationTextEvent.FireClient(
-				player,
-				"Rejoins la communauté Grorian's Studio pour x2 argent !",
-				HINT_COLOR,
-			);
+			Events.InformationTextEvent.FireClient(player, "Rejoins la communauté Grorian's Studio pour x2 argent !", {
+				color: HINT_COLOR,
+			});
 		}
 	},
 

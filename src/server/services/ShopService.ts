@@ -21,13 +21,13 @@ function handlePurchase(player: Player, itemId: unknown): void {
 
 	const level = PlayerProgressionService.getLevel(player, item.stat);
 	if (isAtCap(item.stat, level)) {
-		Events.InformationTextEvent.FireClient(player, "Niveau maximum atteint", DENIED_COLOR);
+		Events.InformationTextEvent.FireClient(player, "Niveau maximum atteint", { color: DENIED_COLOR });
 		return;
 	}
 
 	const price = priceForItem(item, level);
 	if (PlayerDataService.get(player, "Money") < price) {
-		Events.InformationTextEvent.FireClient(player, "Pas assez d'argent", DENIED_COLOR);
+		Events.InformationTextEvent.FireClient(player, "Pas assez d'argent", { color: DENIED_COLOR });
 		return;
 	}
 

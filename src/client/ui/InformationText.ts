@@ -1,28 +1,91 @@
-import { Players, TweenService } from "@rbxts/services";
+import { Players, SoundService, TweenService } from "@rbxts/services";
+import { AudioConfig } from "shared/AudioConfig";
 import { Events } from "shared/Event";
+import type { InformationRarity, InformationTextOptions } from "shared/InformationRarity";
 
-// Generic "flash text in the HUD" controller.
-// Animates InGameUI/InformationTextCanvasGroup with the same timings as the old
-// ButtonFinishGame/FinishTextCanvasGroup (which it replaces). The contained
-// TextLabel's Text and TextColor3 are overwritten on each show() call.
+// Bandeaux d'information du HUD, empilables.
 //
-//   InformationText.show("Finish");                           // white, default
-//   InformationText.show("Not enough money", new Color3(1, 0, 0));  // red
+// InGameUI/InformationTextCanvasGroup est un simple CONTENEUR (UIListLayout
+// vertical) : chaque message clone le template `InformationEntry` et s'ajoute
+// SOUS le précédent, avec son propre fondu. Plusieurs messages peuvent donc
+// vivre en même temps.
 //
-// Calling show() while a previous flash is mid-animation cancels it cleanly
-// and restarts from full transparency so the new message isn't lost.
+//   InformationText.show("Finish");
+//   InformationText.show("Pas assez d'argent", { color: DENIED_COLOR });
+//   InformationText.show("Nouveau record !", { rarity: "Epic" });
+//
+// Chaque rareté a sa hauteur (le texte est TextScaled → la hauteur pilote la
+// taille), son gradient et son son. Legendary utilise un TextLabel dédié
+// (LegendaryText) qui embarque le script RainbowText.
 
 const FADE_IN_TI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 const FADE_OUT_TI = new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
-const DEFAULT_HOLD = 0.2;
+
+// Durée d'affichage historique du flash "Finish" de fin de partie : elle SÉQUENCE
+// l'animation de paiement (EndGameAnimation attend FADE_IN + ce hold avant de
+// lancer la descente du multiplicateur), donc elle ne suit PAS les durées
+// confortables des bandeaux ci-dessous — l'appelant la passe explicitement.
+const FINISH_HOLD = 0.2;
 
 const DEFAULT_COLOR = new Color3(1, 1, 1);
 const CANVAS_NAME = "InformationTextCanvasGroup";
+const TEMPLATE_NAME = "InformationEntry";
 const LABEL_NAME = "InformationText";
+const LEGENDARY_LABEL_NAME = "LegendaryText";
+const RAINBOW_SCRIPT_NAME = "RainbowText";
 
+// Au-delà, le plus ancien bandeau est retiré instantanément : l'écran ne se
+// remplit jamais de messages.
+const MAX_ENTRIES = 5;
+
+interface RarityStyle {
+	// Hauteur du bandeau en fraction de la HAUTEUR D'ÉCRAN (texte TextScaled,
+	// donc c'est aussi ce qui donne la taille du texte).
+	height: number;
+	// Nom du UIGradient à activer sur le TextLabel (posés en Studio).
+	// `undefined` = aucun gradient. Un "CommonGradient" existe en Studio mais
+	// reste éteint : le renseigner ici suffit à l'allumer.
+	gradient?: string;
+	// Utilise le TextLabel dédié LegendaryText au lieu de InformationText.
+	legendary?: boolean;
+	// Temps à pleine opacité, hors fondus (+0.7 s au total). Surchargeable par
+	// `holdSeconds` à l'appel.
+	hold: number;
+	sound: { id: string; volume: number };
+}
+
+const STYLES: Record<InformationRarity, RarityStyle> = {
+	Common: { height: 0.08, hold: 5, sound: AudioConfig.sfx.information },
+	Rare: { height: 0.09, hold: 5, gradient: "RareGradient", sound: AudioConfig.sfx.information },
+	Epic: { height: 0.1, hold: 5, gradient: "EpicGradient", sound: AudioConfig.sfx.information },
+	Legendary: { height: 0.12, hold: 6.5, legendary: true, sound: AudioConfig.sfx.informationLegendary },
+};
+
+const GRADIENT_NAMES = ["CommonGradient", "RareGradient", "EpicGradient"];
+
+// ── Sons ──────────────────────────────────────────────────────────────────────
+// Templates persistants en SoundService (même approche que UiClickSound) :
+// l'asset reste en mémoire et les clones peuvent se chevaucher.
+const soundTemplates = new Map<string, Sound>();
+
+function playSound(def: { id: string; volume: number }): void {
+	let template = soundTemplates.get(def.id);
+	if (!template) {
+		template = new Instance("Sound");
+		template.Name = "InformationTextTemplate";
+		template.SoundId = def.id;
+		template.Volume = def.volume;
+		template.Parent = SoundService;
+		soundTemplates.set(def.id, template);
+	}
+	const sound = template.Clone();
+	sound.Parent = SoundService;
+	sound.Play();
+	sound.Ended.Connect(() => sound.Destroy());
+}
+
+// ── Références GUI ────────────────────────────────────────────────────────────
 let cachedCanvas: CanvasGroup | undefined;
-let activeTweens: Tween[] = [];
-let activeDelayToken = 0;
 
 function findCanvas(): CanvasGroup | undefined {
 	if (cachedCanvas && cachedCanvas.Parent !== undefined) return cachedCanvas;
@@ -37,75 +100,138 @@ function findCanvas(): CanvasGroup | undefined {
 	return undefined;
 }
 
-// Specifically named TextLabel ("InformationText") — recursive search covers
-// the canonical InformationTextCanvasGroup → FrameParent → InformationText
-// path as well as any future re-layout.
-function findLabel(canvas: CanvasGroup): TextLabel | undefined {
-	const found = canvas.FindFirstChild(LABEL_NAME, true);
-	return found?.IsA("TextLabel") ? found : undefined;
+function findTemplate(canvas: CanvasGroup): CanvasGroup | undefined {
+	const found = canvas.FindFirstChild(TEMPLATE_NAME);
+	return found !== undefined && found.IsA("CanvasGroup") ? found : undefined;
 }
 
-function cancelActive(): void {
-	for (const t of activeTweens) t.Cancel();
-	activeTweens = [];
-	activeDelayToken += 1; // invalidates any pending task.delay fade-out
+function findLabel(entry: CanvasGroup, name: string): TextLabel | undefined {
+	const found = entry.FindFirstChild(name, true);
+	return found !== undefined && found.IsA("TextLabel") ? found : undefined;
+}
+
+// Les hauteurs de STYLES sont en fraction d'écran, mais une entrée est
+// dimensionnée par rapport au conteneur (qui n'occupe qu'une tranche de
+// l'écran) : on convertit à la volée pour rester juste même si le conteneur est
+// redimensionné en Studio.
+function entryHeightScale(canvas: CanvasGroup, screenFraction: number): number {
+	const containerScale = canvas.Size.Y.Scale;
+	if (containerScale <= 0) return screenFraction;
+	return screenFraction / containerScale;
+}
+
+// ── Pile active ───────────────────────────────────────────────────────────────
+interface ActiveEntry {
+	instance: CanvasGroup;
+	tweens: Tween[];
+	// Passe à -1 quand l'entrée est retirée : invalide les task.delay en vol.
+	token: number;
+}
+
+const active: ActiveEntry[] = [];
+let nextLayoutOrder = 0;
+let nextToken = 0;
+
+function removeEntry(entry: ActiveEntry): void {
+	if (entry.token === -1) return;
+	entry.token = -1;
+	for (const t of entry.tweens) t.Cancel();
+	const index = active.indexOf(entry);
+	if (index >= 0) active.remove(index);
+	entry.instance.Destroy();
 }
 
 export const InformationText = {
-	// Exposed for callers that need to sequence other animations around the
-	// flash (e.g. EndGameAnimation waits FADE_IN_TIME + HOLD_TIME before
-	// starting the multiplier drain).
+	// Exposé pour les appelants qui séquencent d'autres animations autour du
+	// bandeau (EndGameAnimation attend FADE_IN_TIME + HOLD_TIME avant de lancer
+	// la descente du multiplicateur — et repasse HOLD_TIME en `holdSeconds`,
+	// sinon le "Finish" traînerait 5 s par-dessus l'écran de paiement).
 	FADE_IN_TIME: FADE_IN_TI.Time,
-	HOLD_TIME: DEFAULT_HOLD,
+	HOLD_TIME: FINISH_HOLD,
 	FADE_OUT_TIME: FADE_OUT_TI.Time,
 
-	// Clears a flash instantly, mid-animation. Used when the end-game payout is
-	// flushed by another popup — the "Finish" text must not linger over the new screen.
+	// Vide la pile instantanément, en pleine animation. Utilisé quand le paiement
+	// de fin de partie est annulé par un autre popup : le "Finish" ne doit pas
+	// traîner par-dessus le nouvel écran.
 	hide(): void {
-		const canvas = findCanvas();
-		if (!canvas) return;
-		cancelActive();
-		canvas.GroupTransparency = 1;
+		for (const entry of [...active]) removeEntry(entry);
 	},
 
-	// holdSeconds: how long the text stays fully opaque between fade-in and
-	// fade-out. Falls back to DEFAULT_HOLD (0.2 s — matches the original
-	// ButtonFinishGame timing) when omitted.
-	show(text: string, color?: Color3, holdSeconds?: number): void {
+	show(text: string, options?: InformationTextOptions): void {
 		const canvas = findCanvas();
 		if (!canvas) {
-			warn(`InformationText: ${CANVAS_NAME} not found under PlayerGui`);
+			warn(`InformationText: ${CANVAS_NAME} introuvable sous PlayerGui`);
 			return;
 		}
-		const label = findLabel(canvas);
-		if (label) {
-			label.Text = text;
-			label.TextColor3 = color ?? DEFAULT_COLOR;
+		const template = findTemplate(canvas);
+		if (!template) {
+			warn(`InformationText: template ${TEMPLATE_NAME} introuvable sous ${CANVAS_NAME}`);
+			return;
 		}
 
-		cancelActive();
-		const myToken = activeDelayToken;
+		const rarity = options?.rarity ?? "Common";
+		const style = STYLES[rarity];
+		const isLegendary = style.legendary === true;
 
-		canvas.GroupTransparency = 1;
-		canvas.Visible = true;
+		while (active.size() >= MAX_ENTRIES) removeEntry(active[0]);
 
-		const fadeIn = TweenService.Create(canvas, FADE_IN_TI, { GroupTransparency: 0 });
-		activeTweens.push(fadeIn);
+		const instance = template.Clone();
+		instance.Name = `${TEMPLATE_NAME}_${rarity}`;
+		instance.Size = UDim2.fromScale(1, entryHeightScale(canvas, style.height));
+		instance.GroupTransparency = 1;
+		// Ordre croissant : le nouveau bandeau se place SOUS le plus récent.
+		instance.LayoutOrder = nextLayoutOrder;
+		nextLayoutOrder += 1;
+
+		const normalLabel = findLabel(instance, LABEL_NAME);
+		const legendaryLabel = findLabel(instance, LEGENDARY_LABEL_NAME);
+		if (normalLabel) normalLabel.Visible = !isLegendary;
+		if (legendaryLabel) {
+			legendaryLabel.Visible = isLegendary;
+			// Le script arc-en-ciel est désactivé dans le template : il ne tourne
+			// que sur les bandeaux Legendary (une boucle par bandeau affiché).
+			const rainbow = legendaryLabel.FindFirstChild(RAINBOW_SCRIPT_NAME);
+			if (rainbow !== undefined && rainbow.IsA("LocalScript")) rainbow.Enabled = isLegendary;
+		}
+
+		const label = isLegendary ? legendaryLabel : normalLabel;
+		if (label) {
+			label.Text = text;
+			// En Legendary la couleur est pilotée par le script RainbowText.
+			if (!isLegendary) label.TextColor3 = options?.color ?? DEFAULT_COLOR;
+			for (const name of GRADIENT_NAMES) {
+				const gradient = label.FindFirstChild(name);
+				if (gradient !== undefined && gradient.IsA("UIGradient")) gradient.Enabled = name === style.gradient;
+			}
+		}
+
+		instance.Visible = true;
+		instance.Parent = canvas;
+
+		nextToken += 1;
+		const entry: ActiveEntry = { instance, tweens: [], token: nextToken };
+		const myToken = entry.token;
+		active.push(entry);
+
+		playSound(style.sound);
+
+		const fadeIn = TweenService.Create(instance, FADE_IN_TI, { GroupTransparency: 0 });
+		entry.tweens.push(fadeIn);
 		fadeIn.Play();
 
-		const hold = holdSeconds ?? DEFAULT_HOLD;
+		const hold = options?.holdSeconds ?? style.hold;
 		task.delay(FADE_IN_TI.Time + hold, () => {
-			// A newer show() invalidated this fade-out — bail.
-			if (myToken !== activeDelayToken) return;
-			const fadeOut = TweenService.Create(canvas, FADE_OUT_TI, { GroupTransparency: 1 });
-			activeTweens.push(fadeOut);
+			if (entry.token !== myToken) return; // entrée déjà retirée
+			const fadeOut = TweenService.Create(instance, FADE_OUT_TI, { GroupTransparency: 1 });
+			entry.tweens.push(fadeOut);
+			fadeOut.Completed.Connect(() => removeEntry(entry));
 			fadeOut.Play();
 		});
 	},
 };
 
 export function init(): void {
-	Events.InformationTextEvent.OnClientEvent.Connect((text: string, color?: Color3, holdSeconds?: number) => {
-		InformationText.show(text, color, holdSeconds);
+	Events.InformationTextEvent.OnClientEvent.Connect((text: string, options?: InformationTextOptions) => {
+		InformationText.show(text, options);
 	});
 }

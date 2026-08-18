@@ -374,7 +374,11 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	baseCashText.TextColor3 = baseColor
 	baseCashText.Visible = true
 	-- ── "Finish" flash (blocks through fade-in + hold) ───────────────────────────
-	InformationText:show(FINISH_TEXT)
+	-- hold explicite : ce flash SÉQUENCE la suite de l'animation, il garde donc sa
+	-- durée courte historique au lieu des ~5 s confortables des autres bandeaux.
+	InformationText:show(FINISH_TEXT, {
+		holdSeconds = InformationText.HOLD_TIME,
+	})
 	task.wait(InformationText.FADE_IN_TIME + InformationText.HOLD_TIME)
 	if run.cancelled then
 		return nil

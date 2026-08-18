@@ -56,9 +56,11 @@ export namespace Events {
 	// banks it on arrival by firing EndGameFinishedEvent (shared credit path).
 	export const LossRewardEvent = DefineEvent("LossRewardEvent", script);
 
-	// Generic info popup — server tells client to flash text in InGameUI's
+	// Generic info popup — server tells client to flash a banner in InGameUI's
 	// InformationTextCanvasGroup. Used e.g. for "Not enough money".
-	// Args: (text: string, color?: Color3).
+	// Args: (text: string, options?: InformationTextOptions) — voir
+	// shared/InformationRarity (rarity / color / holdSeconds). Les bandeaux
+	// s'empilent verticalement côté client, plusieurs peuvent coexister.
 	export const InformationTextEvent = DefineEvent("InformationTextEvent", script);
 
 	// Shop — client → server. Player clicked a cash buy button.

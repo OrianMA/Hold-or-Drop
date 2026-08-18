@@ -69,7 +69,7 @@ export function init(): void {
 
 	buyButton.Activated.Connect(() => {
 		if (getMoney() < rebirthCost(getRebirths())) {
-			InformationText.show("Pas assez d'argent pour le Rebirth", DENIED_COLOR);
+			InformationText.show("Pas assez d'argent pour le Rebirth", { color: DENIED_COLOR });
 			return;
 		}
 		Events.RebirthEvent.FireServer();

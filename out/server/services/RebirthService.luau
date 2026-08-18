@@ -20,7 +20,9 @@ local function handleRebirth(player)
 	local cost = rebirthCost(rebirths)
 	local money = PlayerDataService:get(player, "Money")
 	if money < cost then
-		Events.InformationTextEvent:FireClient(player, "Pas assez d'argent pour le Rebirth", DENIED_COLOR)
+		Events.InformationTextEvent:FireClient(player, "Pas assez d'argent pour le Rebirth", {
+			color = DENIED_COLOR,
+		})
 		return nil
 	end
 	PlayerDataService:set(player, "Money", 0)

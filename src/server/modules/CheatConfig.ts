@@ -1,6 +1,8 @@
 // ── Cheat Configuration ───────────────────────────────────────────────────────
 // Mettre à true pour activer les cheats en développement.
 // Penser à tout remettre à false avant de publier.
+// Les cheats purement client (touches de test, etc.) vivent dans
+// client/ClientCheatConfig — un module client ne peut pas importer ce fichier.
 
 export const invincible = false; // le bouton n'explosera jamais
 

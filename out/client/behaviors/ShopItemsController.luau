@@ -97,7 +97,9 @@ local function bindItem(body, item)
 		robuxButton.Activated:Connect(function()
 			-- Refuse at the cap (Resistance): no prompt, just inform the player.
 			if isAtCap(item.stat, getLevel(cfg.levelAttribute)) then
-				InformationText:show("Niveau maximum atteint", DENIED_COLOR)
+				InformationText:show("Niveau maximum atteint", {
+					color = DENIED_COLOR,
+				})
 				return nil
 			end
 			MarketplaceService:PromptProductPurchase(player, product.productId)
