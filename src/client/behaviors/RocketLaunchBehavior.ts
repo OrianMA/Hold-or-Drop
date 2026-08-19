@@ -8,15 +8,9 @@ import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import { RocketSteerController } from "client/behaviors/RocketSteerController";
 import { MoneyBurst } from "client/ui/MoneyBurst";
-import {
-	ContentProvider,
-	Lighting,
-	Players,
-	RunService,
-	SoundService,
-	TweenService,
-	Workspace,
-} from "@rbxts/services";
+import { ClaimFlashText } from "client/ui/ClaimFlashText";
+import { CriticalRain } from "client/ui/CriticalRain";
+import { ContentProvider, Lighting, Players, RunService, SoundService, TweenService, Workspace } from "@rbxts/services";
 
 // UI refs — assigned on first setup(), never change after
 let claimButton: TextButton | undefined;
@@ -61,6 +55,10 @@ let bloomEffect: BloomEffect | undefined;
 // Per-game state
 let isGameActive = false;
 let hasClaimed = false; // le joueur a verrouillé son multiplicateur (claim) pour cette partie
+// Perfect Claim annoncé par le serveur au claim : le flash rouge n'est joué qu'à
+// l'explosion (le ×3 est déjà dans le gain, c'est le boom qui le "valide" à l'écran).
+// Le Critical Claim, lui, part tout de suite au claim (voir ClaimAcceptedEvent).
+let perfectClaimPending = false;
 let isGoHomeMode = false; // le bouton est réarmé en "Go Home" (rentrer à la base)
 let runId = 0; // incrémenté à chaque partie — invalide les timers d'une partie précédente
 let multiplierTextSize = 0;
@@ -233,6 +231,7 @@ export function init(): void {
 	});
 	// Même logique pour l'image des billets de l'explosion de cash au claim.
 	MoneyBurst.preload();
+	CriticalRain.preload();
 
 	// Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
 	// valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
@@ -320,6 +319,12 @@ export function init(): void {
 	});
 
 	Events.PlayerKilledEvent.OnClientEvent.Connect(() => {
+		// Perfect Claim : la fusée vient d'exploser juste après le claim — c'est MAINTENANT
+		// que le flash rouge tombe, sur le boom (le ×3 est déjà verrouillé dans le gain).
+		if (perfectClaimPending) {
+			perfectClaimPending = false;
+			ClaimFlashText.showPerfect();
+		}
 		// La fusée explose (le joueur ne meurt plus). Le bouton "claim" ne disparaît
 		// pas : il devient rouge et non-cliquable (remis à l'état normal au lancement).
 		// Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
@@ -422,17 +427,30 @@ export function init(): void {
 	// Claim confirmé par le serveur : on FIGE le gain verrouillé EXACT (= payout serveur,
 	// floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
 	// La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
-	Events.ClaimAcceptedEvent.OnClientEvent.Connect((claimedMultiplier: number) => {
-		const claimedCash = math.floor(resultBaseCash * claimedMultiplier);
-		if (resultMultiplierText) {
-			resultMultiplierText.Text = `$${FormatNumber(claimedCash)}`;
-			resultMultiplierText.Visible = true;
-		}
-		// Popup de gain verrouillé : fondu entrant + montée avec le montant exact.
-		revealClaimPopup(claimedCash);
-		// Gerbe de billets 2D : part du centre de l'écran, se disperse d'un coup, retombe.
-		MoneyBurst.play();
-	});
+	Events.ClaimAcceptedEvent.OnClientEvent.Connect(
+		(claimedMultiplier: number, perfect: boolean, critical: boolean) => {
+			// Perfect Claim : le multiplicateur reçu contient DÉJÀ le ×3. On ne l'annonce PAS
+			// tout de suite — le flash rouge part à l'explosion, quelques dixièmes plus tard.
+			perfectClaimPending = perfect;
+			// Critical Claim (5 %) : le ×10 est déjà dans le multiplicateur reçu, et il n'a
+			// rien à voir avec l'explosion — le flash doré part MAINTENANT, sur le claim. Si
+			// un perfect suit, son flash rouge s'empilera sous celui-ci (ClaimFlashText).
+			// La petite pluie d'icônes tombe sur la même frame que le texte.
+			if (critical) {
+				ClaimFlashText.showCritical();
+				CriticalRain.play();
+			}
+			const claimedCash = math.floor(resultBaseCash * claimedMultiplier);
+			if (resultMultiplierText) {
+				resultMultiplierText.Text = `$${FormatNumber(claimedCash)}`;
+				resultMultiplierText.Visible = true;
+			}
+			// Popup de gain verrouillé : fondu entrant + montée avec le montant exact.
+			revealClaimPopup(claimedCash);
+			// Gerbe de billets 2D : part du centre de l'écran, se disperse d'un coup, retombe.
+			MoneyBurst.play();
+		},
+	);
 
 	// La fusée explose sans claim : la partie est finie côté client (le claim ne peut
 	// plus rien verrouiller). PlayerKilledEvent, qui suit immédiatement, gère la caméra,
@@ -522,6 +540,7 @@ export function setup(inGameUI: ScreenGui): void {
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
 	isGameActive = true;
 	hasClaimed = false;
+	perfectClaimPending = false;
 	isGoHomeMode = false;
 	runId += 1; // invalide un réarmement "Go Home" encore en attente d'une partie précédente
 	claimLabel.Text = claimLabelOriginalText; // le bouton repart en "Claim"

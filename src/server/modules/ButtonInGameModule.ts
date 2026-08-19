@@ -3,25 +3,33 @@ import { ButtonSession, ButtonSessionService } from "server/services/ButtonSessi
 import { UiService } from "server/services/UiService";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { ReplicatedStorage, Workspace } from "@rbxts/services";
-import { invincible } from "server/modules/CheatConfig";
+import {
+	boostCriticalClaim,
+	boostedCriticalClaimChance,
+	invincible,
+	logExplosionForecast,
+} from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { AnalyticsService } from "server/services/AnalyticsService";
 import { RocketLauncher } from "server/modules/RocketLauncher";
 import { RocketPlacer } from "server/modules/RocketPlacer";
 import { TutorialHooks } from "server/tutorial/TutorialHooks";
 import {
-	RISK_RAMP_DURATION,
 	MULTIPLIER_TICK_RATE,
 	STARTING_MULTIPLIER,
 	MULTIPLIER_PER_STUD,
 	EXPLOSION_VIEW_DELAY,
+	PERFECT_CLAIM_MULTIPLIER,
+	CRITICAL_CLAIM_CHANCE,
+	CRITICAL_CLAIM_MULTIPLIER,
+	perfectClaimWindow,
+	multiplierAfter,
 } from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
 import { RiskParams, resistanceRiskParams } from "shared/ResistanceCurve";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
 
-const MAX_RISK = 0.8;
 const TICK_RATE = 0.5;
 // Lot de consolation sur une perte (explosion sans claim) : baseCash / 3 —
 // FORFAITAIRE, sans le multiplicateur. Pas de popup de fin.
@@ -30,12 +38,37 @@ const LOSS_CONSOLATION_DIVISOR = 3;
 // le temps que la caméra soit revenue au joueur.
 const GO_HOME_RESET_DELAY = 0.6;
 
+// ── Durée de vol : cloche de Gauss (log-normale) ─────────────────────────────
+// La durée d'un vol est TIRÉE D'UN COUP au décollage dans une cloche de Gauss — pas
+// accumulée dé après dé. Le tirage est gaussien sur une échelle MULTIPLICATIVE du
+// temps ("4 s ×÷ 1.4") et non additive ("4 s ± 1.2 s") : la cloche a la même forme,
+// même pic net et mêmes chances qui s'effondrent quand on s'éloigne, mais elle ne
+// peut jamais produire une durée nulle ou négative — et son côté long reste libre de
+// s'allonger, ce qui laisse exister le coup rare. Une cloche additive serait fermée
+// des deux côtés : pour garder le bas au-dessus de zéro il faudrait serrer le haut,
+// et le vol jackpot n'existerait plus.
+//   • FLIGHT_TIME_MEAN  — durée MOYENNE d'un vol à Resistance 0.
+//   • FLIGHT_TIME_SIGMA — largeur de la cloche. Seul bouton pour rendre le jeu plus
+//     ou moins imprévisible ; il ne déplace pas la moyenne (la médiane est recalculée
+//     pour compenser).
+// Repères à Resistance 0 (μ = 4 s, σ = 0.35) : 68 % des vols entre 2.7 et 5.3 s,
+// 95 % entre 1.9 et 7.5 s, ~0.25 % dépassent 10 s, plafond observé ~22 s. Côté gain :
+// multiplicateur moyen ×1.52, un ×3 tous les ~100 runs, un ×5 tous les ~2 200.
+const FLIGHT_TIME_MEAN = 4;
+const FLIGHT_TIME_SIGMA = 0.35;
+
+// Garde-fous du tirage : la cloche n'est pas bornée, on coupe les deux queues bien
+// au-delà de ce qu'un joueur verra jamais.
+const FLIGHT_TIME_MIN = 0.1;
+const FLIGHT_TIME_MAX = 60;
+
+// Médiane telle que la MOYENNE vaille FLIGHT_TIME_MEAN — sur une échelle
+// multiplicative, moyenne = médiane × e^(σ²/2). Régler σ ne déplace donc pas la moyenne.
+const FLIGHT_TIME_MEDIAN = FLIGHT_TIME_MEAN * math.exp(-(FLIGHT_TIME_SIGMA * FLIGHT_TIME_SIGMA) / 2);
+
 const EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id;
 const EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume;
 const EXPLOSION_SOUND_ROLLOFF = 120; // détail 3D propre au serveur
-
-// Alias — keeps the risk/progress math unchanged while sourcing the value from the shared config
-const TOTAL_DURATION = RISK_RAMP_DURATION;
 
 // ── Sound preloading ──────────────────────────────────────────────────────────
 // A template Sound in ReplicatedStorage replicates to all clients on join,
@@ -63,40 +96,25 @@ const explosionSoundTemplate = (() => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// EaseInQuad: risk starts near 0 and accelerates — reaches MAX_RISK at TOTAL_DURATION seconds
-function getRisk(timeHeld: number): number {
-	const t = math.min(timeHeld / TOTAL_DURATION, 1);
-	return MAX_RISK * (t * t);
-}
-
-// Effective per-tick risk at `timeHeld` for a resistance profile. Zero inside the
-// safe window; outside it the base curve ramps from the window's end, scaled down.
-function riskAt(timeHeld: number, params: RiskParams): number {
-	if (timeHeld <= params.safeWindow) return 0;
-	return getRisk(timeHeld - params.safeWindow) * params.riskScale;
-}
-
 // ── Explosion-time preload ──────────────────────────────────────────────────────
-// Guard on the precompute loop. At max resistance the risk floor is ×0.25 (not
-// zero — RESISTANCE_MAX_REDUCTION = 0.75) and the safe window guarantees ~8s
-// before the first roll (RESISTANCE_MAX_SAFE_WINDOW), so a run can last a while —
-// but never forever. 2000 ticks (1000s) only guards against a pathological
-// never-ending loop; no real hold reaches it.
-const EXPLOSION_ROLL_CAP = 2000;
-
-// Precompute, once at launch, the exact moment the rocket will explode by running the
-// SAME per-tick risk roll the live loop uses — but all at once, up front. This "loads"
-// the explosion time so the run can fire the explosion at that precise scheduled moment
-// instead of re-rolling RNG every tick and discovering it late (action/event delay).
-// The probability distribution is identical to the live per-tick model. Returns the
-// time-held (seconds, tick-aligned) at which the rocket explodes.
+// Tire, une fois au décollage, l'instant EXACT où la fusée explosera. Le run déclenche
+// ensuite l'explosion pile à l'heure, au lieu de relancer un dé à chaque tick et de la
+// découvrir en retard. Résultat continu — aucun alignement sur un pas de temps.
+//
+// Le profil de Resistance déforme la cloche sans en changer les proportions :
+//   • safeWindow — secondes garanties, AJOUTÉES au tirage. La promesse du shop
+//     ("Vol garanti X s") est donc tenue littéralement, quoi que sorte le dé.
+//   • riskScale  — multiplie la médiane par riskScale^(-1/3), l'étirement documenté
+//     dans ResistanceCurve. Sur une échelle multiplicative, étirer la médiane étire
+//     la cloche entière : elle garde exactement sa forme à tous les niveaux.
 function rollExplosionTime(params: RiskParams): number {
-	let timeHeld = 0;
-	for (let i = 0; i < EXPLOSION_ROLL_CAP; i++) {
-		timeHeld += TICK_RATE;
-		if (math.random() < riskAt(timeHeld, params)) return timeHeld;
-	}
-	return timeHeld;
+	// Box–Muller : une normale centrée réduite à partir de deux uniformes.
+	// 1 - math.random() ∈ (0,1] ⇒ jamais log(0).
+	const gauss = math.sqrt(-2 * math.log(1 - math.random())) * math.cos(2 * math.pi * math.random());
+
+	const median = FLIGHT_TIME_MEDIAN * params.riskScale ** (-1 / 3);
+	const flight = params.safeWindow + median * math.exp(FLIGHT_TIME_SIGMA * gauss);
+	return math.clamp(flight, FLIGHT_TIME_MIN, FLIGHT_TIME_MAX);
 }
 
 // Plays the 3D explosion boom at `pos` (heard by everyone). Cloned from the
@@ -111,6 +129,28 @@ function playExplosionSoundAt(pos: Vector3): void {
 	sound.Parent = attachment;
 	sound.Play();
 	sound.Ended.Connect(() => attachment.Destroy());
+}
+
+// Cheat `logExplosionForecast` : imprime l'issue précalculée du vol. Le multiplicateur
+// prévu est reconstruit par `multiplierAfter`, qui rejoue exactement la boucle
+// multiplicateur (même tick, même vitesse) — c'est donc la valeur que le joueur verra à
+// l'instant de l'explosion s'il ne claim pas avant.
+function logForecast(player: Player, deadline: number, effectiveSpeed: number, baseCash: number): void {
+	if (deadline === math.huge) {
+		print(`[CHEAT] ${player.Name} — la fusée n'explosera pas (invincible / run scripté sans risque)`);
+		return;
+	}
+	const predicted = multiplierAfter(effectiveSpeed, deadline);
+	print(
+		string.format(
+			"[CHEAT] %s — explosion dans %.2fs | multiplicateur prévu ×%.2f (~$%d) | Perfect Claim si claim après %.2fs",
+			player.Name,
+			deadline,
+			predicted,
+			math.floor(baseCash * predicted),
+			deadline - perfectClaimWindow(deadline),
+		),
+	);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -158,9 +198,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// Analytics: one funnel session id for this run (CoreRun: Launch → Claim → Banked).
 	const runId = AnalyticsService.newRunId();
 
-	// Preload the "chance" at launch: precompute the exact instant the rocket will
-	// explode (tick-aligned, same distribution as the old per-tick roll). The run then
-	// fires the explosion at this scheduled moment — no per-tick RNG, no discovery delay.
+	// Preload the "chance" at launch: tire l'instant exact où la fusée explosera dans une
+	// courbe de Gauss (voir rollExplosionTime). The run then fires the explosion at this
+	// scheduled moment — no per-tick RNG, no discovery delay.
 	// Tutorial : si le step courant impose un scénario (gel, explosion programmée), le
 	// director le joue et fournit la deadline d'explosion — qu'il peut réécrire au claim.
 	// undefined hors tutorial → comportement normal intégral.
@@ -174,7 +214,16 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// La fusée décolle dès le début du gameplay, à une vitesse pilotée par le stat
 	// Rocket Speed du joueur (1 = rampe). Sa vélocité pilote ensuite le multiplicateur.
 	// Un run scripté peut la ralentir (tutorial) ; hors tutorial le facteur vaut 1.
-	RocketLauncher.launch(room, rocketSpeed * (scripted?.speedFactor ?? 1));
+	// `launchClock` = horloge de référence du vol : `os.clock() - launchClock` donne le
+	// temps de vol réel (précis à la frame), à comparer à la deadline d'explosion pour
+	// mesurer le Perfect Claim. La boucle risque, elle, n'avance que par pas de TICK_RATE.
+	const launchClock = os.clock();
+	const effectiveSpeed = rocketSpeed * (scripted?.speedFactor ?? 1);
+	RocketLauncher.launch(room, effectiveSpeed);
+
+	// Cheat de dev : annonce l'issue déjà tirée du vol (voir CheatConfig). C'est l'état AU
+	// DÉCOLLAGE — en tutorial, un run scripté peut réécrire sa deadline au claim.
+	if (logExplosionForecast) logForecast(player, scripted?.explosionAt() ?? explosionAt, effectiveSpeed, baseCash);
 
 	// Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
 	AnalyticsService.custom(player, "RocketLaunched", rocketSpeed);
@@ -190,12 +239,33 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	const claimConn = Events.ClaimButtonEvent.OnServerEvent.Connect((p) => {
 		if (p !== player || !isActive || claimed) return;
 		claimed = true;
-		claimedMultiplier = currentMultiplier; // valeur autoritative exacte au moment du claim
-		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier);
+
+		// Perfect Claim : le claim tombe dans la toute dernière fenêtre avant l'explosion
+		// PRÉVUE → gain ×3. La deadline est lue AVANT scripted.onClaim(), qui la réécrit
+		// en tutorial (sinon un run scripté offrirait un perfect gratuit).
+		const deadline = scripted !== undefined ? scripted.explosionAt() : explosionAt;
+		const remaining = deadline - (os.clock() - launchClock);
+		const perfect = remaining <= perfectClaimWindow(deadline); // invincible ⇒ deadline ∞ ⇒ jamais perfect
+
+		// Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le gain verrouillé.
+		// Indépendant du Perfect Claim : les deux peuvent tomber ensemble et se multiplient.
+		// Cheat de dev : `boostCriticalClaim` monte la chance à 50 % (voir CheatConfig).
+		const criticalChance = boostCriticalClaim ? boostedCriticalClaimChance : CRITICAL_CLAIM_CHANCE;
+		const critical = math.random() < criticalChance;
+
+		// Valeur autoritative exacte au moment du claim, ×3 si Perfect Claim et ×10 si
+		// Critical Claim. Toutes les branches de payout (explosion post-claim, Go Home) et
+		// la popup de fin lisent ce multiplicateur tel quel — les bonus sont donc déjà
+		// dedans partout.
+		claimedMultiplier =
+			currentMultiplier * (perfect ? PERFECT_CLAIM_MULTIPLIER : 1) * (critical ? CRITICAL_CLAIM_MULTIPLIER : 1);
+		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier, perfect, critical);
 		scripted?.onClaim(); // tutorial : relance la fusée gelée + programme l'explosion
 
 		// Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
 		AnalyticsService.custom(player, "RunClaimed", claimedMultiplier);
+		if (perfect) AnalyticsService.custom(player, "PerfectClaim", claimedMultiplier);
+		if (critical) AnalyticsService.custom(player, "CriticalClaim", claimedMultiplier);
 		AnalyticsService.runStep(player, runId, 2, "Claim");
 		AnalyticsService.onboardingStep(player, 3, "Claim");
 	});

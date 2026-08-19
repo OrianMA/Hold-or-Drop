@@ -1,12 +1,11 @@
 // ── Rocket gameplay tuning ──────────────────────────────────────────────────────
 // Shared so server (game logic) and client (effects) agree on timing.
 
-// Seconds over which the explosion risk ramps to its max and the progress bar
-// fills. Defines the full length of the risk curve.
-export const RISK_RAMP_DURATION = 17;
-
-// Seconds between each multiplier tick.
-export const MULTIPLIER_TICK_RATE = 1;
+// Secondes entre deux ticks de multiplicateur. Les vols durent ~4 s en moyenne
+// (voir rollExplosionTime) : un tick d'une seconde ne laisserait que 4 paliers et
+// 0.1 s de vol en plus ou en moins ferait sauter le gain d'un cran entier. À 0.25 s
+// le multiplicateur suit la durée réelle du vol de près.
+export const MULTIPLIER_TICK_RATE = 0.25;
 
 // Value the in-game multiplier starts at (1 = base payout before any growth).
 export const STARTING_MULTIPLIER = 1;
@@ -17,7 +16,9 @@ export const STARTING_MULTIPLIER = 1;
 // the multiplier is near-frozen at liftoff and ramps hard once the rocket is fast.
 // A higher Rocket Speed stat raises the velocity, so it speeds up the multiplier
 // and the rocket together.
-export const MULTIPLIER_PER_STUD = 0.01;
+// Calibré sur la durée de vol moyenne à Resistance 0 (4 s) pour un multiplicateur
+// moyen de ×1.50 : 4 s → ×1.48, 6 s → ×2.07, 8 s → ×2.88.
+export const MULTIPLIER_PER_STUD = 0.019;
 
 // ── Rocket launch (RocketLauncher) ──────────────────────────────────────────────
 // La fusée monte pendant le vol : la vitesse part de 0, monte de ROCKET_ACCEL
@@ -49,7 +50,7 @@ export const STEER_SPACE_HEIGHT = 50; // studs above the pad where roll authorit
 export const EXPLOSION_VIEW_DELAY = 1.5;
 
 // Nombre de secondes de vol utilisé par le shop pour prévisualiser l'effet d'un niveau
-// de Rocket Speed ("×6.0 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
+// de Rocket Speed ("×3.9 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
 export const SPEED_PREVIEW_SECONDS = 10;
 
 // Multiplicateur atteint après `seconds` de vol pour une valeur de Rocket Speed donnée.
@@ -65,3 +66,32 @@ export function multiplierAfter(speedValue: number, seconds: number): number {
 	}
 	return mult;
 }
+
+// ── Perfect Claim ───────────────────────────────────────────────────────────────
+// Claim juste AVANT que la fusée explose = "Perfect Claim" : le gain verrouillé est
+// multiplié par PERFECT_CLAIM_MULTIPLIER. La fenêtre vaut PERFECT_CLAIM_WINDOW
+// secondes sur un vol court ; au-delà de PERFECT_CLAIM_REFERENCE_TIME secondes de vol
+// elle s'élargit proportionnellement (sinon un vol long — donc plus imprévisible —
+// exigerait un timing bien plus dur qu'un vol court), plafonnée à
+// PERFECT_CLAIM_MAX_WINDOW pour que ça reste un coup de timing.
+//   vol 4s ou moins → 0.30 s   |   vol 8s → 0.60 s   |   vol 12s et plus → 0.90 s
+export const PERFECT_CLAIM_MULTIPLIER = 3;
+export const PERFECT_CLAIM_WINDOW = 0.3;
+export const PERFECT_CLAIM_REFERENCE_TIME = 4;
+export const PERFECT_CLAIM_MAX_WINDOW = 0.9;
+
+// Fenêtre de Perfect Claim (secondes avant l'explosion) pour un vol qui dure
+// `explosionTime` secondes. Pure — serveur (validation) et client (affichage).
+export function perfectClaimWindow(explosionTime: number): number {
+	if (explosionTime <= PERFECT_CLAIM_REFERENCE_TIME) return PERFECT_CLAIM_WINDOW;
+	const scaled = PERFECT_CLAIM_WINDOW * (explosionTime / PERFECT_CLAIM_REFERENCE_TIME);
+	return math.min(scaled, PERFECT_CLAIM_MAX_WINDOW);
+}
+
+// ── Critical Claim ──────────────────────────────────────────────────────────────
+// Chaque claim tire un dé : CRITICAL_CLAIM_CHANCE de chance que le gain verrouillé soit
+// multiplié par CRITICAL_CLAIM_MULTIPLIER. Rien à jouer, aucun timing — c'est la surprise
+// pure, annoncée au claim par le flash doré (client/ui/ClaimFlashText). Cumulable avec le
+// Perfect Claim : les deux facteurs se multiplient (×3 × ×10 = ×30).
+export const CRITICAL_CLAIM_CHANCE = 0.05;
+export const CRITICAL_CLAIM_MULTIPLIER = 10;

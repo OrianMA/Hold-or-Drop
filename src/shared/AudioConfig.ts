@@ -27,6 +27,7 @@ export const AudioConfig = {
 		buttonUpgrade: { id: "rbxassetid://90808623060870", volume: 0.5 }, // client, 3D — son électrique à l'arrivée du pulse néon au bouton (NeonPipePulse)
 		moneyGain: { id: "rbxassetid://120891770644830", volume: 0.6 }, // client, 2D — joué à chaque dépôt d'argent dans le HUD (MoneyDisplay.addVisual)
 		uiClick: { id: "rbxassetid://72264591133889", volume: 0.5 }, // client, 2D — clic sur n'importe quel bouton de l'UI (UiClickSound)
+		perfectClaim: { id: "rbxassetid://3406813517", volume: 0.8 }, // client, 2D — flashs "PERFECT CLAIM" (rouge) et "CRITICAL CLAIM" (doré) (ClaimFlashText)
 		information: { id: "rbxassetid://130467592920597", volume: 0.5 }, // client, 2D — apparition d'un bandeau InformationText (Common/Rare/Epic)
 		informationLegendary: { id: "rbxassetid://137502807803779", volume: 0.6 }, // client, 2D — apparition d'un bandeau InformationText Legendary
 	},

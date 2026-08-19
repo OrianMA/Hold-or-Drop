@@ -27,8 +27,14 @@ export namespace Events {
 	export const RocketSteerEvent = DefineEvent("RocketSteerEvent", script);
 
 	// RocketLaunch — server → client
-	// Server confirms a claim with the authoritative locked multiplier (Arg: multiplier)
-	// so the client shows the exact value that will be paid out.
+	// Server confirms a claim with the authoritative locked multiplier
+	// (Args: multiplier, perfect, critical) so the client shows the exact value that will
+	// be paid out. `perfect` = Perfect Claim: the claim landed inside the last window
+	// before the scheduled explosion, so the multiplier ALREADY includes the ×3 bonus and
+	// the client flashes the red "PERFECT CLAIM" text at the explosion. `critical` =
+	// Critical Claim: a flat 5% roll won at claim time, multiplier ALREADY includes the
+	// ×10, and the client flashes the golden "CRITICAL CLAIM" text right away (see
+	// shared/RocketGameConfig, client/ui/ClaimFlashText).
 	export const ClaimAcceptedEvent = DefineEvent("ClaimAcceptedEvent", script);
 	export const ButtonExplodedEvent = DefineEvent("ButtonExplodedEvent", script);
 	export const PlayerKilledEvent = DefineEvent("PlayerKilledEvent", script);

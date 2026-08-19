@@ -8,18 +8,17 @@
 --   • safeWindow — secondes de début de vol où le risque est forcé à 0. FRONT-loaded :
 --     les premiers niveaux achètent l'essentiel de la fenêtre, les derniers presque
 --     rien. C'est la valeur montrée au joueur dans le shop ("X s garanties").
---   • riskScale  — met à l'échelle toute la courbe de risque APRÈS la fenêtre. Levier
---     SECONDAIRE : la survie médiane ne croît qu'en riskScale^(-1/3) (il faut diviser
---     le risque par 8 pour doubler la durée), donc il ne peut pas être rendu lisible
---     seul. C'est la raison du basculement de poids vers safeWindow.
--- À resistance 0 les deux termes sont neutres → courbe identique à celle d'origine.
+--   • riskScale  — étire la durée de vol APRÈS la fenêtre : la médiane est multipliée
+--     par riskScale^(-1/3) (il faut diviser le risque par 8 pour doubler la durée).
+--     Levier SECONDAIRE, illisible seul — d'où le basculement de poids vers safeWindow.
+-- À resistance 0 les deux termes sont neutres → loi de vol de base (moyenne 4 s).
 --
--- Repères : L1 → 1.1 s garanties / survie médiane 8.5 s (contre 7.0 s à L0).
---           L5 → 4.1 s / 12.5 s.  L10 → 6.2 s / 15.5 s.  L30 → 7.9 s / 19.0 s (saturé).
+-- Repères : L1 → 0.5 s garanties / durée moyenne 4.7 s (contre 4.0 s à L0).
+--           L5 → 2.0 s / 6.7 s.  L10 → 3.1 s / 8.3 s.  L30 → 4.0 s / 10.3 s (saturé).
 local RESISTANCE_MAX_LEVEL = 100
 local RESISTANCE_MAX_REDUCTION = 0.75
 local RESISTANCE_REDUCTION_CURVE = 13
-local RESISTANCE_MAX_SAFE_WINDOW = 8
+local RESISTANCE_MAX_SAFE_WINDOW = 4
 local RESISTANCE_SAFE_WINDOW_CURVE = 14
 local function resistanceRiskParams(resistance)
 	local n = math.clamp(resistance / RESISTANCE_MAX_LEVEL, 0, 1)

@@ -13,6 +13,8 @@ local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicC
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local RocketSteerController = TS.import(script, script.Parent, "RocketSteerController").RocketSteerController
 local MoneyBurst = TS.import(script, script.Parent.Parent, "ui", "MoneyBurst").MoneyBurst
+local ClaimFlashText = TS.import(script, script.Parent.Parent, "ui", "ClaimFlashText").ClaimFlashText
+local CriticalRain = TS.import(script, script.Parent.Parent, "ui", "CriticalRain").CriticalRain
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local Lighting = _services.Lighting
@@ -60,6 +62,10 @@ local bloomEffect
 -- Per-game state
 local isGameActive = false
 local hasClaimed = false
+-- Perfect Claim annoncé par le serveur au claim : le flash rouge n'est joué qu'à
+-- l'explosion (le ×3 est déjà dans le gain, c'est le boom qui le "valide" à l'écran).
+-- Le Critical Claim, lui, part tout de suite au claim (voir ClaimAcceptedEvent).
+local perfectClaimPending = false
 local isGoHomeMode = false
 local runId = 0
 local multiplierTextSize = 0
@@ -253,6 +259,7 @@ local function init()
 	end)
 	-- Même logique pour l'image des billets de l'explosion de cash au claim.
 	MoneyBurst:preload()
+	CriticalRain:preload()
 	-- Comptage continu du multiplier : on interpole le nombre affiché de l'ancienne
 	-- valeur vers la nouvelle sur la durée d'un tick, donc il passe par tous les
 	-- nombres intermédiaires (lent au début, de plus en plus vite).
@@ -335,6 +342,12 @@ local function init()
 		camera.CFrame = CFrame.new(cf.Position, cf.Position + newLookDir)
 	end)
 	Events.PlayerKilledEvent.OnClientEvent:Connect(function()
+		-- Perfect Claim : la fusée vient d'exploser juste après le claim — c'est MAINTENANT
+		-- que le flash rouge tombe, sur le boom (le ×3 est déjà verrouillé dans le gain).
+		if perfectClaimPending then
+			perfectClaimPending = false
+			ClaimFlashText:showPerfect()
+		end
 		-- La fusée explose (le joueur ne meurt plus). Le bouton "claim" ne disparaît
 		-- pas : il devient rouge et non-cliquable (remis à l'état normal au lancement).
 		-- Fin de partie : la fusée n'existe plus → on stoppe la montée du multiplierText
@@ -438,7 +451,18 @@ local function init()
 	-- Claim confirmé par le serveur : on FIGE le gain verrouillé EXACT (= payout serveur,
 	-- floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
 	-- La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
-	Events.ClaimAcceptedEvent.OnClientEvent:Connect(function(claimedMultiplier)
+	Events.ClaimAcceptedEvent.OnClientEvent:Connect(function(claimedMultiplier, perfect, critical)
+		-- Perfect Claim : le multiplicateur reçu contient DÉJÀ le ×3. On ne l'annonce PAS
+		-- tout de suite — le flash rouge part à l'explosion, quelques dixièmes plus tard.
+		perfectClaimPending = perfect
+		-- Critical Claim (5 %) : le ×10 est déjà dans le multiplicateur reçu, et il n'a
+		-- rien à voir avec l'explosion — le flash doré part MAINTENANT, sur le claim. Si
+		-- un perfect suit, son flash rouge s'empilera sous celui-ci (ClaimFlashText).
+		-- La petite pluie d'icônes tombe sur la même frame que le texte.
+		if critical then
+			ClaimFlashText:showCritical()
+			CriticalRain:play()
+		end
 		local claimedCash = math.floor(resultBaseCash * claimedMultiplier)
 		if resultMultiplierText then
 			resultMultiplierText.Text = `${FormatNumber(claimedCash)}`
@@ -567,6 +591,7 @@ local function setup(inGameUI)
 	baseFov = _condition
 	isGameActive = true
 	hasClaimed = false
+	perfectClaimPending = false
 	isGoHomeMode = false
 	runId += 1
 	claimLabel.Text = claimLabelOriginalText

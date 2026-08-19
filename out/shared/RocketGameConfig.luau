@@ -1,11 +1,11 @@
 -- Compiled with roblox-ts v3.0.0
 -- ── Rocket gameplay tuning ──────────────────────────────────────────────────────
 -- Shared so server (game logic) and client (effects) agree on timing.
--- Seconds over which the explosion risk ramps to its max and the progress bar
--- fills. Defines the full length of the risk curve.
-local RISK_RAMP_DURATION = 17
--- Seconds between each multiplier tick.
-local MULTIPLIER_TICK_RATE = 1
+-- Secondes entre deux ticks de multiplicateur. Les vols durent ~4 s en moyenne
+-- (voir rollExplosionTime) : un tick d'une seconde ne laisserait que 4 paliers et
+-- 0.1 s de vol en plus ou en moins ferait sauter le gain d'un cran entier. À 0.25 s
+-- le multiplicateur suit la durée réelle du vol de près.
+local MULTIPLIER_TICK_RATE = 0.25
 -- Value the in-game multiplier starts at (1 = base payout before any growth).
 local STARTING_MULTIPLIER = 1
 -- The payout multiplier tracks the rocket's LIVE velocity: each multiplier tick
@@ -14,7 +14,9 @@ local STARTING_MULTIPLIER = 1
 -- the multiplier is near-frozen at liftoff and ramps hard once the rocket is fast.
 -- A higher Rocket Speed stat raises the velocity, so it speeds up the multiplier
 -- and the rocket together.
-local MULTIPLIER_PER_STUD = 0.01
+-- Calibré sur la durée de vol moyenne à Resistance 0 (4 s) pour un multiplicateur
+-- moyen de ×1.50 : 4 s → ×1.48, 6 s → ×2.07, 8 s → ×2.88.
+local MULTIPLIER_PER_STUD = 0.019
 -- ── Rocket launch (RocketLauncher) ──────────────────────────────────────────────
 -- La fusée monte pendant le vol : la vitesse part de 0, monte de ROCKET_ACCEL
 -- (studs/s²) jusqu'à ROCKET_MAX_SPEED (studs/s), puis reste constante.
@@ -42,7 +44,7 @@ local STEER_SPACE_HEIGHT = 50
 -- to the player. Shared so the server reset and the client camera restore agree.
 local EXPLOSION_VIEW_DELAY = 1.5
 -- Nombre de secondes de vol utilisé par le shop pour prévisualiser l'effet d'un niveau
--- de Rocket Speed ("×6.0 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
+-- de Rocket Speed ("×3.9 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
 local SPEED_PREVIEW_SECONDS = 10
 -- Multiplicateur atteint après `seconds` de vol pour une valeur de Rocket Speed donnée.
 -- Reproduit exactement la boucle serveur (un tick toutes les MULTIPLIER_TICK_RATE
@@ -69,9 +71,37 @@ local function multiplierAfter(speedValue, seconds)
 	end
 	return mult
 end
+-- ── Perfect Claim ───────────────────────────────────────────────────────────────
+-- Claim juste AVANT que la fusée explose = "Perfect Claim" : le gain verrouillé est
+-- multiplié par PERFECT_CLAIM_MULTIPLIER. La fenêtre vaut PERFECT_CLAIM_WINDOW
+-- secondes sur un vol court ; au-delà de PERFECT_CLAIM_REFERENCE_TIME secondes de vol
+-- elle s'élargit proportionnellement (sinon un vol long — donc plus imprévisible —
+-- exigerait un timing bien plus dur qu'un vol court), plafonnée à
+-- PERFECT_CLAIM_MAX_WINDOW pour que ça reste un coup de timing.
+--   vol 4s ou moins → 0.30 s   |   vol 8s → 0.60 s   |   vol 12s et plus → 0.90 s
+local PERFECT_CLAIM_MULTIPLIER = 3
+local PERFECT_CLAIM_WINDOW = 0.3
+local PERFECT_CLAIM_REFERENCE_TIME = 4
+local PERFECT_CLAIM_MAX_WINDOW = 0.9
+-- Fenêtre de Perfect Claim (secondes avant l'explosion) pour un vol qui dure
+-- `explosionTime` secondes. Pure — serveur (validation) et client (affichage).
+local function perfectClaimWindow(explosionTime)
+	if explosionTime <= PERFECT_CLAIM_REFERENCE_TIME then
+		return PERFECT_CLAIM_WINDOW
+	end
+	local scaled = PERFECT_CLAIM_WINDOW * (explosionTime / PERFECT_CLAIM_REFERENCE_TIME)
+	return math.min(scaled, PERFECT_CLAIM_MAX_WINDOW)
+end
+-- ── Critical Claim ──────────────────────────────────────────────────────────────
+-- Chaque claim tire un dé : CRITICAL_CLAIM_CHANCE de chance que le gain verrouillé soit
+-- multiplié par CRITICAL_CLAIM_MULTIPLIER. Rien à jouer, aucun timing — c'est la surprise
+-- pure, annoncée au claim par le flash doré (client/ui/ClaimFlashText). Cumulable avec le
+-- Perfect Claim : les deux facteurs se multiplient (×3 × ×10 = ×30).
+local CRITICAL_CLAIM_CHANCE = 0.05
+local CRITICAL_CLAIM_MULTIPLIER = 10
 return {
 	multiplierAfter = multiplierAfter,
-	RISK_RAMP_DURATION = RISK_RAMP_DURATION,
+	perfectClaimWindow = perfectClaimWindow,
 	MULTIPLIER_TICK_RATE = MULTIPLIER_TICK_RATE,
 	STARTING_MULTIPLIER = STARTING_MULTIPLIER,
 	MULTIPLIER_PER_STUD = MULTIPLIER_PER_STUD,
@@ -82,4 +112,10 @@ return {
 	STEER_SPACE_HEIGHT = STEER_SPACE_HEIGHT,
 	EXPLOSION_VIEW_DELAY = EXPLOSION_VIEW_DELAY,
 	SPEED_PREVIEW_SECONDS = SPEED_PREVIEW_SECONDS,
+	PERFECT_CLAIM_MULTIPLIER = PERFECT_CLAIM_MULTIPLIER,
+	PERFECT_CLAIM_WINDOW = PERFECT_CLAIM_WINDOW,
+	PERFECT_CLAIM_REFERENCE_TIME = PERFECT_CLAIM_REFERENCE_TIME,
+	PERFECT_CLAIM_MAX_WINDOW = PERFECT_CLAIM_MAX_WINDOW,
+	CRITICAL_CLAIM_CHANCE = CRITICAL_CLAIM_CHANCE,
+	CRITICAL_CLAIM_MULTIPLIER = CRITICAL_CLAIM_MULTIPLIER,
 }

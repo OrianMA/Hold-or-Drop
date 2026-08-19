@@ -226,37 +226,57 @@ player on the button, fires `ButtonTriggerEvent` to the client (with the room's
 the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17) and runs
 **two independent loops** via `task.spawn`:
 
-- **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 1s): the payout multiplier tracks the rocket's
+- **Multiplier loop** (`MULTIPLIER_TICK_RATE` = 0.25s): the payout multiplier tracks the rocket's
   **live velocity** — each tick adds `RocketLauncher.getVelocity(room) × MULTIPLIER_TICK_RATE ×
   MULTIPLIER_PER_STUD` (i.e. it grows by the distance the rocket just climbed), starting from
   `STARTING_MULTIPLIER` (1.00). Velocity ramps from 0 and accelerates, so the number is
   near-frozen at liftoff and climbs faster the faster the rocket goes. The rocket's speed is
   scaled by the player's **`RocketSpeed`** stat (read once at session start, passed to
   `RocketLauncher.launch`), so a higher Rocket Speed speeds up the rocket **and** the multiplier
-  together — at `RocketSpeed` 1 (level 0, the new-player default) the rocket already reaches
-  `ROCKET_MAX_SPEED` (30 studs/s) in 10s (×2.65 multiplier by then), so the first run visibly
-  moves the number; each level adds a whole `RocketSpeed` unit, so the first purchase literally
-  doubles the ascent and multiplier-climb speed. Drives the `MultiplierText`
+  together — at `RocketSpeed` 1 (level 0, the new-player default) the rocket reaches
+  `ROCKET_MAX_SPEED` (30 studs/s) in 10s; each level adds a whole `RocketSpeed` unit, so the
+  first purchase literally doubles the ascent and multiplier-climb speed. `MULTIPLIER_PER_STUD`
+  (0.019) is calibrated against the **4s average flight** (below) for a **×1.50 average
+  multiplier**: ×1.48 at 4s, ×2.07 at 6s, ×2.88 at 8s. The tick is 0.25s and not 1s precisely
+  because flights are that short — at 1s a flight of 3.9s vs 4.0s would jump a whole payout
+  step. Drives the `MultiplierText`
   label (formerly `BaseCashText`) in the `RocketLaunch` popup — the client **lerps the shown
   number continuously** between ticks (RenderStepped) so it passes through every intermediate
   value (1.01, 1.02, …) rather than jumping. No floating labels (removed).
-- **Risk loop** (`TICK_RATE` = 0.5s): `getRisk(t)` is `MAX_RISK * (t/TOTAL_DURATION)²`
-  (EaseInQuad, caps at `MAX_RISK` = 0.8 after `RISK_RAMP_DURATION` = 17s), then reshaped by
-  the player's **Resistance** (0..100, read once at session start — see §6.6) via
-  `resistanceRiskParams` (`shared/ResistanceCurve.ts`, **not** `ButtonInGameModule.ts`) → a
-  `{riskScale, safeWindow}` profile: `riskAt(t)` is `0` while `t ≤ safeWindow`, else
-  `getRisk(t − safeWindow) * riskScale`. **`safeWindow` is the primary lever** — it is
-  FRONT-loaded (early levels buy most of the guaranteed window, late levels almost nothing)
-  and it is what the shop shows the player, in seconds ("Vol garanti", §6.8): L1 ≈ 1.1s,
-  L5 ≈ 4.1s, L30 ≈ 7.9s (near-saturated, cap 8s at level 100). `riskScale` is secondary — it
-  scales the curve *after* the window, but median survival only grows as `riskScale^(-1/3)`
-  (risk has to be halved-then-some, roughly ÷8, to double survival time), so it can't be made
-  readable on its own; that asymmetry is why `safeWindow` carries the player-facing message.
-  At resistance 0 both terms are neutral → identical to the base curve. The exact explosion
-  instant is precomputed once at launch (`rollExplosionTime`, same distribution); each tick
-  just refreshes the bar with `riskAt(t)`. Tunables live in `shared/ResistanceCurve.ts`
+- **Flight duration** — drawn **once at launch**, in one shot, from a **log-normal**
+  distribution (`rollExplosionTime`); there is no per-tick risk roll and no hazard curve any
+  more. It is a Gaussian bell laid on a *multiplicative* time scale ("4s ×÷1.4") rather than an
+  additive one ("4s ±1.2s"): same sharp peak, same collapse of probability as you move away,
+  but it can never produce a zero or negative duration and its long side stays open, which is
+  what keeps a jackpot run possible. An additive bell is closed on both sides — holding the low
+  tail above zero forces the high tail shut, and the ×5 run stops existing at all. Two knobs:
+  `FLIGHT_TIME_MEAN` (4s at Resistance 0) and `FLIGHT_TIME_SIGMA` (0.35, the width). The median
+  is derived as `MEAN · e^(−σ²/2)` so **tuning σ does not move the mean** — σ is the single
+  "how unpredictable is this game" dial. Sampling is Box–Muller over two `math.random()` draws,
+  clamped to `[FLIGHT_TIME_MIN, FLIGHT_TIME_MAX]` = 0.1s..60s (safety rails, not gameplay
+  bounds).
+  Reference points at Resistance 0: median 3.76s, mean 4.00s, 68% of flights in 2.7–5.3s, 95%
+  in 1.9–7.5s, ~0.25% pass 10s, observed ceiling ~19s. Multiplier side: mean ×1.51, median
+  ×1.43, p95 ×2.25, a ×3 every ~100 runs and a ×5 every ~2 200.
+- The draw is reshaped by the player's **Resistance** (0..100, read once at session start —
+  see §6.6) via `resistanceRiskParams` (`shared/ResistanceCurve.ts`, **not**
+  `ButtonInGameModule.ts`) → a `{riskScale, safeWindow}` profile, which moves and widens the
+  bell without changing its proportions:
+  - `safeWindow` is **added** to the draw, so the shop's "Vol garanti X s" promise (§6.8) holds
+    literally whatever the dice say. It is the **primary lever** and is FRONT-loaded (early
+    levels buy most of the window, late levels almost nothing): L1 ≈ 0.5s, L5 ≈ 2.0s,
+    L30 ≈ 4.0s (near-saturated, cap 4s at level 100).
+  - `riskScale` **multiplies the median** by `riskScale^(-1/3)` — the same stretch the old
+    model produced, now stated explicitly. On a multiplicative scale stretching the median
+    stretches the whole bell, so its shape is identical at every level. Secondary lever: risk
+    has to be cut roughly ÷8 to double the duration, which is why `safeWindow` carries the
+    player-facing message.
+  At Resistance 0 both terms are neutral. Resulting means: L0 4.0s, L5 6.7s, L10 8.3s,
+  L30+ 10.3s (saturated). Tunables live in `shared/ResistanceCurve.ts`
   (`RESISTANCE_MAX_REDUCTION`, `RESISTANCE_REDUCTION_CURVE`, `RESISTANCE_MAX_SAFE_WINDOW`,
   `RESISTANCE_SAFE_WINDOW_CURVE`).
+- The **risk loop** (`TICK_RATE` = 0.5s) no longer rolls anything: it just paces the run and
+  clamps its last step to the drawn deadline so the explosion fires exactly on time.
 
 Every ending **stops + resets the rocket** to its launch pad (`RocketLauncher`, §6.17).
 
@@ -271,6 +291,36 @@ double-claim). The strategic tension is now *claim before the rocket explodes*: 
 and the explosion lands first (loss); claim in time and the explosion just collects your
 locked win. On `ClaimAcceptedEvent` the client also fires the **cash burst**
 (`MoneyBurst.play()`, §6.21) alongside the locked-gain popup.
+
+**Perfect Claim** (`shared/RocketGameConfig.ts`): claiming in the **last instants before the
+scheduled explosion** multiplies the locked gain by `PERFECT_CLAIM_MULTIPLIER` (**×3**). The
+server compares the real flight time (`os.clock() - launchClock`, frame-accurate — the risk
+loop only advances by `TICK_RATE` steps) with the explosion deadline: `remaining ≤
+perfectClaimWindow(deadline)` ⇒ perfect. The window is `PERFECT_CLAIM_WINDOW` (0.3 s) on a
+short flight and **widens proportionally past `PERFECT_CLAIM_REFERENCE_TIME`** (4 s) —
+`0.3 × deadline/4`, capped at `PERFECT_CLAIM_MAX_WINDOW` (0.9 s) — so a long, less predictable
+flight isn't a harder timing test than a short one (30 s flight ⇒ 1.25 s window). The deadline
+is read **before** `scripted.onClaim()` (the tutorial rewrites it, which would otherwise hand
+out a free perfect), and `invincible` (deadline ∞) never triggers it. `claimedMultiplier`
+carries the ×3 already applied, so **every** payout path and the finish popup use it as-is —
+nothing downstream knows about the bonus. `ClaimAcceptedEvent(multiplier, perfect, critical)` carries the
+flag (no new RemoteEvent); the client only **latches** it and flashes the red
+`PERFECT CLAIM ×3` text (§6.22) later, on `PlayerKilledEvent` — i.e. **on the explosion**,
+which is what validates the coup on screen. (A Perfect Claim followed by a "Go Home" —
+possible only in the widened-window case, since the button re-arms after
+`CLAIM_REARM_DELAY` 0.6 s — pays the ×3 without the flash: there is no explosion.)
+Analytics logs an extra `PerfectClaim` counter.
+
+**Critical Claim** (`shared/RocketGameConfig.ts`): every claim also rolls a plain die —
+`CRITICAL_CLAIM_CHANCE` (**5 %**) to multiply the locked gain by `CRITICAL_CLAIM_MULTIPLIER`
+(**×10**). No timing, no skill: pure surprise. The roll happens server-side in the same
+`ClaimButtonEvent` handler and is **independent of the Perfect Claim** — both factors simply
+multiply (`currentMultiplier × 3 × 10` = ×30 on the rare double). Like the ×3, the bonus is
+folded into `claimedMultiplier` before it leaves the handler, so no payout path knows about
+it. The `critical` flag rides the same `ClaimAcceptedEvent`, and unlike the perfect flag the
+client shows its golden `CRITICAL CLAIM ×10` flash + icon rain **immediately, on the claim**
+(§6.22/§6.23) — nothing about it depends on the explosion. Analytics logs a `CriticalClaim`
+counter.
 
 **Go Home** (`GoHomeEvent`): `CLAIM_REARM_DELAY` (0.6 s) after a claim the **same button
 re-arms**, with its side label (`ClaimButtonFrame.TextLabel`) swapped from `"Claim"` to
@@ -628,7 +678,7 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
 - **`AudioConfig` (shared)** is the single registry of every sound asset (id + volume):
   the BGM `playlist`, the `highAltitude` ascent track, and the `sfx` (server `explosion` +
   `rocketLaunch` (looped 3D engine roar — see §6.17),
-  client `buttonUpgrade` / `moneyGain` / `uiClick`; `buttonExplode` is still defined
+  client `buttonUpgrade` / `moneyGain` / `uiClick` / `perfectClaim` (shared by both claim flashes, §6.22); `buttonExplode` is still defined
   but no longer played — the pre-explosion "cling" cue was removed). SFX still play
   from their existing call sites (`RocketLaunchBehavior` client-side, `ButtonInGameModule`
   server-side, `NeonPipePulse` for `buttonUpgrade` — see §6.12, `MoneyDisplay` for `moneyGain`,
@@ -1065,6 +1115,58 @@ so the burst reads the same on mobile. `MoneyBurst.preload()` (called from
 `RocketLaunchBehavior.init`) warms the image so the first claim of the session is not blank;
 `MoneyBurst.clear()` wipes bills still in flight.
 
+### 6.22 Claim flashes (`client/ui/ClaimFlashText.ts`)
+
+Purely client-side full-screen flashes, **stackable** like the `InformationText` banners
+(§6.11): each call creates its own label and takes the next free line (`SLOT_SPACING` 0.15 of
+screen height below `BASE_Y` 0.43, `MAX_FLASHES` 3 — the oldest is dropped past that), so two
+flashes never land on top of each other. Same animation, same SFX for both:
+
+| Call | Text | Look | When |
+|---|---|---|---|
+| `showPerfect()` | `PERFECT CLAIM ×3` | flat red | on `PlayerKilledEvent`, i.e. **at the explosion** — `ClaimAcceptedEvent(_, perfect = true)` only sets the `perfectClaimPending` latch in `RocketLaunchBehavior` (reset at every launch) |
+| `showCritical()` | `CRITICAL CLAIM ×10` | **golden, shining** — a `UIGradient` (dark gold → white highlight → dark gold, `SHINE_ROTATION` 20°) whose `Offset` sweeps −1 → +1 on a looping `SHINE_TI` (1 s, linear), so a reflection keeps crossing the text | **on the claim itself**, straight from `ClaimAcceptedEvent(_, _, critical = true)`, on the same frame as the icon rain (§6.23) |
+
+A single run can show both (critical at the claim, perfect ~a few tenths later at the blast):
+the second one simply stacks under the first.
+
+**Nothing to author in Studio**: each `TextLabel` (+ `UIStroke` + `UIScale`, + `UIGradient` for
+the critical) is created in code under the `InGameUI` ScreenGui, `TextScaled` with a size in
+scale so it reads the same on mobile, `ZIndex` 60 so it sits over the HUD and the cash burst.
+
+Violent arrival, long read: it arrives at `START_SCALE` (×2.4) tilted `START_ROTATION`
+(−7°) and slams to its real size in `SLAM_TI` (0.13 s, `Back/Out` ⇒ small overshoot) while the
+text + stroke fade in over `APPEAR_TI` (0.06 s), holds `HOLD` (**2 s**), then fades out growing
+to `OUT_SCALE` in `OUT_TI` (0.22 s) before the label is destroyed — ~2.35 s total, so it is
+still on screen (already fading) when the finish popup opens `EXPLOSION_VIEW_DELAY` (1.5 s)
+after the blast. No overlap: the popup's labels sit at y 0.33 and 0.80. The SFX
+(`AudioConfig.sfx.perfectClaim`, shared by both flashes) fires on the same frame, from a
+persistent `SoundService` template like `UiClickSound`/`InformationText`. Each flash carries
+its own `alive` flag so an early removal invalidates its in-flight `task.delay`s;
+`ClaimFlashText.hide()` cuts every flash instantly. Both labels build their text from
+`PERFECT_CLAIM_MULTIPLIER` / `CRITICAL_CLAIM_MULTIPLIER`, so retuning a bonus updates what the
+player reads.
+
+### 6.23 Critical Claim rain (`client/ui/CriticalRain.ts`)
+
+Small 2D icon rain (`rbxassetid://13506500866`) dropped by `CriticalRain.play()` on the same
+frame as the golden flash (§6.22), from the `ClaimAcceptedEvent` handler. Same technique as the
+cash burst (§6.21) — `ImageLabel`s simulated in pixels inside `RenderStepped`, no
+`ParticleEmitter`, since it has to read over the HUD — but a fall instead of an explosion.
+
+`PARTICLE_COUNT` (24) icons spawn spread across the screen width (column + noise, no clumps)
+and, crucially, **staggered in height**: each starts somewhere in a `SPAWN_BAND` (1600 px) band
+*above* the top edge, so they enter the frame one after another and read as rain rather than a
+single volley — no timers involved. `SPAWN_BAND` is therefore also the rain's **duration** knob:
+a taller band means the last icons enter the frame later. Each falls at `FALL_SPEED_MIN`…`MAX` (340–620 px/s) with a
+light `GRAVITY` (300 px/s²), a random horizontal `DRIFT_MAX` drift, a slow `SPIN_MAX` spin and a
+sine `SWAY` for the falling-leaf feel. Past `FADE_START_Y` (68 % of screen height) an icon
+dissolves progressively and is destroyed once below the bottom edge (`MAX_LIFETIME` 9 s is only
+a safety net). All pixel constants are authored for `REFERENCE_HEIGHT` (900 px) and rescaled by
+the real viewport height, so it reads the same on mobile. `ZIndex` 55: over the HUD and the cash
+burst, **under** the flash text (60). `CriticalRain.preload()` (called from
+`RocketLaunchBehavior.init`) warms the image; `CriticalRain.clear()` wipes icons still falling.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -1078,7 +1180,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `GoHomeEvent` | C→S | Post-claim "Go Home" — stop the rocket and end the run now (refused before a claim) |
 | `QuitButtonClickedEvent` | C→S | Player quit the menu |
 | `RocketSteerEvent` | C→S | Native left/right movement redirected to the flying rocket (dir -1/0/+1, sent on change) |
-| `ClaimAcceptedEvent` | S→C | Confirms a claim with the authoritative locked multiplier |
+| `ClaimAcceptedEvent` | S→C | Confirms a claim: authoritative locked multiplier + `perfect` / `critical` flags (Perfect Claim ×3 and Critical Claim ×10 already folded in, §6.3/§6.22) |
 | `ButtonExplodedEvent` | S→C | Explosion roll hit without a claim — client closes the run (music + bloom) |
 | `PlayerKilledEvent` | S→C | Loss — rocket exploded; client lingers the camera on it then restores (no death anymore) |
 | `MultiplierUpdateEvent` | S→C | New current multiplier (client lerps `MultiplierText` continuously to it) |
@@ -1105,21 +1207,28 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 
 | Constant | Location | Value | Meaning |
 |----------|----------|-------|---------|
-| `RISK_RAMP_DURATION` | `shared/RocketGameConfig.ts` | 17s | Risk/progress full ramp |
-| `MULTIPLIER_TICK_RATE` | `shared/RocketGameConfig.ts` | 1s | Multiplier tick interval |
+| `MULTIPLIER_TICK_RATE` | `shared/RocketGameConfig.ts` | 0.25s | Multiplier tick interval (fine — flights average 4s) |
 | `STARTING_MULTIPLIER` | `shared/RocketGameConfig.ts` | 1 | Base payout multiplier (start) |
-| `MULTIPLIER_PER_STUD` | `shared/RocketGameConfig.ts` | 0.01 | Multiplier gained per stud the rocket climbs (velocity-driven) |
+| `MULTIPLIER_PER_STUD` | `shared/RocketGameConfig.ts` | 0.019 | Multiplier gained per stud the rocket climbs (velocity-driven) |
 | `ROCKET_ACCEL` | `shared/RocketGameConfig.ts` | 3 | Rocket acceleration per RocketSpeed unit (studs/s²), ×stat value |
 | `ROCKET_MAX_SPEED` | `shared/RocketGameConfig.ts` | 30 | Rocket top speed per RocketSpeed unit (studs/s), ×stat value |
 | `STEER_ROT_SPEED_GROUND` | `shared/RocketGameConfig.ts` | rad(4)/s | Roll rate at the pad — extremely weak |
 | `STEER_ROT_SPEED_SPACE` | `shared/RocketGameConfig.ts` | rad(30)/s | Roll rate in space — responsive |
 | `STEER_SPACE_HEIGHT` | `shared/RocketGameConfig.ts` | 50 | Studs above pad where roll authority reaches full |
 | `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
-| `MAX_RISK` | `ButtonInGameModule.ts` | 0.8 | Risk ceiling |
+| `PERFECT_CLAIM_MULTIPLIER` | `shared/RocketGameConfig.ts` | 3 | Payout factor on a Perfect Claim (§6.3) |
+| `PERFECT_CLAIM_WINDOW` | `shared/RocketGameConfig.ts` | 0.3s | Perfect Claim window on a flight ≤ reference time |
+| `PERFECT_CLAIM_REFERENCE_TIME` | `shared/RocketGameConfig.ts` | 4s | Above this flight length the window widens proportionally |
+| `PERFECT_CLAIM_MAX_WINDOW` | `shared/RocketGameConfig.ts` | 0.9s | Hard cap on the widened window |
+| `CRITICAL_CLAIM_CHANCE` | `shared/RocketGameConfig.ts` | 0.05 | Chance for any claim to roll a Critical Claim (§6.3) |
+| `CRITICAL_CLAIM_MULTIPLIER` | `shared/RocketGameConfig.ts` | 10 | Payout factor on a Critical Claim — multiplies with the ×3 |
+| `FLIGHT_TIME_MEAN` | `ButtonInGameModule.ts` | 4s | Average flight length at Resistance 0 (§6.3) |
+| `FLIGHT_TIME_SIGMA` | `ButtonInGameModule.ts` | 0.35 | Width of the bell (multiplicative) — ↑ = extremes more reachable, mean unchanged |
+| `FLIGHT_TIME_MIN` / `_MAX` | `ButtonInGameModule.ts` | 0.1s / 60s | Safety clamps on the draw |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
 | `RESISTANCE_MAX_REDUCTION` | `shared/ResistanceCurve.ts` | 0.75 | Risk floor at Resistance 100 (×0.25) — secondary lever |
 | `RESISTANCE_REDUCTION_CURVE` | `shared/ResistanceCurve.ts` | 13 | ↑ = more front-loaded `riskScale` reduction |
-| `RESISTANCE_MAX_SAFE_WINDOW` | `shared/ResistanceCurve.ts` | 8s | Guaranteed no-explosion head start at Resistance 100 |
+| `RESISTANCE_MAX_SAFE_WINDOW` | `shared/ResistanceCurve.ts` | 4s | Guaranteed no-explosion head start at Resistance 100 |
 | `RESISTANCE_SAFE_WINDOW_CURVE` | `shared/ResistanceCurve.ts` | 14 | ↑ = more front-loaded `safeWindow` — the primary lever (§6.3) |
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on loss (rocket explodes) |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
@@ -1143,6 +1252,14 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 
 Dev-only flags — **must be `false`/disabled before publishing**:
 - `invincible` — button never explodes.
+- `logExplosionForecast` — prints the flight's already-rolled outcome to the server console at
+  liftoff: seconds until the explosion, the multiplier the run will have reached by then
+  (`multiplierAfter`, the same loop the live multiplier runs), the matching cash, and the
+  timestamp past which a claim counts as a Perfect Claim (§6.3). State **at liftoff** — a
+  scripted tutorial run can rewrite its deadline on claim.
+- `boostCriticalClaim` + `boostedCriticalClaimChance` — raises the Critical Claim roll from
+  `CRITICAL_CLAIM_CHANCE` (5 %) to 50 % so the golden flash + icon rain (§6.22/§6.23) show up
+  almost every other claim instead of once in twenty (§6.3).
 - `resetData` — wipe persisted data on join (fresh default profile each time).
 - `ignoreGamePasses` — when on, `BoostService` seeds every player with an empty owned-pass set
   on join, so you start exactly like a player who never bought any game pass even on an account

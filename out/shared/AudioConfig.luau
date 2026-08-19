@@ -38,6 +38,10 @@ local AudioConfig = {
 			id = "rbxassetid://72264591133889",
 			volume = 0.5,
 		},
+		perfectClaim = {
+			id = "rbxassetid://3406813517",
+			volume = 0.8,
+		},
 		information = {
 			id = "rbxassetid://130467592920597",
 			volume = 0.5,
