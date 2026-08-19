@@ -12,6 +12,9 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 -- ── ButtonFinishGame payout animation ───────────────────────────────────────────
 --
 -- Sequence (after the "Finish" flash + optional kill penalty):
+--   0.  Claim bonus (Perfect ×3 / Critical ×10, claimBonus > 1): BaseCashText counts up
+--       from the raw base to the boosted base with a golden bump — the bonus multiplies
+--       the BASE CASH, never the multiplier, and this phase is what shows it.
 --   1.  MultiplierText flies into BaseCashText and disappears.
 --   2.  BaseCashText counts up by the in-game multiplier (grow + red).
 --       EffectiveBaseCash already folds in every money multiplier, so no separate
@@ -31,6 +34,15 @@ local BASE_CASH_COUNTUP_TI = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.Easi
 -- totalEarn / COUNT; INTERVAL is the delay between each spawn.
 local FLOATING_TEXT_COUNT = 8
 local FLOATING_TEXT_INTERVAL = 0.12
+-- Phase 0 — claim bonus (Perfect ×3 / Critical ×10) growing the BASE CASH.
+-- Le compteur monte en doré (couleur du flash Critical) et le texte gonfle, puis
+-- redescend à sa taille/couleur de base pour que la phase multiplicateur reparte propre.
+local CLAIM_BONUS_TI = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local CLAIM_BONUS_SETTLE_TI = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local CLAIM_BONUS_COLOR = Color3.fromRGB(255, 200, 60)
+local CLAIM_BONUS_SIZE_INCREASE = 30
+local CLAIM_BONUS_HOLD = 0.35
+local CLAIM_BONUS_BANNER_HOLD = 1.6
 -- Penalty animation when the player died (lossMultiplier < 1).
 local LOSS_PENALTY_TI = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 -- BaseCash growth — red-tinge style matching the in-game multiplier label.
@@ -303,7 +315,7 @@ local function cancelActiveRun()
 end
 -- Runs the full ButtonFinishGame animation, then calls onComplete().
 -- Safe to call from a regular task (uses task.wait internally).
-local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, onComplete)
+local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, claimBonus, onComplete)
 	local refs = resolveRefs(frame)
 	if not refs then
 		onComplete()
@@ -330,9 +342,14 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	end
 	local baseSize = initialBaseCashSize
 	local baseColor = initialBaseCashColor
+	-- Le bonus de claim (Perfect ×3 / Critical ×10) grossit la BASE, pas le multiplicateur :
+	-- tout ce qui suit part donc de la base boostée — le total payé est identique à
+	-- `claimedBaseCash × multiplier` côté serveur.
+	local bonus = if claimBonus > 1 then claimBonus else 1
+	local boostedBaseCash = baseCash * bonus
 	-- Kill penalty applies before the multiplier, so the final payout is known up front —
 	-- register it now so a cancel during the very first phases still knows what is owed.
-	local effectiveBaseCash = if lossMultiplier < 1 then baseCash * lossMultiplier else baseCash
+	local effectiveBaseCash = if lossMultiplier < 1 then boostedBaseCash * lossMultiplier else boostedBaseCash
 	local effectiveBaseSize = if lossMultiplier < 1 then baseSize * lossMultiplier else baseSize
 	local totalEarn = effectiveBaseCash * multiplier
 	local run = {
@@ -383,9 +400,33 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	if run.cancelled then
 		return nil
 	end
+	-- ── Phase 0: claim bonus — c'est la BASE qui grimpe (×3 Perfect / ×10 Critical) ──
+	-- Le multiplicateur affiché ne bouge pas : le bonus se lit ici, sur le base cash qui
+	-- compte de sa valeur brute à sa valeur boostée, en doré et gonflé.
+	if bonus > 1 then
+		-- Bandeau explicite : sans lui, un joueur pourrait croire que c'est le
+		-- multiplicateur qui a bougé. Hold court — il ne doit pas traîner sur le paiement.
+		InformationText:show(`BASE CASH ×{bonus}`, {
+			rarity = "Epic",
+			holdSeconds = CLAIM_BONUS_BANNER_HOLD,
+		})
+		animateCash(baseCashText, baseCash, boostedBaseCash, baseSize, baseSize + CLAIM_BONUS_SIZE_INCREASE, baseColor, CLAIM_BONUS_COLOR, CLAIM_BONUS_TI)
+		if run.cancelled then
+			return nil
+		end
+		task.wait(CLAIM_BONUS_HOLD)
+		if run.cancelled then
+			return nil
+		end
+		-- Retour à la taille/couleur de base : la phase multiplicateur repart de zéro.
+		animateCash(baseCashText, boostedBaseCash, boostedBaseCash, baseSize + CLAIM_BONUS_SIZE_INCREASE, baseSize, CLAIM_BONUS_COLOR, baseColor, CLAIM_BONUS_SETTLE_TI)
+		if run.cancelled then
+			return nil
+		end
+	end
 	-- ── Kill penalty: shrink BaseCashText value + size before the count-up ────────
 	if lossMultiplier < 1 then
-		animateCash(baseCashText, baseCash, effectiveBaseCash, baseSize, effectiveBaseSize, baseColor, baseColor, LOSS_PENALTY_TI)
+		animateCash(baseCashText, boostedBaseCash, effectiveBaseCash, baseSize, effectiveBaseSize, baseColor, baseColor, LOSS_PENALTY_TI)
 		if run.cancelled then
 			return nil
 		end

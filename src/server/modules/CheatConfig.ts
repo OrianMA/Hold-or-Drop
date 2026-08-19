@@ -23,7 +23,7 @@ export const resetData = true;
 // boostedCriticalClaimChance : le flash doré + la pluie d'icônes tombent presque une
 // fois sur deux, donc plus besoin d'enchaîner vingt claims pour les voir.
 // MUST be false before publishing.
-export const boostCriticalClaim = true;
+export const boostCriticalClaim = false;
 export const boostedCriticalClaimChance = 0.5;
 
 // ── Game-pass testing ─────────────────────────────────────────────────────────

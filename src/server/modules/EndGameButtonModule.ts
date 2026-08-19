@@ -77,6 +77,9 @@ export const EndGameButtonModule = {
 	// applied to baseCash by the client-side penalty animation before the multiplier
 	// drain — always 1 now (a losing explosion uses enterRewardOnly, no popup), but
 	// kept so the client penalty branch (lossMultiplier < 1) stays supported.
+	// claimBonus is the Perfect/Critical Claim factor (1 when neither rolled): the popup
+	// grows baseCash by it BEFORE applying the multiplier, so the player sees which value
+	// the bonus actually boosted.
 	enter(
 		player: Player,
 		mode: EndGameMode,
@@ -84,6 +87,7 @@ export const EndGameButtonModule = {
 		multiplier: number,
 		earned: number,
 		lossMultiplier: number,
+		claimBonus: number,
 	): void {
 		ButtonSessionService.cleanup(player);
 		UiService.HideCurrent(player);
@@ -115,7 +119,7 @@ export const EndGameButtonModule = {
 
 			entry.clientOwes = true; // the animation will signal back when it ends
 			UiService.Show(player, PopupType.ButtonFinishGame);
-			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier, lossMultiplier);
+			Events.EndGameStartEvent.FireClient(player, baseCash, multiplier, lossMultiplier, claimBonus);
 		});
 	},
 

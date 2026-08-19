@@ -5,10 +5,13 @@ import { CRITICAL_CLAIM_MULTIPLIER, PERFECT_CLAIM_MULTIPLIER } from "shared/Rock
 // ── Flashs de claim bonus ──────────────────────────────────────────────────────
 //
 // Deux textes plein écran, même animation et même son :
-//   • "PERFECT CLAIM ×3"  — rouge  — claim juste avant l'explosion, joué À L'EXPLOSION
-//     (c'est le boom qui valide le coup).
-//   • "CRITICAL CLAIM ×10" — doré et brillant (dégradé balayé par un reflet) — 5 % de
-//     chance à chaque claim, joué AU CLAIM.
+//   • "PERFECT CLAIM  BASE CASH ×3"  — rouge  — claim juste avant l'explosion, joué À
+//     L'EXPLOSION (c'est le boom qui valide le coup).
+//   • "CRITICAL CLAIM  BASE CASH ×10" — doré et brillant (dégradé balayé par un reflet)
+//     — 5 % de chance à chaque claim, joué AU CLAIM.
+//
+// Les deux bonus multiplient le BASE CASH, jamais le multiplicateur : le texte le dit
+// explicitement, et la popup de fin montre la base grimper (client/ui/EndGameAnimation).
 //
 // Les deux peuvent tomber sur le même run : comme les bandeaux InformationText, chaque
 // flash prend sa propre ligne (slot) et vit sa vie indépendamment — plusieurs textes
@@ -56,13 +59,13 @@ interface FlashStyle {
 }
 
 const PERFECT_STYLE: FlashStyle = {
-	text: `PERFECT CLAIM ×${PERFECT_CLAIM_MULTIPLIER}`,
+	text: `PERFECT CLAIM  BASE CASH ×${PERFECT_CLAIM_MULTIPLIER}`,
 	color: Color3.fromRGB(255, 38, 38),
 	shine: false,
 };
 
 const CRITICAL_STYLE: FlashStyle = {
-	text: `CRITICAL CLAIM ×${CRITICAL_CLAIM_MULTIPLIER}`,
+	text: `CRITICAL CLAIM  BASE CASH ×${CRITICAL_CLAIM_MULTIPLIER}`,
 	color: new Color3(1, 1, 1), // blanc : c'est le dégradé doré qui donne la couleur
 	shine: true,
 };

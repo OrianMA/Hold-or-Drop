@@ -46,7 +46,6 @@ local claimPopupWarmed = false
 local buttonOriginalSize
 local claimButtonOriginalColor
 local multiplierTextOriginalSize
-local multiplierTextOriginalColor
 -- Pulse d'onboarding du bouton Claim : tant que le joueur n'a pas encaissé quelques
 -- fois, le bouton respire (taille + halo) pour que le geste soit impossible à rater.
 -- Compteur en mémoire, remis à zéro à chaque session — aucun état serveur.
@@ -69,6 +68,10 @@ local perfectClaimPending = false
 local isGoHomeMode = false
 local runId = 0
 local multiplierTextSize = 0
+-- Chauffe du multiplicateur : 0 au décollage, MULTIPLIER_HEAT_UPDATES quand le texte est
+-- au rouge plein. Compteur explicite plutôt que déduit de TextSize — le label est en
+-- TextScaled dans Studio, donc sa TextSize ne veut plus rien dire visuellement.
+local multiplierHeat = 0
 -- Aperçu live du gain "si je claim maintenant" (floor(EffectiveBaseCash × multiplicateur)).
 local resultBaseCash = 100
 local lastResultMultiplier = STARTING_MULTIPLIER
@@ -189,6 +192,14 @@ local function formatMultiplier(value)
 end
 local SIZE_GROWTH_PER_UPDATE = 4
 local MAX_MULTIPLIER_SIZE_INCREASE = 80
+-- Couleur du multiplicateur pendant le vol : il part d'un rouge clair et FONCE vers un
+-- rouge profond — il ne passe jamais par une autre teinte. Les deux bornes sont définies
+-- ici et pas lues sur le label : la couleur réglée dans Studio servait de point de départ,
+-- donc toute retouche de la GUI changeait la teinte de départ du vol.
+local MULTIPLIER_COLOR_START = Color3.fromRGB(255, 120, 110)
+local MULTIPLIER_COLOR_FULL = Color3.fromRGB(190, 0, 0)
+-- Nombre de ticks serveur pour atteindre le rouge plein (~5 s à MULTIPLIER_TICK_RATE).
+local MULTIPLIER_HEAT_UPDATES = 20
 local MAX_SHAKE_AMPLITUDE = 0.06
 -- Tremblement du décollage : fort au début (poussée/atmosphère) puis s'atténue vers 0
 -- (on monte vers l'espace, c'est de plus en plus calme).
@@ -424,14 +435,17 @@ local function init()
 		multiplierFrom = displayedMultiplier
 		multiplierTo = multiplier
 		multiplierElapsed = 0
-		multiplierTextSize += SIZE_GROWTH_PER_UPDATE
-		local _exp = multiplierTextSize
+		-- Taille bornée : sans plafond elle grimpe indéfiniment sur un vol long, et c'est
+		-- elle qu'on passe à la popup de fin (qui, elle, n'est PAS en TextScaled).
+		local _exp = multiplierTextSize + SIZE_GROWTH_PER_UPDATE
 		local _condition = multiplierTextOriginalSize
 		if _condition == nil then
 			_condition = 0
 		end
-		local factor = math.clamp((_exp - _condition) / MAX_MULTIPLIER_SIZE_INCREASE, 0, 1)
-		local capturedColor = (multiplierTextOriginalColor or Color3.new(1, 1, 1)):Lerp(Color3.new(1, 0, 0), factor)
+		multiplierTextSize = math.min(_exp, _condition + MAX_MULTIPLIER_SIZE_INCREASE)
+		multiplierHeat = math.min(multiplierHeat + 1, MULTIPLIER_HEAT_UPDATES)
+		local factor = multiplierHeat / MULTIPLIER_HEAT_UPDATES
+		local capturedColor = MULTIPLIER_COLOR_START:Lerp(MULTIPLIER_COLOR_FULL, factor)
 		-- Snapshot pour la popup de fin (taille + couleur au moment de la fin)
 		MultiplierVisuals:capture(multiplierTextSize, capturedColor)
 		-- Bump de taille + virage au rouge (la valeur, elle, monte en continu)
@@ -451,11 +465,12 @@ local function init()
 	-- Claim confirmé par le serveur : on FIGE le gain verrouillé EXACT (= payout serveur,
 	-- floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
 	-- La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
-	Events.ClaimAcceptedEvent.OnClientEvent:Connect(function(claimedMultiplier, perfect, critical)
-		-- Perfect Claim : le multiplicateur reçu contient DÉJÀ le ×3. On ne l'annonce PAS
-		-- tout de suite — le flash rouge part à l'explosion, quelques dixièmes plus tard.
+	Events.ClaimAcceptedEvent.OnClientEvent:Connect(function(claimedMultiplier, perfect, critical, claimedBaseCash)
+		-- Perfect Claim : le ×3 est déjà dans le BASE CASH reçu (le multiplicateur, lui,
+		-- ne bouge pas). On ne l'annonce PAS tout de suite — le flash rouge part à
+		-- l'explosion, quelques dixièmes plus tard.
 		perfectClaimPending = perfect
-		-- Critical Claim (5 %) : le ×10 est déjà dans le multiplicateur reçu, et il n'a
+		-- Critical Claim (5 %) : le ×10 est déjà dans le base cash reçu, et il n'a
 		-- rien à voir avec l'explosion — le flash doré part MAINTENANT, sur le claim. Si
 		-- un perfect suit, son flash rouge s'empilera sous celui-ci (ClaimFlashText).
 		-- La petite pluie d'icônes tombe sur la même frame que le texte.
@@ -463,7 +478,9 @@ local function init()
 			ClaimFlashText:showCritical()
 			CriticalRain:play()
 		end
-		local claimedCash = math.floor(resultBaseCash * claimedMultiplier)
+		-- Base cash verrouillé (bonus inclus) : c'est lui qui porte le gain figé.
+		resultBaseCash = claimedBaseCash
+		local claimedCash = math.floor(claimedBaseCash * claimedMultiplier)
 		if resultMultiplierText then
 			resultMultiplierText.Text = `${FormatNumber(claimedCash)}`
 			resultMultiplierText.Visible = true
@@ -576,9 +593,6 @@ local function setup(inGameUI)
 	if not (multiplierTextOriginalSize ~= 0 and multiplierTextOriginalSize == multiplierTextOriginalSize and multiplierTextOriginalSize) then
 		multiplierTextOriginalSize = multiplierText.TextSize
 	end
-	if not multiplierTextOriginalColor then
-		multiplierTextOriginalColor = multiplierText.TextColor3
-	end
 	-- Reset per-game state
 	local _result = Workspace.CurrentCamera
 	if _result ~= nil then
@@ -623,8 +637,9 @@ local function setup(inGameUI)
 	ButtonAnimations.playHold()
 	RocketSteerController:start()
 	multiplierText.TextSize = multiplierTextOriginalSize
-	multiplierText.TextColor3 = multiplierTextOriginalColor
+	multiplierText.TextColor3 = MULTIPLIER_COLOR_START
 	multiplierTextSize = multiplierTextOriginalSize
+	multiplierHeat = 0
 	-- Le compteur continu redémarre à 1.00x.
 	displayedMultiplier = STARTING_MULTIPLIER
 	multiplierFrom = STARTING_MULTIPLIER

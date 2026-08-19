@@ -14,7 +14,7 @@ local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").Bu
 -- the frame and hand off to the animation orchestrator. When the animation
 -- completes we tell the server to hide the popup (single source of truth).
 local function init()
-	Events.EndGameStartEvent.OnClientEvent:Connect(function(baseCash, multiplier, lossMultiplier)
+	Events.EndGameStartEvent.OnClientEvent:Connect(function(baseCash, multiplier, lossMultiplier, claimBonus)
 		-- The finish popup is opening — bring back the persistent HUD that the
 		-- ButtonMenu hid, so the payout animation can fly cash into it.
 		InGameUIController:enable()
@@ -25,7 +25,7 @@ local function init()
 		local inGameUI = playerGui:WaitForChild("InGameUI")
 		local frame = inGameUI:WaitForChild("ButtonFinishGame")
 		task.spawn(function()
-			runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, function()
+			runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, claimBonus, function()
 				Events.EndGameFinishedEvent:FireServer()
 				-- Run fully over → ease the BGM back in (also covered by respawn on death).
 				MusicController.resumeBgm()

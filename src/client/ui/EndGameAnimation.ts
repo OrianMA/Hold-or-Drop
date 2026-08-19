@@ -9,6 +9,9 @@ import { FormatCash } from "shared/NumberFormat";
 // ── ButtonFinishGame payout animation ───────────────────────────────────────────
 //
 // Sequence (after the "Finish" flash + optional kill penalty):
+//   0.  Claim bonus (Perfect ×3 / Critical ×10, claimBonus > 1): BaseCashText counts up
+//       from the raw base to the boosted base with a golden bump — the bonus multiplies
+//       the BASE CASH, never the multiplier, and this phase is what shows it.
 //   1.  MultiplierText flies into BaseCashText and disappears.
 //   2.  BaseCashText counts up by the in-game multiplier (grow + red).
 //       EffectiveBaseCash already folds in every money multiplier, so no separate
@@ -33,6 +36,16 @@ const BASE_CASH_COUNTUP_TI = new TweenInfo(0.6, Enum.EasingStyle.Quad, Enum.Easi
 // totalEarn / COUNT; INTERVAL is the delay between each spawn.
 const FLOATING_TEXT_COUNT = 8;
 const FLOATING_TEXT_INTERVAL = 0.12; // seconds between each floating text
+
+// Phase 0 — claim bonus (Perfect ×3 / Critical ×10) growing the BASE CASH.
+// Le compteur monte en doré (couleur du flash Critical) et le texte gonfle, puis
+// redescend à sa taille/couleur de base pour que la phase multiplicateur reparte propre.
+const CLAIM_BONUS_TI = new TweenInfo(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
+const CLAIM_BONUS_SETTLE_TI = new TweenInfo(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+const CLAIM_BONUS_COLOR = Color3.fromRGB(255, 200, 60);
+const CLAIM_BONUS_SIZE_INCREASE = 30;
+const CLAIM_BONUS_HOLD = 0.35; // pause pour lire la nouvelle base avant la suite
+const CLAIM_BONUS_BANNER_HOLD = 1.6; // durée du bandeau "BASE CASH ×N" (InformationText)
 
 // Penalty animation when the player died (lossMultiplier < 1).
 const LOSS_PENALTY_TI = new TweenInfo(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
@@ -325,6 +338,7 @@ export function runEndGameAnimation(
 	baseCash: number,
 	multiplier: number,
 	lossMultiplier: number,
+	claimBonus: number,
 	onComplete: () => void,
 ): void {
 	const refs = resolveRefs(frame);
@@ -345,9 +359,15 @@ export function runEndGameAnimation(
 	const baseSize = initialBaseCashSize;
 	const baseColor = initialBaseCashColor;
 
+	// Le bonus de claim (Perfect ×3 / Critical ×10) grossit la BASE, pas le multiplicateur :
+	// tout ce qui suit part donc de la base boostée — le total payé est identique à
+	// `claimedBaseCash × multiplier` côté serveur.
+	const bonus = claimBonus > 1 ? claimBonus : 1;
+	const boostedBaseCash = baseCash * bonus;
+
 	// Kill penalty applies before the multiplier, so the final payout is known up front —
 	// register it now so a cancel during the very first phases still knows what is owed.
-	const effectiveBaseCash = lossMultiplier < 1 ? baseCash * lossMultiplier : baseCash;
+	const effectiveBaseCash = lossMultiplier < 1 ? boostedBaseCash * lossMultiplier : boostedBaseCash;
 	const effectiveBaseSize = lossMultiplier < 1 ? baseSize * lossMultiplier : baseSize;
 	const totalEarn = effectiveBaseCash * multiplier;
 
@@ -378,9 +398,52 @@ export function runEndGameAnimation(
 	task.wait(InformationText.FADE_IN_TIME + InformationText.HOLD_TIME);
 	if (run.cancelled) return;
 
+	// ── Phase 0: claim bonus — c'est la BASE qui grimpe (×3 Perfect / ×10 Critical) ──
+	// Le multiplicateur affiché ne bouge pas : le bonus se lit ici, sur le base cash qui
+	// compte de sa valeur brute à sa valeur boostée, en doré et gonflé.
+	if (bonus > 1) {
+		// Bandeau explicite : sans lui, un joueur pourrait croire que c'est le
+		// multiplicateur qui a bougé. Hold court — il ne doit pas traîner sur le paiement.
+		InformationText.show(`BASE CASH ×${bonus}`, { rarity: "Epic", holdSeconds: CLAIM_BONUS_BANNER_HOLD });
+		animateCash(
+			baseCashText,
+			baseCash,
+			boostedBaseCash,
+			baseSize,
+			baseSize + CLAIM_BONUS_SIZE_INCREASE,
+			baseColor,
+			CLAIM_BONUS_COLOR,
+			CLAIM_BONUS_TI,
+		);
+		if (run.cancelled) return;
+		task.wait(CLAIM_BONUS_HOLD);
+		if (run.cancelled) return;
+		// Retour à la taille/couleur de base : la phase multiplicateur repart de zéro.
+		animateCash(
+			baseCashText,
+			boostedBaseCash,
+			boostedBaseCash,
+			baseSize + CLAIM_BONUS_SIZE_INCREASE,
+			baseSize,
+			CLAIM_BONUS_COLOR,
+			baseColor,
+			CLAIM_BONUS_SETTLE_TI,
+		);
+		if (run.cancelled) return;
+	}
+
 	// ── Kill penalty: shrink BaseCashText value + size before the count-up ────────
 	if (lossMultiplier < 1) {
-		animateCash(baseCashText, baseCash, effectiveBaseCash, baseSize, effectiveBaseSize, baseColor, baseColor, LOSS_PENALTY_TI);
+		animateCash(
+			baseCashText,
+			boostedBaseCash,
+			effectiveBaseCash,
+			baseSize,
+			effectiveBaseSize,
+			baseColor,
+			baseColor,
+			LOSS_PENALTY_TI,
+		);
 		if (run.cancelled) return;
 	}
 

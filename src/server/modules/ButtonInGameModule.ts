@@ -51,10 +51,10 @@ const GO_HOME_RESET_DELAY = 0.6;
 //   • FLIGHT_TIME_SIGMA — largeur de la cloche. Seul bouton pour rendre le jeu plus
 //     ou moins imprévisible ; il ne déplace pas la moyenne (la médiane est recalculée
 //     pour compenser).
-// Repères à Resistance 0 (μ = 4 s, σ = 0.35) : 68 % des vols entre 2.7 et 5.3 s,
-// 95 % entre 1.9 et 7.5 s, ~0.25 % dépassent 10 s, plafond observé ~22 s. Côté gain :
-// multiplicateur moyen ×1.52, un ×3 tous les ~100 runs, un ×5 tous les ~2 200.
-const FLIGHT_TIME_MEAN = 4;
+// Repères à Resistance 0 (μ = 7 s, σ = 0.35) : 68 % des vols entre 4.7 et 9.3 s,
+// 95 % entre 3.3 et 13.0 s, plafond observé ~33 s. Côté gain : multiplicateur moyen
+// ×1.50, un ×3 tous les ~185 runs.
+const FLIGHT_TIME_MEAN = 7;
 const FLIGHT_TIME_SIGMA = 0.35;
 
 // Garde-fous du tirage : la cloche n'est pas bornée, on coupe les deux queues bien
@@ -236,30 +236,37 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// verrouillé EXACT (voir la boucle risque plus bas). Remplace l'ancien "release".
 	let claimed = false;
 	let claimedMultiplier = STARTING_MULTIPLIER;
+	// Les bonus de claim (Perfect ×3 / Critical ×10) ne touchent PAS le multiplicateur :
+	// ils multiplient le BASE CASH verrouillé. Le payout final est rigoureusement le même
+	// (base × mult), mais le joueur voit clairement quelle valeur a grossi.
+	let claimBonus = 1;
+	let claimedBaseCash = baseCash;
 	const claimConn = Events.ClaimButtonEvent.OnServerEvent.Connect((p) => {
 		if (p !== player || !isActive || claimed) return;
 		claimed = true;
 
 		// Perfect Claim : le claim tombe dans la toute dernière fenêtre avant l'explosion
-		// PRÉVUE → gain ×3. La deadline est lue AVANT scripted.onClaim(), qui la réécrit
+		// PRÉVUE → base cash ×3. La deadline est lue AVANT scripted.onClaim(), qui la réécrit
 		// en tutorial (sinon un run scripté offrirait un perfect gratuit).
 		const deadline = scripted !== undefined ? scripted.explosionAt() : explosionAt;
 		const remaining = deadline - (os.clock() - launchClock);
 		const perfect = remaining <= perfectClaimWindow(deadline); // invincible ⇒ deadline ∞ ⇒ jamais perfect
 
-		// Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le gain verrouillé.
+		// Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le base cash.
 		// Indépendant du Perfect Claim : les deux peuvent tomber ensemble et se multiplient.
 		// Cheat de dev : `boostCriticalClaim` monte la chance à 50 % (voir CheatConfig).
 		const criticalChance = boostCriticalClaim ? boostedCriticalClaimChance : CRITICAL_CLAIM_CHANCE;
 		const critical = math.random() < criticalChance;
 
-		// Valeur autoritative exacte au moment du claim, ×3 si Perfect Claim et ×10 si
-		// Critical Claim. Toutes les branches de payout (explosion post-claim, Go Home) et
-		// la popup de fin lisent ce multiplicateur tel quel — les bonus sont donc déjà
-		// dedans partout.
-		claimedMultiplier =
-			currentMultiplier * (perfect ? PERFECT_CLAIM_MULTIPLIER : 1) * (critical ? CRITICAL_CLAIM_MULTIPLIER : 1);
-		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier, perfect, critical);
+		// Multiplicateur verrouillé = valeur exacte au moment du claim, SANS bonus : le
+		// multiplicateur est ce que le joueur a gagné en tenant, rien d'autre ne le gonfle.
+		claimedMultiplier = currentMultiplier;
+		// Les bonus s'appliquent au base cash. Toutes les branches de payout (explosion
+		// post-claim, Go Home) et la popup de fin lisent `claimedBaseCash × claimedMultiplier`
+		// — le gain final est donc identique à l'ancien calcul.
+		claimBonus = (perfect ? PERFECT_CLAIM_MULTIPLIER : 1) * (critical ? CRITICAL_CLAIM_MULTIPLIER : 1);
+		claimedBaseCash = baseCash * claimBonus;
+		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier, perfect, critical, claimedBaseCash);
 		scripted?.onClaim(); // tutorial : relance la fusée gelée + programme l'explosion
 
 		// Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
@@ -282,10 +289,12 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 		RocketLauncher.stop(room); // la fusée s'arrête sur place (moteur + son coupés)
 
-		const earned = math.floor(baseCash * claimedMultiplier);
+		const earned = math.floor(claimedBaseCash * claimedMultiplier);
 		// exploded=false : c'est le client qui ramène la caméra au joueur (retour à la base).
 		Events.GameResultEvent.FireClient(player, false, earned, claimedMultiplier);
-		EndGameButtonModule.enter(player, "released", baseCash, claimedMultiplier, earned, 1);
+		// La popup reçoit le base cash BRUT + le facteur de bonus : elle montre d'abord la
+		// base grimper (×3 / ×10) avant d'y appliquer le multiplicateur.
+		EndGameButtonModule.enter(player, "released", baseCash, claimedMultiplier, earned, 1, claimBonus);
 
 		// Analytics: win banked early (Go Home) — funnel step 3 + custom counter.
 		AnalyticsService.runStep(player, runId, 3, "Banked");
@@ -354,10 +363,10 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
 					RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
 
-					const earned = math.floor(baseCash * claimedMultiplier);
+					const earned = math.floor(claimedBaseCash * claimedMultiplier);
 					// exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
 					Events.GameResultEvent.FireClient(player, true, earned, claimedMultiplier);
-					EndGameButtonModule.enter(player, "killed", baseCash, claimedMultiplier, earned, 1);
+					EndGameButtonModule.enter(player, "killed", baseCash, claimedMultiplier, earned, 1, claimBonus);
 
 					// Analytics: guaranteed win landed after the explosion — funnel step 3.
 					AnalyticsService.runStep(player, runId, 3, "Banked");

@@ -1,10 +1,9 @@
 -- Compiled with roblox-ts v3.0.0
 -- ── Rocket gameplay tuning ──────────────────────────────────────────────────────
 -- Shared so server (game logic) and client (effects) agree on timing.
--- Secondes entre deux ticks de multiplicateur. Les vols durent ~4 s en moyenne
--- (voir rollExplosionTime) : un tick d'une seconde ne laisserait que 4 paliers et
--- 0.1 s de vol en plus ou en moins ferait sauter le gain d'un cran entier. À 0.25 s
--- le multiplicateur suit la durée réelle du vol de près.
+-- Secondes entre deux ticks de multiplicateur. Les vols durent ~7 s en moyenne
+-- (voir rollExplosionTime) : à 0.25 s le multiplicateur suit la durée réelle du vol
+-- de près, au lieu de sauter d'un cran entier pour 0.1 s de vol en plus ou en moins.
 local MULTIPLIER_TICK_RATE = 0.25
 -- Value the in-game multiplier starts at (1 = base payout before any growth).
 local STARTING_MULTIPLIER = 1
@@ -14,9 +13,9 @@ local STARTING_MULTIPLIER = 1
 -- the multiplier is near-frozen at liftoff and ramps hard once the rocket is fast.
 -- A higher Rocket Speed stat raises the velocity, so it speeds up the multiplier
 -- and the rocket together.
--- Calibré sur la durée de vol moyenne à Resistance 0 (4 s) pour un multiplicateur
--- moyen de ×1.50 : 4 s → ×1.48, 6 s → ×2.07, 8 s → ×2.88.
-local MULTIPLIER_PER_STUD = 0.019
+-- Calibré sur la durée de vol moyenne à Resistance 0 (7 s) pour un multiplicateur
+-- moyen de ×1.50 : 5 s → ×1.24, 7 s → ×1.46, 10 s → ×1.94, 15 s → ×2.85.
+local MULTIPLIER_PER_STUD = 0.0061
 -- ── Rocket launch (RocketLauncher) ──────────────────────────────────────────────
 -- La fusée monte pendant le vol : la vitesse part de 0, monte de ROCKET_ACCEL
 -- (studs/s²) jusqu'à ROCKET_MAX_SPEED (studs/s), puis reste constante.
@@ -44,8 +43,8 @@ local STEER_SPACE_HEIGHT = 50
 -- to the player. Shared so the server reset and the client camera restore agree.
 local EXPLOSION_VIEW_DELAY = 1.5
 -- Nombre de secondes de vol utilisé par le shop pour prévisualiser l'effet d'un niveau
--- de Rocket Speed ("×3.9 à 10 s"). 10 s = le moment où la fusée atteint sa vitesse max.
-local SPEED_PREVIEW_SECONDS = 10
+-- de Rocket Speed ("×1.5 à 7 s"). 7 s = la durée de vol moyenne à Resistance 0.
+local SPEED_PREVIEW_SECONDS = 7
 -- Multiplicateur atteint après `seconds` de vol pour une valeur de Rocket Speed donnée.
 -- Reproduit exactement la boucle serveur (un tick toutes les MULTIPLIER_TICK_RATE
 -- secondes, chaque tick ajoute vitesse × tick × MULTIPLIER_PER_STUD). Pure — utilisée
@@ -72,17 +71,18 @@ local function multiplierAfter(speedValue, seconds)
 	return mult
 end
 -- ── Perfect Claim ───────────────────────────────────────────────────────────────
--- Claim juste AVANT que la fusée explose = "Perfect Claim" : le gain verrouillé est
--- multiplié par PERFECT_CLAIM_MULTIPLIER. La fenêtre vaut PERFECT_CLAIM_WINDOW
+-- Claim juste AVANT que la fusée explose = "Perfect Claim" : le BASE CASH verrouillé est
+-- multiplié par PERFECT_CLAIM_MULTIPLIER (le multiplicateur, lui, ne bouge pas — le gain
+-- final est le même, mais le joueur voit quelle valeur a grossi). La fenêtre vaut PERFECT_CLAIM_WINDOW
 -- secondes sur un vol court ; au-delà de PERFECT_CLAIM_REFERENCE_TIME secondes de vol
 -- elle s'élargit proportionnellement (sinon un vol long — donc plus imprévisible —
 -- exigerait un timing bien plus dur qu'un vol court), plafonnée à
 -- PERFECT_CLAIM_MAX_WINDOW pour que ça reste un coup de timing.
---   vol 4s ou moins → 0.30 s   |   vol 8s → 0.60 s   |   vol 12s et plus → 0.90 s
+--   vol 7s ou moins → 0.50 s   |   vol 14s → 1.00 s   |   vol 21s et plus → 1.50 s
 local PERFECT_CLAIM_MULTIPLIER = 3
-local PERFECT_CLAIM_WINDOW = 0.3
-local PERFECT_CLAIM_REFERENCE_TIME = 4
-local PERFECT_CLAIM_MAX_WINDOW = 0.9
+local PERFECT_CLAIM_WINDOW = 0.5
+local PERFECT_CLAIM_REFERENCE_TIME = 7
+local PERFECT_CLAIM_MAX_WINDOW = 1.5
 -- Fenêtre de Perfect Claim (secondes avant l'explosion) pour un vol qui dure
 -- `explosionTime` secondes. Pure — serveur (validation) et client (affichage).
 local function perfectClaimWindow(explosionTime)
@@ -93,7 +93,7 @@ local function perfectClaimWindow(explosionTime)
 	return math.min(scaled, PERFECT_CLAIM_MAX_WINDOW)
 end
 -- ── Critical Claim ──────────────────────────────────────────────────────────────
--- Chaque claim tire un dé : CRITICAL_CLAIM_CHANCE de chance que le gain verrouillé soit
+-- Chaque claim tire un dé : CRITICAL_CLAIM_CHANCE de chance que le BASE CASH verrouillé soit
 -- multiplié par CRITICAL_CLAIM_MULTIPLIER. Rien à jouer, aucun timing — c'est la surprise
 -- pure, annoncée au claim par le flash doré (client/ui/ClaimFlashText). Cumulable avec le
 -- Perfect Claim : les deux facteurs se multiplient (×3 × ×10 = ×30).

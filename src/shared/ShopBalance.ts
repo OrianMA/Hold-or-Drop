@@ -46,8 +46,9 @@ export const ROCKET_SPEED = {
 
 // Resistance — 0..100. Achetée +1 par niveau. Le nombre n'est PAS un pourcentage : il
 // alimente la courbe de shared/ResistanceCurve.ts, qui le convertit en SECONDES DE VOL
-// GARANTIES (c'est ce qu'affiche le shop). La courbe est front-loaded : L1 achète déjà
-// 1.0 s garantie et +1.5 s de survie médiane, L30 n'achète plus rien.
+// GARANTIES (c'est ce qu'affiche le shop). La courbe est très front-loaded : L1 achète
+// déjà 2.4 s garanties (vol moyen 7.0 s → 9.7 s), L2-L3 amènent le vol à 11-12.5 s, et
+// au-delà de L5 la fenêtre ne bouge quasiment plus.
 //   value = level (0..100)
 //   price = startPrice * priceGrowth ^ level   (L0→1 = 150)
 //   Croissance douce (1.35) et prix de départ bas : la Resistance est remise à zéro à

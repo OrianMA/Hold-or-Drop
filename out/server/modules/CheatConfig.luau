@@ -20,7 +20,7 @@ local resetData = true
 -- boostedCriticalClaimChance : le flash doré + la pluie d'icônes tombent presque une
 -- fois sur deux, donc plus besoin d'enchaîner vingt claims pour les voir.
 -- MUST be false before publishing.
-local boostCriticalClaim = true
+local boostCriticalClaim = false
 local boostedCriticalClaimChance = 0.5
 -- ── Game-pass testing ─────────────────────────────────────────────────────────
 -- When true, BoostService seeds EVERY player as if they own NO game pass at all —

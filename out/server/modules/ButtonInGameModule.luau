@@ -50,10 +50,10 @@ local GO_HOME_RESET_DELAY = 0.6
 --   • FLIGHT_TIME_SIGMA — largeur de la cloche. Seul bouton pour rendre le jeu plus
 --     ou moins imprévisible ; il ne déplace pas la moyenne (la médiane est recalculée
 --     pour compenser).
--- Repères à Resistance 0 (μ = 4 s, σ = 0.35) : 68 % des vols entre 2.7 et 5.3 s,
--- 95 % entre 1.9 et 7.5 s, ~0.25 % dépassent 10 s, plafond observé ~22 s. Côté gain :
--- multiplicateur moyen ×1.52, un ×3 tous les ~100 runs, un ×5 tous les ~2 200.
-local FLIGHT_TIME_MEAN = 4
+-- Repères à Resistance 0 (μ = 7 s, σ = 0.35) : 68 % des vols entre 4.7 et 9.3 s,
+-- 95 % entre 3.3 et 13.0 s, plafond observé ~33 s. Côté gain : multiplicateur moyen
+-- ×1.50, un ×3 tous les ~185 runs.
+local FLIGHT_TIME_MEAN = 7
 local FLIGHT_TIME_SIGMA = 0.35
 -- Garde-fous du tirage : la cloche n'est pas bornée, on coupe les deux queues bien
 -- au-delà de ce qu'un joueur verra jamais.
@@ -225,28 +225,36 @@ local function startButtonGame(player, session)
 	-- verrouillé EXACT (voir la boucle risque plus bas). Remplace l'ancien "release".
 	local claimed = false
 	local claimedMultiplier = STARTING_MULTIPLIER
+	-- Les bonus de claim (Perfect ×3 / Critical ×10) ne touchent PAS le multiplicateur :
+	-- ils multiplient le BASE CASH verrouillé. Le payout final est rigoureusement le même
+	-- (base × mult), mais le joueur voit clairement quelle valeur a grossi.
+	local claimBonus = 1
+	local claimedBaseCash = baseCash
 	local claimConn = Events.ClaimButtonEvent.OnServerEvent:Connect(function(p)
 		if p ~= player or not isActive or claimed then
 			return nil
 		end
 		claimed = true
 		-- Perfect Claim : le claim tombe dans la toute dernière fenêtre avant l'explosion
-		-- PRÉVUE → gain ×3. La deadline est lue AVANT scripted.onClaim(), qui la réécrit
+		-- PRÉVUE → base cash ×3. La deadline est lue AVANT scripted.onClaim(), qui la réécrit
 		-- en tutorial (sinon un run scripté offrirait un perfect gratuit).
 		local deadline = if scripted ~= nil then scripted.explosionAt() else explosionAt
 		local remaining = deadline - (os.clock() - launchClock)
 		local perfect = remaining <= perfectClaimWindow(deadline)
-		-- Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le gain verrouillé.
+		-- Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le base cash.
 		-- Indépendant du Perfect Claim : les deux peuvent tomber ensemble et se multiplient.
 		-- Cheat de dev : `boostCriticalClaim` monte la chance à 50 % (voir CheatConfig).
 		local criticalChance = if boostCriticalClaim then boostedCriticalClaimChance else CRITICAL_CLAIM_CHANCE
 		local critical = math.random() < criticalChance
-		-- Valeur autoritative exacte au moment du claim, ×3 si Perfect Claim et ×10 si
-		-- Critical Claim. Toutes les branches de payout (explosion post-claim, Go Home) et
-		-- la popup de fin lisent ce multiplicateur tel quel — les bonus sont donc déjà
-		-- dedans partout.
-		claimedMultiplier = currentMultiplier * (if perfect then PERFECT_CLAIM_MULTIPLIER else 1) * (if critical then CRITICAL_CLAIM_MULTIPLIER else 1)
-		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier, perfect, critical)
+		-- Multiplicateur verrouillé = valeur exacte au moment du claim, SANS bonus : le
+		-- multiplicateur est ce que le joueur a gagné en tenant, rien d'autre ne le gonfle.
+		claimedMultiplier = currentMultiplier
+		-- Les bonus s'appliquent au base cash. Toutes les branches de payout (explosion
+		-- post-claim, Go Home) et la popup de fin lisent `claimedBaseCash × claimedMultiplier`
+		-- — le gain final est donc identique à l'ancien calcul.
+		claimBonus = (if perfect then PERFECT_CLAIM_MULTIPLIER else 1) * (if critical then CRITICAL_CLAIM_MULTIPLIER else 1)
+		claimedBaseCash = baseCash * claimBonus
+		Events.ClaimAcceptedEvent:FireClient(player, claimedMultiplier, perfect, critical, claimedBaseCash)
 		local _result_1 = scripted
 		if _result_1 ~= nil then
 			_result_1.onClaim()
@@ -275,10 +283,12 @@ local function startButtonGame(player, session)
 		claimConn:Disconnect()
 		goHomeConn:Disconnect()
 		RocketLauncher:stop(room)
-		local earned = math.floor(baseCash * claimedMultiplier)
+		local earned = math.floor(claimedBaseCash * claimedMultiplier)
 		-- exploded=false : c'est le client qui ramène la caméra au joueur (retour à la base).
 		Events.GameResultEvent:FireClient(player, false, earned, claimedMultiplier)
-		EndGameButtonModule:enter(player, "released", baseCash, claimedMultiplier, earned, 1)
+		-- La popup reçoit le base cash BRUT + le facteur de bonus : elle montre d'abord la
+		-- base grimper (×3 / ×10) avant d'y appliquer le multiplicateur.
+		EndGameButtonModule:enter(player, "released", baseCash, claimedMultiplier, earned, 1, claimBonus)
 		-- Analytics: win banked early (Go Home) — funnel step 3 + custom counter.
 		AnalyticsService:runStep(player, runId, 3, "Banked")
 		AnalyticsService:custom(player, "RunGoHome", earned)
@@ -339,10 +349,10 @@ local function startButtonGame(player, session)
 					task.wait(EXPLOSION_VIEW_DELAY)
 					RocketLauncher:reset(room)
 					RocketPlacer:place(room)
-					local earned = math.floor(baseCash * claimedMultiplier)
+					local earned = math.floor(claimedBaseCash * claimedMultiplier)
 					-- exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
 					Events.GameResultEvent:FireClient(player, true, earned, claimedMultiplier)
-					EndGameButtonModule:enter(player, "killed", baseCash, claimedMultiplier, earned, 1)
+					EndGameButtonModule:enter(player, "killed", baseCash, claimedMultiplier, earned, 1, claimBonus)
 					-- Analytics: guaranteed win landed after the explosion — funnel step 3.
 					AnalyticsService:runStep(player, runId, 3, "Banked")
 					return nil

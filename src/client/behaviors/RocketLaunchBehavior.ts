@@ -35,7 +35,6 @@ let claimPopupWarmed = false; // pré-chauffage de la texture du CanvasGroup fai
 let buttonOriginalSize: UDim2 | undefined;
 let claimButtonOriginalColor: Color3 | undefined;
 let multiplierTextOriginalSize: number | undefined;
-let multiplierTextOriginalColor: Color3 | undefined;
 
 // Pulse d'onboarding du bouton Claim : tant que le joueur n'a pas encaissé quelques
 // fois, le bouton respire (taille + halo) pour que le geste soit impossible à rater.
@@ -62,6 +61,10 @@ let perfectClaimPending = false;
 let isGoHomeMode = false; // le bouton est réarmé en "Go Home" (rentrer à la base)
 let runId = 0; // incrémenté à chaque partie — invalide les timers d'une partie précédente
 let multiplierTextSize = 0;
+// Chauffe du multiplicateur : 0 au décollage, MULTIPLIER_HEAT_UPDATES quand le texte est
+// au rouge plein. Compteur explicite plutôt que déduit de TextSize — le label est en
+// TextScaled dans Studio, donc sa TextSize ne veut plus rien dire visuellement.
+let multiplierHeat = 0;
 // Aperçu live du gain "si je claim maintenant" (floor(EffectiveBaseCash × multiplicateur)).
 let resultBaseCash = 100; // EffectiveBaseCash du joueur, lu une fois au début de partie
 let lastResultMultiplier = STARTING_MULTIPLIER; // dernier multiplicateur pour lequel le texte a été rafraîchi
@@ -166,6 +169,14 @@ function formatMultiplier(value: number): string {
 
 const SIZE_GROWTH_PER_UPDATE = 4;
 const MAX_MULTIPLIER_SIZE_INCREASE = 80;
+// Couleur du multiplicateur pendant le vol : il part d'un rouge clair et FONCE vers un
+// rouge profond — il ne passe jamais par une autre teinte. Les deux bornes sont définies
+// ici et pas lues sur le label : la couleur réglée dans Studio servait de point de départ,
+// donc toute retouche de la GUI changeait la teinte de départ du vol.
+const MULTIPLIER_COLOR_START = Color3.fromRGB(255, 120, 110);
+const MULTIPLIER_COLOR_FULL = Color3.fromRGB(190, 0, 0);
+// Nombre de ticks serveur pour atteindre le rouge plein (~5 s à MULTIPLIER_TICK_RATE).
+const MULTIPLIER_HEAT_UPDATES = 20;
 const MAX_SHAKE_AMPLITUDE = 0.06; // shake d'impact à l'explosion (PlayerKilledEvent)
 // Tremblement du décollage : fort au début (poussée/atmosphère) puis s'atténue vers 0
 // (on monte vers l'espace, c'est de plus en plus calme).
@@ -396,14 +407,16 @@ export function init(): void {
 		multiplierTo = multiplier;
 		multiplierElapsed = 0;
 
-		multiplierTextSize += SIZE_GROWTH_PER_UPDATE;
-
-		const factor = math.clamp(
-			(multiplierTextSize - (multiplierTextOriginalSize ?? 0)) / MAX_MULTIPLIER_SIZE_INCREASE,
-			0,
-			1,
+		// Taille bornée : sans plafond elle grimpe indéfiniment sur un vol long, et c'est
+		// elle qu'on passe à la popup de fin (qui, elle, n'est PAS en TextScaled).
+		multiplierTextSize = math.min(
+			multiplierTextSize + SIZE_GROWTH_PER_UPDATE,
+			(multiplierTextOriginalSize ?? 0) + MAX_MULTIPLIER_SIZE_INCREASE,
 		);
-		const capturedColor = (multiplierTextOriginalColor ?? new Color3(1, 1, 1)).Lerp(new Color3(1, 0, 0), factor);
+
+		multiplierHeat = math.min(multiplierHeat + 1, MULTIPLIER_HEAT_UPDATES);
+		const factor = multiplierHeat / MULTIPLIER_HEAT_UPDATES;
+		const capturedColor = MULTIPLIER_COLOR_START.Lerp(MULTIPLIER_COLOR_FULL, factor);
 
 		// Snapshot pour la popup de fin (taille + couleur au moment de la fin)
 		MultiplierVisuals.capture(multiplierTextSize, capturedColor);
@@ -428,11 +441,12 @@ export function init(): void {
 	// floor(EffectiveBaseCash × claimedMultiplier)). Mise à jour immédiate, sans throttle.
 	// La fusée continue et le multiplierText grimpe encore, mais ce texte reste figé.
 	Events.ClaimAcceptedEvent.OnClientEvent.Connect(
-		(claimedMultiplier: number, perfect: boolean, critical: boolean) => {
-			// Perfect Claim : le multiplicateur reçu contient DÉJÀ le ×3. On ne l'annonce PAS
-			// tout de suite — le flash rouge part à l'explosion, quelques dixièmes plus tard.
+		(claimedMultiplier: number, perfect: boolean, critical: boolean, claimedBaseCash: number) => {
+			// Perfect Claim : le ×3 est déjà dans le BASE CASH reçu (le multiplicateur, lui,
+			// ne bouge pas). On ne l'annonce PAS tout de suite — le flash rouge part à
+			// l'explosion, quelques dixièmes plus tard.
 			perfectClaimPending = perfect;
-			// Critical Claim (5 %) : le ×10 est déjà dans le multiplicateur reçu, et il n'a
+			// Critical Claim (5 %) : le ×10 est déjà dans le base cash reçu, et il n'a
 			// rien à voir avec l'explosion — le flash doré part MAINTENANT, sur le claim. Si
 			// un perfect suit, son flash rouge s'empilera sous celui-ci (ClaimFlashText).
 			// La petite pluie d'icônes tombe sur la même frame que le texte.
@@ -440,7 +454,9 @@ export function init(): void {
 				ClaimFlashText.showCritical();
 				CriticalRain.play();
 			}
-			const claimedCash = math.floor(resultBaseCash * claimedMultiplier);
+			// Base cash verrouillé (bonus inclus) : c'est lui qui porte le gain figé.
+			resultBaseCash = claimedBaseCash;
+			const claimedCash = math.floor(claimedBaseCash * claimedMultiplier);
 			if (resultMultiplierText) {
 				resultMultiplierText.Text = `$${FormatNumber(claimedCash)}`;
 				resultMultiplierText.Visible = true;
@@ -534,7 +550,6 @@ export function setup(inGameUI: ScreenGui): void {
 	if (!claimLabelOriginalText) claimLabelOriginalText = claimLabel.Text; // "Claim"
 	if (!claimButtonOriginalColor) claimButtonOriginalColor = claimButton.BackgroundColor3;
 	if (!multiplierTextOriginalSize) multiplierTextOriginalSize = multiplierText.TextSize;
-	if (!multiplierTextOriginalColor) multiplierTextOriginalColor = multiplierText.TextColor3;
 
 	// Reset per-game state
 	baseFov = Workspace.CurrentCamera?.FieldOfView ?? 70;
@@ -564,8 +579,9 @@ export function setup(inGameUI: ScreenGui): void {
 	ButtonAnimations.playHold(); // remplace la pose "interact" : le perso appuie et reste sur le bouton
 	RocketSteerController.start(); // le mouvement natif gauche/droite pilote la fusée pendant le vol
 	multiplierText.TextSize = multiplierTextOriginalSize;
-	multiplierText.TextColor3 = multiplierTextOriginalColor;
+	multiplierText.TextColor3 = MULTIPLIER_COLOR_START; // chaque décollage repart du rouge clair
 	multiplierTextSize = multiplierTextOriginalSize;
+	multiplierHeat = 0;
 	// Le compteur continu redémarre à 1.00x.
 	displayedMultiplier = STARTING_MULTIPLIER;
 	multiplierFrom = STARTING_MULTIPLIER;

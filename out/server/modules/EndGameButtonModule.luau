@@ -74,7 +74,7 @@ local function waitForRespawn(player)
 end
 local EndGameButtonModule
 EndGameButtonModule = {
-	enter = function(self, player, mode, baseCash, multiplier, earned, lossMultiplier)
+	enter = function(self, player, mode, baseCash, multiplier, earned, lossMultiplier, claimBonus)
 		ButtonSessionService:cleanup(player)
 		UiService:HideCurrent(player)
 		-- A flushed payout from the previous run may still be waiting for its client
@@ -116,7 +116,7 @@ EndGameButtonModule = {
 			end
 			entry.clientOwes = true
 			UiService:Show(player, PopupType.ButtonFinishGame)
-			Events.EndGameStartEvent:FireClient(player, baseCash, multiplier, lossMultiplier)
+			Events.EndGameStartEvent:FireClient(player, baseCash, multiplier, lossMultiplier, claimBonus)
 		end)
 	end,
 	flush = function(self, player)
