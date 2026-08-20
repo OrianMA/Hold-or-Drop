@@ -21,6 +21,11 @@ export const Z_BANNER = 10;
 export const DEFAULT_BANNER_Y = 0.12;
 
 let screenGui: ScreenGui | undefined;
+// Le tutorial s'efface pendant qu'un popup modal occupe l'écran (DailyRewards) : sans
+// ça le dim assombrirait le popup et le bandeau resterait par-dessus. Mémorisé au
+// niveau du module et réappliqué dans ensure(), pour qu'une reconstruction du
+// ScreenGui ne réaffiche pas le tutorial derrière le popup.
+let suppressed = false;
 let banner: Frame | undefined;
 let label: TextLabel | undefined;
 let originFrame: Frame | undefined;
@@ -63,6 +68,7 @@ export const TutorialUI = {
 		// Aligner l'inset sur celui du GUI du jeu, sinon tous les rectangles de cible
 		// seraient décalés de la hauteur de la barre Roblox.
 		gui.IgnoreGuiInset = TutorialUI.getInGameUI()?.IgnoreGuiInset ?? false;
+		gui.Enabled = !suppressed;
 		gui.Parent = playerGui();
 		screenGui = gui;
 
@@ -181,6 +187,14 @@ export const TutorialUI = {
 
 	hideBanner(): void {
 		if (banner) banner.Visible = false;
+	},
+
+	// Masque/réaffiche TOUT le tutorial (dim + bandeau + flèches) sans toucher à son
+	// état : appelé par DailyRewardsBehavior à l'ouverture/fermeture du popup, qui
+	// passe par-dessus le tutorial le temps de récupérer la récompense.
+	setSuppressed(value: boolean): void {
+		suppressed = value;
+		if (screenGui) screenGui.Enabled = !value;
 	},
 
 	destroy(): void {

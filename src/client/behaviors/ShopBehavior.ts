@@ -29,10 +29,16 @@ export function init(): void {
 	// MoneyParent (sibling of ShopMenu) mirrors the shop: the HUD's own money
 	// display is hidden with the HUD while shopping, so this one shows the balance
 	// while the shop is open and hides again on close.
-	const moneyParent = inGameUI.WaitForChild(MONEY_PARENT) as GuiObject;
+	// OPTIONAL on purpose — it is currently absent from the GUI (only HUD/MoneyParent
+	// exists), and a WaitForChild here yields forever, which takes down every init
+	// AFTER this one in main.client.ts (they run sequentially). A missing money mirror
+	// costs a balance readout while shopping; it must never cost the whole client.
+	const found = inGameUI.FindFirstChild(MONEY_PARENT);
+	const moneyParent = found?.IsA("GuiObject") ? found : undefined;
+	if (!moneyParent) warn(`ShopBehavior: InGameUI/${MONEY_PARENT} introuvable — pas d'argent affiché pendant le shop`);
 
 	shopMenu.Visible = false; // start hidden regardless of the Studio default
-	moneyParent.Visible = false; // follows the shop — hidden while the shop is closed
+	if (moneyParent) moneyParent.Visible = false; // follows the shop — hidden while the shop is closed
 
 	// Heartbeat watcher is only attached while the menu is open so the closed
 	// state has zero per-frame cost.
@@ -40,7 +46,7 @@ export function init(): void {
 
 	const close = (): void => {
 		shopMenu.Visible = false;
-		moneyParent.Visible = false;
+		if (moneyParent) moneyParent.Visible = false;
 		InGameUIController.enable();
 		distanceWatcher?.Disconnect();
 		distanceWatcher = undefined;
@@ -48,7 +54,7 @@ export function init(): void {
 
 	const open = (): void => {
 		shopMenu.Visible = true;
-		moneyParent.Visible = true;
+		if (moneyParent) moneyParent.Visible = true;
 		InGameUIController.disable();
 		distanceWatcher?.Disconnect();
 		distanceWatcher = RunService.Heartbeat.Connect(() => {

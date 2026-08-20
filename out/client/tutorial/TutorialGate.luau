@@ -29,7 +29,11 @@ local TutorialGate = {
 			local isTarget = target ~= nil and (descendant == target or descendant:IsDescendantOf(target))
 			-- Le bouton Skip doit rester cliquable en permanence.
 			local isSkip = descendant:FindFirstAncestor("TutorialSkip") ~= nil
-			if isTarget or isSkip then
+			-- Idem pour le popup Daily Rewards : il s'ouvre au lancement même si le
+			-- tutorial n'est pas fini (le tutorial est masqué le temps du popup, voir
+			-- TutorialUI.setSuppressed), ses boutons doivent donc rester cliquables.
+			local isDaily = descendant:FindFirstAncestor("DailyRewards") ~= nil
+			if isTarget or isSkip or isDaily then
 				continue
 			end
 			if not (lockedButtons[descendant] ~= nil) then

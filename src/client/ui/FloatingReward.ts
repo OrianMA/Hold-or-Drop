@@ -20,6 +20,11 @@ import { FormatCash } from "shared/NumberFormat";
 // plus EndGameFinishedEvent so the server credits the real Money through the shared
 // pendingEarned path. Banking is skipped when a rebirth invalidated the run
 // (FloatingCash generation), exactly like the end-game payout chunks.
+//
+// `showAlreadyCredited` is the same text with the banking removed — for gains the
+// server has ALREADY credited (the daily reward, §6.25). Banking there would count the
+// money a second time on screen and fire an end-game event that has nothing to do with
+// this gain.
 
 // Reuse the template the end-game payout sprays (a Frame holding an "Amount"
 // TextLabel), preloaded in ReplicatedStorage.
@@ -82,16 +87,16 @@ function fadeOut(frame: Frame, onDone: () => void): void {
 
 // Banks the cash and tells the server to credit it. Skips banking if a rebirth
 // cancelled this run (gen went stale) — the server pending credit is cleared too.
-function bank(amount: number, gen: number, onBanked?: () => void): void {
+function bank(amount: number, gen: number, credit: boolean, onBanked?: () => void): void {
 	activeCount = math.max(activeCount - 1, 0);
-	if (!FloatingCash.isStale(gen)) {
+	if (credit && !FloatingCash.isStale(gen)) {
 		MoneyDisplay.addVisual(amount); // count-up + money SFX
 		Events.EndGameFinishedEvent.FireServer(); // server credits pendingEarned, reconciles HUD
 	}
 	onBanked?.();
 }
 
-function spawn(amount: number, ending: RewardEnding, onBanked?: () => void): void {
+function spawn(amount: number, ending: RewardEnding, credit: boolean, onBanked?: () => void): void {
 	const template = getTemplate();
 	const screenGui = getScreenGui();
 	const runGen = FloatingCash.current();
@@ -101,7 +106,7 @@ function spawn(amount: number, ending: RewardEnding, onBanked?: () => void): voi
 
 	// No template / no laid-out screen / no fly target — still bank so the credit lands.
 	if (!template || !screenGui || screenGui.AbsoluteSize.X === 0 || (ending === "fly" && !flyTarget)) {
-		bank(amount, runGen, onBanked);
+		bank(amount, runGen, credit, onBanked);
 		return;
 	}
 
@@ -120,7 +125,7 @@ function spawn(amount: number, ending: RewardEnding, onBanked?: () => void): voi
 
 	const finish = () => {
 		frame.Destroy();
-		bank(amount, runGen, onBanked);
+		bank(amount, runGen, credit, onBanked);
 	};
 
 	// 1. Jump up.
@@ -132,7 +137,7 @@ function spawn(amount: number, ending: RewardEnding, onBanked?: () => void): voi
 		task.delay(HOLD, () => {
 			// A rebirth may have destroyed the frame while it was holding.
 			if (frame.Parent === undefined) {
-				bank(amount, runGen, onBanked);
+				bank(amount, runGen, credit, onBanked);
 				return;
 			}
 
@@ -160,6 +165,12 @@ export const FloatingReward = {
 	},
 
 	show(amount: number, ending: RewardEnding, onBanked?: () => void): void {
-		task.spawn(() => spawn(amount, ending, onBanked));
+		task.spawn(() => spawn(amount, ending, true, onBanked));
+	},
+
+	// Same text, no banking: the amount is already in the player's balance (server-side
+	// credit, e.g. the daily reward). Purely a readout of what was just earned.
+	showAlreadyCredited(amount: number, ending: RewardEnding): void {
+		task.spawn(() => spawn(amount, ending, false));
 	},
 };

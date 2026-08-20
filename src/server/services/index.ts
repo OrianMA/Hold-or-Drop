@@ -9,6 +9,7 @@ import { PlayerProgressionService } from "./PlayerProgressionService";
 import { BoostService } from "./BoostService";
 import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
+import { DailyRewardService } from "./DailyRewardService";
 import { LeaderboardService } from "./LeaderboardService";
 import { AnalyticsService } from "./AnalyticsService";
 import { TutorialService } from "server/tutorial/TutorialService";
@@ -37,6 +38,10 @@ export const services: Array<{ init(): void }> = [
 	ShopService,
 	// Rebirth: validate + reset. Needs PlayerData (money) + PlayerProgression ready.
 	RebirthService,
+	// Daily reward: derives the streak → DailyMultiplier / DailyClaimed attributes and
+	// grants the cash. Needs PlayerData (streak keys + Money) and PlayerProgression
+	// (EffectiveBaseCash) ready.
+	DailyRewardService,
 	// Global leaderboards + podium. Needs PlayerData (Money/Playtime) ready; its
 	// refresh loop is self-driven so ordering past PlayerData is not load-bearing.
 	LeaderboardService,

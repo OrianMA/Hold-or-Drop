@@ -1,4 +1,5 @@
 import { ContentProvider, Players, RunService } from "@rbxts/services";
+import { playBillPop } from "client/audio/CashSound";
 
 // ── Explosion de billets 2D (particules = ImageLabels) ──────────────────────────
 //
@@ -34,6 +35,27 @@ const POP_TIME = 0.1; // s de grossissement 0 → taille pleine au départ
 const LIFETIME = 2.6; // s avant destruction
 const FADE_START = 1.5; // s avant le début du fondu (le reste = durée du fondu)
 
+// ── Variante "aspiration" (récompense journalière) ──────────────────────────────
+// Même explosion, mais au lieu de retomber et de s'effacer, les billets sont aspirés
+// vers une cible (le compteur d'argent du HUD). Le vol est accéléré (p²) : ils
+// décollent mollement puis filent dans le compteur, ce qui lit comme une aspiration
+// plutôt qu'un déplacement linéaire.
+const GATHER_TIME = 0.75; // s de vol vers la cible
+// Les billets ne basculent PAS tous en même temps : le départ de l'aspiration est
+// échelonné sur GATHER_SPREAD dans l'ordre d'émission (donc en vague autour du
+// cercle), plus un petit bruit pour que ça ne soit pas mécanique.
+const GATHER_SPREAD = 0.25;
+const GATHER_JITTER = 0.05;
+// Temps de FREINAGE entre la fin de l'explosion et le départ vers la cible. Le billet
+// n'est pas gelé d'un coup : sa vitesse (translation ET rotation) est multipliée par
+// une courbe qui vaut 1 à l'entrée et 0 à la sortie, dérivée nulle aux deux bouts. Il
+// finit donc immobile — la pause est bien là — mais en y arrivant en glissant.
+const GATHER_BRAKE = 0.2;
+// Orientation prise pendant le vol : le billet cesse de tournoyer et se remet droit.
+const GATHER_END_ROTATION = 0;
+const GATHER_END_SCALE = 0.25; // taille à l'arrivée, en fraction de la taille pleine
+const GATHER_FADE_FROM = 0.8; // fraction du vol après laquelle le billet s'efface
+
 const FRAME_NAME = "MoneyBurstBill";
 
 // ── Simulation ──────────────────────────────────────────────────────────────────
@@ -51,7 +73,32 @@ interface Bill {
 	swayPhase: number;
 	swaySpeed: number;
 	age: number;
+	// Aspiration (optionnelle) : à `gatherAt` secondes, le billet quitte la simulation
+	// balistique et rejoint `target` en GATHER_TIME. `target` est résolu au moment du
+	// départ, pas à l'explosion — le HUD peut être masqué au lancement de la gerbe.
+	gatherAt?: number;
+	resolveTarget?: () => Vector2 | undefined;
+	gathering?: {
+		fromX: number; // position gelée pendant l'arrêt, origine de la ligne droite
+		fromY: number;
+		toX: number;
+		toY: number;
+		rotationFrom: number; // rotation au moment du gel, ramenée à GATHER_END_ROTATION
+		elapsed: number; // s depuis le gel (arrêt + vol)
+	};
 }
+
+export interface MoneyBurstOptions {
+	// Position ABSOLUE (écran) vers laquelle les billets convergent — typiquement le
+	// centre du compteur d'argent. Appelée au moment de l'aspiration ; renvoyer
+	// undefined refait un fondu normal, la gerbe ne reste jamais coincée.
+	gatherTo: () => Vector2 | undefined;
+	// Délai avant le départ de l'aspiration (défaut : GATHER_DELAY).
+	gatherAfter?: number;
+}
+
+// s de lévitation (explosion libre) avant que l'aspiration ne commence.
+const GATHER_DELAY = 0.55;
 
 const bills: Bill[] = [];
 let stepConn: RBXScriptConnection | undefined;
@@ -60,6 +107,19 @@ function getScreenGui(): ScreenGui | undefined {
 	const playerGui = Players.LocalPlayer.FindFirstChildOfClass("PlayerGui");
 	const found = playerGui?.FindFirstChild("InGameUI");
 	return found?.IsA("ScreenGui") ? found : undefined;
+}
+
+// Interpolation douce (3t²−2t³) : dérivée nulle aux deux bouts, donc aucune cassure
+// visible quand un régime prend le relais de l'autre.
+function smoothstep(t: number): number {
+	const c = math.clamp(t, 0, 1);
+	return c * c * (3 - 2 * c);
+}
+
+// Écart d'angle le plus court (−180..180) : le billet retrouve son orientation de
+// départ par le chemin le plus court, jamais en refaisant un tour complet.
+function shortestAngle(from: number, to: number): number {
+	return (((to - from + 180) % 360) + 360) % 360 - 180;
 }
 
 function destroyBill(index: number): void {
@@ -71,11 +131,95 @@ function step(dt: number): void {
 	// dt borné : un freeze (chargement, alt-tab) ne doit pas téléporter les billets.
 	const delta = math.min(dt, 1 / 20);
 
+	// Origine du ScreenGui : les billets sont positionnés en offsets LOCAUX, alors que
+	// la cible d'aspiration est donnée en coordonnées écran absolues.
+	const origin = getScreenGui()?.AbsolutePosition ?? new Vector2(0, 0);
+
 	for (let i = bills.size() - 1; i >= 0; i--) {
 		const bill = bills[i];
 		bill.age += delta;
+		const label = bill.label;
 
-		// Freinage exponentiel + gravité : gerbe rapide au départ, chute posée ensuite.
+		// ── Aspiration : arrêt net, puis ligne droite vers la cible ───────────────
+		if (bill.gatherAt !== undefined && bill.age >= bill.gatherAt) {
+			if (!bill.gathering) {
+				const target = bill.resolveTarget?.();
+				if (!target) {
+					// Pas de cible (HUD absent) → on repasse en fondu normal plutôt que
+					// de laisser le billet figé en l'air.
+					bill.gatherAt = undefined;
+				} else {
+					// Point d'entrée du freinage. fromX/fromY/rotationFrom sont réécrits à
+					// chaque image tant que le billet glisse encore, pour que la ligne
+					// droite parte de son point d'arrêt RÉEL.
+					bill.gathering = {
+						fromX: bill.x,
+						fromY: bill.y,
+						toX: target.X - origin.X,
+						toY: target.Y - origin.Y,
+						rotationFrom: bill.rotation,
+						elapsed: 0,
+					};
+				}
+			}
+
+			const gathering = bill.gathering;
+			if (gathering) {
+				gathering.elapsed += delta;
+
+				// 1. Freinage : le billet continue sur sa lancée en ralentissant jusqu'à
+				//    l'arrêt. La vitesse est CONTINUE de part et d'autre — à l'entrée elle
+				//    vaut encore celle de l'explosion, à la sortie exactement zéro — donc
+				//    aucune cassure visible. La gravité ne s'applique plus ici, sinon le
+				//    billet ne s'immobiliserait jamais.
+				if (gathering.elapsed < GATHER_BRAKE) {
+					const brake = 1 - smoothstep(gathering.elapsed / GATHER_BRAKE);
+					bill.x += bill.vx * brake * delta;
+					bill.y += bill.vy * brake * delta;
+					bill.rotation += bill.spin * brake * delta;
+
+					gathering.fromX = bill.x;
+					gathering.fromY = bill.y;
+					gathering.rotationFrom = bill.rotation;
+
+					label.Position = new UDim2(0, bill.x, 0, bill.y);
+					label.Rotation = bill.rotation;
+					continue;
+				}
+
+				// 2. Vol en ligne droite, easing p². Sa dérivée est nulle en p = 0 : le
+				//    départ se fait donc à vitesse nulle, dans la continuité exacte du
+				//    freinage — puis ça accélère jusqu'à l'arrivée.
+				const p = math.clamp((gathering.elapsed - GATHER_BRAKE) / GATHER_TIME, 0, 1);
+				const eased = p * p;
+
+				const drawX = gathering.fromX + (gathering.toX - gathering.fromX) * eased;
+				const drawY = gathering.fromY + (gathering.toY - gathering.fromY) * eased;
+
+				// Le billet se remet droit pendant le vol, par le chemin angulaire le
+				// plus court : il arrive à plat dans le compteur, sans tournoyer.
+				const settle = smoothstep(p);
+				const rotation =
+					gathering.rotationFrom +
+					shortestAngle(gathering.rotationFrom, GATHER_END_ROTATION) * settle;
+
+				const drawn = bill.size * (1 - (1 - GATHER_END_SCALE) * eased);
+				label.Position = new UDim2(0, drawX, 0, drawY);
+				label.Size = new UDim2(0, drawn, 0, drawn);
+				label.Rotation = rotation;
+				label.ImageTransparency =
+					p > GATHER_FADE_FROM ? (p - GATHER_FADE_FROM) / (1 - GATHER_FADE_FROM) : 0;
+
+				if (p >= 1) {
+					playBillPop(); // petit "pop" à chaque billet encaissé
+					destroyBill(i);
+				}
+				continue;
+			}
+		}
+
+		// ── Explosion : freinage exponentiel + gravité ────────────────────────────
+		// Gerbe rapide au départ, chute posée ensuite.
 		const damping = math.exp(-DRAG * delta);
 		bill.vx *= damping;
 		bill.vy = bill.vy * damping + GRAVITY * bill.scale * delta;
@@ -92,7 +236,6 @@ function step(dt: number): void {
 
 		const grow = bill.age < POP_TIME ? bill.age / POP_TIME : 1;
 		const drawn = bill.size * grow;
-		const label = bill.label;
 		label.Position = new UDim2(0, bill.x, 0, bill.y);
 		label.Size = new UDim2(0, drawn, 0, drawn);
 		label.Rotation = bill.rotation;
@@ -125,7 +268,9 @@ export const MoneyBurst = {
 	},
 
 	// Fait exploser une gerbe de billets depuis `origin` (centre de l'écran par défaut).
-	play(origin?: Vector2): void {
+	// Avec `options.gatherTo`, les billets ne retombent pas : après une seconde
+	// d'explosion libre ils sont aspirés vers la cible (le compteur d'argent du HUD).
+	play(origin?: Vector2, options?: MoneyBurstOptions): void {
 		const screenGui = getScreenGui();
 		if (!screenGui) return;
 
@@ -166,6 +311,15 @@ export const MoneyBurst = {
 				swayPhase: math.random() * math.pi * 2,
 				swaySpeed: SWAY_SPEED_MIN + math.random() * (SWAY_SPEED_MAX - SWAY_SPEED_MIN),
 				age: 0,
+				// Départs étalés dans l'ordre d'émission (donc en vague autour du cercle)
+				// plutôt qu'au hasard : les billets ne basculent pas tous ensemble, et
+				// l'arrivée dans le compteur se fait en rafale au lieu d'un seul paquet.
+				gatherAt: options
+					? (options.gatherAfter ?? GATHER_DELAY) +
+						(i / PARTICLE_COUNT) * GATHER_SPREAD +
+						math.random() * GATHER_JITTER
+					: undefined,
+				resolveTarget: options?.gatherTo,
 			});
 		}
 

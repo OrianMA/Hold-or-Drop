@@ -4,7 +4,7 @@ import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { STARTING_MULTIPLIER, EXPLOSION_VIEW_DELAY, MULTIPLIER_TICK_RATE } from "shared/RocketGameConfig";
 import { MEGA_ROCKET_BASE_CASH_MULT, hasMegaRocket } from "shared/MegaRocketConfig";
 import { FormatNumber } from "shared/NumberFormat";
-import { AudioConfig } from "shared/AudioConfig";
+import { playCashSound, preloadCashSound } from "client/audio/CashSound";
 import { MusicController } from "client/audio/MusicController";
 import { ButtonAnimations } from "client/behaviors/ButtonAnimations";
 import { RocketSteerController } from "client/behaviors/RocketSteerController";
@@ -12,7 +12,7 @@ import { MoneyBurst } from "client/ui/MoneyBurst";
 import { ClaimFlashText } from "client/ui/ClaimFlashText";
 import { CriticalRain } from "client/ui/CriticalRain";
 import { InformationText } from "client/ui/InformationText";
-import { ContentProvider, Lighting, Players, RunService, SoundService, TweenService, Workspace } from "@rbxts/services";
+import { ContentProvider, Lighting, Players, RunService, TweenService, Workspace } from "@rbxts/services";
 
 // UI refs — assigned on first setup(), never change after
 let claimButton: TextButton | undefined;
@@ -93,22 +93,9 @@ let rocketBaselineY = 0;
 let highAltitudeReached = false;
 
 // Son de cash joué au moment du claim (au lieu du clic UI générique — le ClaimButton
-// porte l'attribut NoUiClick pour que UiClickSound le saute). Template préchargé, cloné
-// à chaque claim pour éviter tout fetch CDN.
-const claimCashSoundTemplate = (() => {
-	const sound = new Instance("Sound");
-	sound.Name = "ClaimCashSoundTemplate";
-	sound.SoundId = AudioConfig.sfx.moneyGain.id;
-	sound.Volume = AudioConfig.sfx.moneyGain.volume;
-	sound.Parent = SoundService;
-	return sound;
-})();
-
+// porte l'attribut NoUiClick pour que UiClickSound le saute). Voir client/audio/CashSound.
 function playClaimCashSound(): void {
-	const sound = claimCashSoundTemplate.Clone();
-	sound.Parent = SoundService;
-	sound.Play();
-	sound.Ended.Connect(() => sound.Destroy());
+	playCashSound();
 }
 
 // Position "en bas" du popup : sa position d'origine décalée de CLAIM_POPUP_RISE px vers le bas.
@@ -239,9 +226,7 @@ export function setTutorialActive(active: boolean): void {
 export function init(): void {
 	// Précharge le son de cash pour que même le TOUT premier claim de la session soit
 	// instantané (les suivants sont déjà en cache). 100 % client : aucune latence réseau.
-	task.spawn(() => {
-		pcall(() => ContentProvider.PreloadAsync([claimCashSoundTemplate]));
-	});
+	preloadCashSound();
 	// Même logique pour l'image des billets de l'explosion de cash au claim.
 	MoneyBurst.preload();
 	CriticalRain.preload();

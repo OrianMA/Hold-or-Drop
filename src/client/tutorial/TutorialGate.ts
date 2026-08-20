@@ -30,7 +30,11 @@ export const TutorialGate = {
 				target !== undefined && (descendant === target || descendant.IsDescendantOf(target));
 			// Le bouton Skip doit rester cliquable en permanence.
 			const isSkip = descendant.FindFirstAncestor("TutorialSkip") !== undefined;
-			if (isTarget || isSkip) continue;
+			// Idem pour le popup Daily Rewards : il s'ouvre au lancement même si le
+			// tutorial n'est pas fini (le tutorial est masqué le temps du popup, voir
+			// TutorialUI.setSuppressed), ses boutons doivent donc rester cliquables.
+			const isDaily = descendant.FindFirstAncestor("DailyRewards") !== undefined;
+			if (isTarget || isSkip || isDaily) continue;
 
 			if (!lockedButtons.has(descendant)) lockedButtons.set(descendant, descendant.Interactable);
 			descendant.Interactable = false;

@@ -42,6 +42,10 @@ local AudioConfig = {
 			id = "rbxassetid://3406813517",
 			volume = 0.8,
 		},
+		billPop = {
+			id = "rbxassetid://72264591133889",
+			volume = 0.2,
+		},
 		information = {
 			id = "rbxassetid://130467592920597",
 			volume = 0.5,

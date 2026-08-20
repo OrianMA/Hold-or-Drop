@@ -2,6 +2,7 @@ import { Events } from "shared/Event";
 import { rebirthCost } from "shared/ShopConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { PlayerDataService } from "./PlayerDataService";
+import { DailyRewardService } from "./DailyRewardService";
 import { AnalyticsService, TxType } from "./AnalyticsService";
 import { RoomService } from "server/rooms/RoomService";
 import { RocketPlacer } from "server/modules/RocketPlacer";
@@ -45,6 +46,10 @@ function handleRebirth(player: Player): void {
 	// (otherwise the old rocket would linger until the player leaves/rejoins the room).
 	const room = RoomService.getRoom(player);
 	if (room) RocketPlacer.place(room);
+
+	// A brand-new player had their daily reward popup deferred (the tutorial owned the
+	// screen on join) — their first rebirth is where it finally shows. No-op otherwise.
+	DailyRewardService.onRebirth(player);
 }
 
 export const RebirthService = {

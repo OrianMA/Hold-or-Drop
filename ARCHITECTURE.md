@@ -82,6 +82,7 @@ src/
     ├── ShopBalance.ts       # Shop economy numbers (THE rebalancing file)
     ├── ShopConfig.ts        # Shop items + price/value formulas (logic, reads ShopBalance)
     ├── MoneyProducts.ts     # 9 Robux "buy money" dev products (productId ↔ amount)
+    ├── DailyRewardConfig.ts # Daily reward: streak → multiplier, day boundary, 3X product
     ├── PopupType.ts         # Popup enum (shared contract)
     ├── NumberFormat.ts      # FormatCash helper
     └── CameraController.ts  # Camera helper: rocket-follow (Custom) + cinematic (Scriptable)
@@ -123,17 +124,20 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 6. `ShopService` — handle cash purchases (needs PlayerData + PlayerProgression ready)
 7. `RebirthService` — handle `RebirthEvent`: validate `Money ≥ rebirthCost(Rebirths)`, reset
    `Money` + stat levels, increment `Rebirths` (needs PlayerData + PlayerProgression ready)
-8. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
+8. `DailyRewardService` — daily streak → `DailyMultiplier` / `DailyClaimed` /
+   `DailyAutoOpen` attributes + the claim grant (§6.25). Needs PlayerData (streak keys +
+   `Money`) and PlayerProgression (`EffectiveBaseCash`, `isFirstSession`) ready
+9. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
    self-driven 60s refresh loop (needs PlayerData ready — reads `Money`/`Playtime`)
-9. `AnalyticsService` — official Roblox analytics wrapper (§6.19); logs the onboarding funnel
+10. `AnalyticsService` — official Roblox analytics wrapper (§6.19); logs the onboarding funnel
    join step. Needs PlayerProgression ready (reads `isFirstSession` for the onboarding gate)
-10. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-11. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-12. `CharacterService` — normalize character scale on spawn
-13. `EndGameButtonModule.init()` — wire the payout-finished handshake
-14. `MegaRocketService` — horloge de l'événement Mega Rocket (§6.24). After `RoomService` — it
+11. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+12. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+13. `CharacterService` — normalize character scale on spawn
+14. `EndGameButtonModule.init()` — wire the payout-finished handshake
+15. `MegaRocketService` — horloge de l'événement Mega Rocket (§6.24). After `RoomService` — it
     re-places the on-pad rockets the moment the event fires
-15. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+16. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -443,6 +447,10 @@ otherwise pop the finish screen over the fresh `ButtonMenu`. `flush` marks the e
 `client/ui/FloatingReward.ts` owns the single-text visual for both endings — `"fly"` (into the
 money HUD, used by `LossRewardBehavior`) and `"fade"` (in place, used by the flush). Its frames
 are named `LossRewardFloatingText` so `FloatingCash` still drops them on a rebirth.
+Both endings **bank on disappearance** (`MoneyDisplay.addVisual` + `EndGameFinishedEvent`).
+`showAlreadyCredited(amount, ending)` is the same text **without** the banking — for a gain the
+server has already credited (the daily reward, §6.25), where banking would count the money a
+second time on screen and fire an end-game event unrelated to it.
 
 ### 6.5 Popups (`UI/Popup.ts`, `UI/PopupConfig.ts`, `services/UiService.ts`)
 - `PopupType` enum (`shared/PopupType.ts`): `ButtonMenu`, `RocketLaunch`, `ButtonFinishGame`.
@@ -468,8 +476,9 @@ are named `LossRewardFloatingText` so `FloatingCash` still drops them on a rebir
 ### 6.6 Persistence (`PlayerDataService`, `PlayerProgressionService`)
 - Both follow the same pattern: **DataStore-backed, mirrored to player Attributes** so the
   owning client can read state directly via replication.
-- `PlayerDataService` → `Money` **and `Playtime`** (total seconds played, accumulated across
-  sessions; defaults 0 for existing saves — no version bump) (store `PlayerData_v1`).
+- `PlayerDataService` → `Money`, **`Playtime`** (total seconds played, accumulated across
+  sessions) **and the two daily-reward keys `DailyStreak` / `DailyLastClaim`** (§6.25) — all
+  default 0 for existing saves, no version bump (store `PlayerData_v1`).
 - `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `RocketSpeedLevel`,
   `ResistanceLevel` **and the `Rebirths` count** (store `PlayerProgression_v2`). The effective
   values `BaseCash`, `RocketSpeed`, `Resistance` are **derived** from the levels, and
@@ -589,8 +598,14 @@ are named `LossRewardFloatingText` so `FloatingCash` still drops them on a rebir
   includes the HUD's own `MoneyParent` money display — so `ShopBehavior` also toggles a
   **second `MoneyParent`** (a direct sibling of `ShopMenu` under `InGameUI`, hidden by
   default) in lockstep with the shop: visible while shopping, hidden on every close path.
+  > That second `MoneyParent` is **currently absent from the GUI** — no balance is shown
+  > while the shop is open. `ShopBehavior` resolves it with `FindFirstChild` and warns
+  > instead of `WaitForChild`: the client inits run **sequentially** in `main.client.ts`,
+  > so an infinite yield here silently kills every behavior registered after the shop
+  > (rebirth menu, daily rewards, HUD progression…). Re-authoring the frame in Studio
+  > brings the readout back with no code change.
   Four buttons map to the upgrades:
-  `AButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `CRocketSpeed` = RocketSpeed +1,
+  `BButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `ARocketSpeed` = RocketSpeed +1,
   `DSafety` = Resistance +1 (the Studio frame is still named `DSafety`; only the code stat and
   the player-facing title changed to Resistance).
 - **`ShopBalance` (shared)** holds every tunable economy number (start prices, per-stat price
@@ -878,8 +893,8 @@ RemoteEvent, no client script**.
 - **Tunables** (`shared/LeaderboardConfig.ts`): `REFRESH_INTERVAL`, `TOP_N`, `VISIBLE_ROWS`,
   `ROW_HEIGHT`, `WRITE_SPACING`, store names, `WALK_ANIM_ID`/`IDLE_ANIM_ID`, instance names.
 
-### 6.15 Developer products (`shared/MoneyProducts.ts`, `shared/LevelProducts.ts`, `shared/RebirthProducts.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`, `client/behaviors/ShopItemsController.ts`)
-Three families of Robux developer products, all routed through one `ProcessReceipt`:
+### 6.15 Developer products (`shared/MoneyProducts.ts`, `shared/LevelProducts.ts`, `shared/RebirthProducts.ts`, `shared/DailyRewardConfig.ts`, `server/services/MoneyProductService.ts`, `client/behaviors/ShopMoneyBuyBehavior.ts`, `client/behaviors/ShopItemsController.ts`)
+Four families of Robux developer products, all routed through one `ProcessReceipt`:
 - **Money packs** — Robux "buy money" packs sold from the **`InGameUI/ShopMoneyBuy`** popup
   (separate from the upgrade `ShopMenu`, §6.8). Nine packs, opened from the HUD's
   `MoneyParent/PlusButton/TextButton`.
@@ -889,6 +904,9 @@ Three families of Robux developer products, all routed through one `ProcessRecei
   rebirth that **keeps all progression** (Money + stat levels) and only grows the permanent
   multiplier. `shared/RebirthProducts.ts` holds the id (`SAFE_REBIRTH_PRODUCT_ID`) +
   `isSafeRebirthProduct(id)` lookup, shared by the client prompt and the server grant.
+- **Daily 3X claim** — 1 product sold on the DailyRewards popup's `X3ClaimButtonFrame` (§6.25):
+  triples the day's reward. `shared/DailyRewardConfig.ts` holds the id (`DAILY_X3_PRODUCT_ID`)
+  + `isDailyX3Product(id)`; the grant delegates to `DailyRewardService.claimPaid`.
 
 - **`MoneyProducts` (shared)** — single source of truth for the money packs: an **ordered** list
   of the 9 `{ productId, amount }` pairs. Index *i* maps to `Body/MoneyElement{i+1}`; `amount`
@@ -1128,7 +1146,7 @@ déclinés en **4 raretés**. Purement présentation, 100 % client.
   (`InformationTextOptions`, partagé dans `shared/InformationRarity.ts`). Le serveur passe le
   même objet d'options via `InformationTextEvent`.
 
-### 6.21 Cash burst on claim (`client/ui/MoneyBurst.ts`)
+### 6.21 Cash burst on claim (`client/ui/MoneyBurst.ts`, `client/audio/CashSound.ts`)
 
 Purely client-side 2D particle burst played on `ClaimAcceptedEvent`: `PARTICLE_COUNT` (26)
 `ImageLabel`s of the money bill (`rbxassetid://18209585783`) spawn on the centre of the
@@ -1144,6 +1162,47 @@ constants are authored for `REFERENCE_HEIGHT` (900 px) and rescaled by the real 
 so the burst reads the same on mobile. `MoneyBurst.preload()` (called from
 `RocketLaunchBehavior.init`) warms the image so the first claim of the session is not blank;
 `MoneyBurst.clear()` wipes bills still in flight.
+
+**Variante "aspiration"** — `play(origin, { gatherTo })`. Le billet explose normalement
+pendant `GATHER_DELAY` (0.55 s), puis :
+1. **freinage** sur `GATHER_BRAKE` (0.2 s) — le billet continue sur sa lancée en ralentissant
+   jusqu'à l'arrêt, translation et rotation comprises. Sa vitesse est multipliée par
+   `1 − smoothstep(t)` : elle vaut encore celle de l'explosion à l'entrée, exactement zéro à la
+   sortie, **dérivée nulle aux deux bouts**. La pause est bien là, mais on y glisse. (La gravité
+   ne s'applique plus pendant le freinage, sinon le billet ne s'immobiliserait jamais.) Le point
+   d'arrêt réel est réécrit à chaque image et sert d'origine à la ligne droite ;
+2. **vol en ligne droite** vers la cible en `GATHER_TIME` (0.75 s), easing **p²** — dérivée nulle
+   en p = 0, donc le départ se fait à vitesse nulle, dans la continuité exacte du freinage — en
+   rétrécissant à `GATHER_END_SCALE` et en s'effaçant sur la fin. La
+   rotation rejoint `GATHER_END_ROTATION` (0 = droit) par le chemin angulaire le plus court
+   (`shortestAngle`) — jamais un tour complet pour rattraper 20° : le billet cesse de
+   tournoyer et arrive à plat dans le compteur.
+
+Le mouvement est donc **C¹ d'un bout à l'autre** : aucune des trois phases n'introduit de saut
+de vitesse, ni en translation ni en rotation.
+
+Les départs sont **échelonnés** dans l'ordre d'émission (donc en vague autour du cercle) sur
+`GATHER_SPREAD` (0.25 s) plus un bruit `GATHER_JITTER` (0.05 s) : aucun basculement collectif,
+et une arrivée en rafale.
+
+Chaque billet qui touche la cible joue `playBillPop()` (`AudioConfig.sfx.billPop`) : les 26
+arrivées étalées font un crépitement plutôt qu'un seul son, d'où un volume propre, distinct de
+`uiClick` qui partage pourtant le même asset.
+
+`gatherTo` est une **fonction** appelée au moment du départ, pas à
+l'explosion — le HUD peut très bien être masqué quand la gerbe part (c'est le cas de la
+récompense journalière, §6.25) ; elle renvoie une position **écran absolue** que `MoneyBurst`
+reconvertit dans le repère de son ScreenGui. Si elle renvoie `undefined` (HUD introuvable), le
+billet repasse en chute + fondu normaux — jamais figé en l'air. Utilisée par la récompense
+journalière : les billets finissent dans le compteur d'argent du HUD.
+
+> Les **sons d'argent** vivent dans `client/audio/CashSound.ts` : `playCashSound`
+> (`sfx.moneyGain`), `playBillPop` (`sfx.billPop`) et `preloadCashSound` qui précharge les
+> deux. Un petit `makeSfx` local fabrique chacun — un template cloné à chaque lecture, donc
+> pas de fetch CDN au moment du gain et des lectures qui se superposent sans se couper. Le son
+> de cash est partagé par
+> le claim (`RocketLaunchBehavior`), chaque dépôt du compteur (`MoneyDisplay.addVisual`) et la
+> récompense journalière. C'est le même feedback "j'ai encaissé", il ne doit pas diverger.
 
 ### 6.22 Claim flashes (`client/ui/ClaimFlashText.ts`)
 
@@ -1287,6 +1346,110 @@ grande, dont le vol paie `MEGA_ROCKET_BASE_CASH_MULT` (**×8**) sur le base cash
   d'après repart sur l'intervalle normal. Le serveur ne **branche même pas** l'event quand
   `megaRocketCheatKey` est faux. **MUST be `undefined` / `false` before publishing.**
 
+### 6.25 Daily reward (`shared/DailyRewardConfig.ts`, `server/services/DailyRewardService.ts`, `client/behaviors/DailyRewardsBehavior.ts`, `client/ui/DailyRewardsAnimation.ts`)
+
+Revenir jouer chaque jour paie **`EffectiveBaseCash × N`**, où *N* est le nombre de jours
+**consécutifs** (jour 1 → ×1, jour 2 → ×2, …). Le produit Robux **3X Claim** triple ce total.
+
+- **État persistant** — deux clés numériques de `PlayerDataService` (§6.6, mêmes store et
+  mécanique que `Playtime`, aucune migration) : `DailyStreak` (jours consécutifs déjà
+  réclamés) et `DailyLastClaim` (index du jour **UTC** du dernier claim, 0 = jamais).
+  La frontière de jour est `floor(os.time()/86400)` — une limite globale fixe, insensible au
+  fuseau du joueur.
+- **État publié** — le serveur en dérive trois attributs répliqués que le client lit
+  directement (aucun aller-retour pour afficher le popup) : `DailyMultiplier` (le multi qu'un
+  claim appliquerait maintenant), `DailyClaimed` (récompense du jour déjà prise) et
+  `DailyAutoOpen` (le popup doit s'ouvrir seul).
+- **Streak** : claim d'hier → +1 ; sinon retour à 1. Le streak n'est **commit qu'au claim**,
+  jamais à la connexion — se connecter sans réclamer ne casse ni ne prolonge la série.
+- **Multiplicateur non plafonné** (jour 100 = ×100). `dailyMultiplier(streak)`
+  (`shared/DailyRewardConfig.ts`) est le **seul** endroit qui transforme le streak en nombre :
+  y mettre un `math.min` suffit à aplatir le haut de la courbe, rien d'autre ne lit le streak brut.
+- **Auto-ouverture** (`DailyAutoOpen`, un attribut et **pas** un RemoteEvent : le serveur décide
+  pendant que le client charge encore, un event tiré serait perdu). Le critère est **le tutorial
+  en cours**, pas l'ancienneté du compte :
+  - **tutorial actif** (`TutorialService.isActive`) → le popup est **reporté au premier rebirth
+    fait APRÈS la fin du tutorial** (`RebirthService` appelle `DailyRewardService.onRebirth` ;
+    un tutorial encore en cours maintient le report). Couvre les trois cas d'un coup : joueur
+    tout neuf, tutorial repris d'une session précédente, et le **cheat `forceTutorial`** — le
+    daily ne doit jamais atterrir par-dessus l'onboarding, quelle qu'en soit la raison ;
+  - **sinon**, à la connexion si la récompense du jour est en attente.
+
+  Le popup ne s'ouvre donc **que** dans deux cas : (1) au lancement, récompense non réclamée ;
+  (2) au premier rebirth d'un joueur qui était en tutorial, récompense non réclamée. Rebirther
+  avec la récompense du jour déjà prise n'affiche **rien** — il n'y a rien à donner.
+  Une ouverture **automatique** ne vole jamais l'écran : le client attend d'être revenu à un
+  écran neutre — aucun de `RebirthMenu` / `ShopMenu` / `ShopMoneyBuy` ouvert **et le HUD de
+  nouveau visible** — puis laisse passer `AUTO_OPEN_AFTER_MENU_DELAY` (1.5 s). C'est le cas du
+  premier rebirth : le popup est demandé alors que le menu Rebirth est encore affiché sur son
+  écran de résultat et que le HUD est masqué.
+  > `DailyAutoOpen` est un **compteur**, pas un booléen. Le client ouvre quand la valeur dépasse
+  > celle qu'il a déjà traitée. Un booléen ne sait pas dire "rouvre" (true → true ne notifie
+  > personne) et obligeait à un latch côté client. **Ne pas** réintroduire une réouverture
+  > pilotée par les autres attributs (`EffectiveBaseCash` & co) : ils bougent à chaque rebirth
+  > et à la résolution asynchrone des boosts au join, ce qui rouvrait le popup à chaque rebirth
+  > et juste après le tutorial.
+  `waitForData` attend l'attribut `TutorialStep` en plus des clés de streak : `isActive()`
+  répondrait "false" pendant le chargement du tutorial, et le popup courserait précisément le
+  tutorial qu'il doit éviter. Le client ouvre **une fois par session** (lecture au démarrage +
+  `GetAttributeChangedSignal`).
+- **Cohabitation avec le tutorial** — filet de sécurité, maintenant que la règle ci-dessus
+  empêche normalement les deux de se croiser : `TutorialUI.setSuppressed` masque tout le
+  ScreenGui du tutorial (dim + bandeau + flèches) le temps du popup, et `TutorialGate.lockGui`
+  épargne les descendants de `DailyRewards` — même exception que le bouton Skip. Les deux vont
+  **ensemble** : masquer le dim sans lever le lock donnerait un popup visible aux boutons morts.
+- **Feedback de gain** : à la confirmation (`DailyRewardGrantedEvent`) le popup se referme,
+  le **son de cash** est joué et **la gerbe de billets du claim** (§6.21) part du centre de
+  l'écran — mais en mode *aspiration* : les billets convergent vers le centre du compteur
+  d'argent du HUD (`InGameUIController.getMoneyParent()`) au lieu de retomber, et **tôt**
+  (`GATHER_DELAY` 0.3 s). Le HUD est masqué pendant que le popup est ouvert, d'où la cible
+  résolue tardivement (§6.21). S'y ajoute le **"+montant" flottant** de la récompense de
+  consolation (§6.4), via `FloatingReward.showAlreadyCredited` — la variante sans crédit,
+  puisque le serveur a déjà encaissé.
+- **Claim** : `DailyRewardClaimEvent` → le serveur re-dérive streak + jour (il ne fait jamais
+  confiance au client), commit, crédite `Money`, log analytics (`cashSource` faucet +
+  compteur `DailyRewardClaimed`), puis `DailyRewardGrantedEvent`. Le ×3 passe par
+  `ProcessReceipt` (§6.15) → `claimPaid` : si la récompense a déjà été prise (achat en course
+  avec le claim gratuit, ou second achat), le ×3 est **quand même** payé sur le multi du jour
+  plutôt que d'avaler un achat Robux.
+- **Cheat** (§9) — `CheatConfig.dailyRewardCheatKey` + `ClientCheatConfig.dailyRewardKey` :
+  le popup s'ouvre **à la connexion** même si la récompense est déjà prise (la règle du
+  tutorial reste prioritaire). L'exemption s'arrête là : `onRebirth` teste `hasClaimedToday`
+  sans dérogation, cheat compris, et la touche **P** appelle `devAdvanceDay` — le dernier claim
+  recule d'une journée, ce qui réarme la récompense, fait monter la streak au prochain claim
+  et rouvre le popup (via le compteur `DailyAutoOpen`, comme n'importe quelle autre demande
+  d'ouverture — le cheat n'a pas de chemin à lui). Deux P sans claim entre les deux cassent la
+  série, exactement comme deux vraies journées manquées : c'est aussi comme ça qu'on teste le
+  compteur de jours qui repart de 0.
+- **Popup** (`InGameUI/DailyRewards`) — menu 100 % client comme `ShopMenu`/`RebirthMenu`,
+  **pas** un `PopupType` (§6.5, réservé au flow gameplay du bouton). Ouvert par
+  `HUD/ButtonsFrame/DailyRewardsFrame/ImageButton` ou par `DailyAutoOpen`, fermé par
+  `Header/CloseButtonFrame/CloseButton`. L'ouverture masque le HUD (`InGameUIController.disable`)
+  et referme les autres menus (`RebirthMenu`/`ShopMenu`/`ShopMoneyBuy`) — l'auto-ouverture au
+  premier rebirth arrive pendant que le menu Rebirth est encore affiché. Déjà réclamé →
+  les deux boutons sont grisés + non-interactifs et le label Claim devient `Claimed`.
+- **Animation d'ouverture** (`DailyRewardsAnimation`, présentation pure) :
+  1. **cascade** — chaque élément part 24 px au-dessus et transparent, puis glisse en place,
+     décalé de 0.04 s de haut en bas (~0.4 s au total). L'ordre est **recalculé depuis la
+     position Y réelle** (`sortKey`), donc réarranger le popup dans Studio réordonne
+     l'animation toute seule ;
+  2. `BaseCashValue` est écrit direct, sans animation ;
+  3. le **total** compte de 0 à `base × multi` (0.5 s) ;
+  4. **en dernier**, après un temps mort volontairement long (`MULT_GAP` 0.45 s — c'est le
+     morceau de bravoure du popup), le **compteur de jours** monte de **N−1 → N** pendant que
+     le label grossit (`UIScale` ×1.35), flashe en or et joue le **son de cash**, avant de
+     revenir à sa taille et sa couleur d'origine. Le N−1 est ce qui fait qu'un premier jour —
+     ou une série qu'on vient de perdre — se voit compter **0 → 1** au lieu d'afficher son
+     résultat d'emblée.
+  Tout ce que la séquence touche est **capturé au premier passage** puis restauré par `stop()`
+  (même discipline que `TutorialGate`) : aucune valeur "par défaut" réécrite en dur. Un
+  compteur `generation` invalide une séquence abandonnée, sinon les tweens d'une ouverture
+  précédente continueraient d'écrire dans les labels.
+  Si `EffectiveBaseCash` bouge pendant la révélation — ce qui arrive vraiment : `BoostService`
+  résout groupe + game-passes de façon asynchrone, souvent une seconde après le join — la
+  séquence est **relancée** sur les nouvelles valeurs plutôt que les labels réécrits, sinon le
+  compteur viserait encore l'ancien total.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -1312,7 +1475,10 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `InformationTextEvent` | S→C | Show an info banner in the HUD (args: `text`, `InformationTextOptions` — rarity/color/hold, §6.20) |
 | `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
 | `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |
+| `DailyRewardClaimEvent` | C→S | Player clicked the free daily Claim (no args) — server re-derives streak + day (§6.25) |
+| `DailyRewardGrantedEvent` | S→C | Daily reward credited: `amount`, `multiplier` (streak), `bonusMultiplier` (3 on the Robux ×3, else 1) |
 | `CommunityJoinedEvent` | C→S | Native join card returned Joined/AlreadyMember — server re-checks (GetGroupsAsync) + grants ×2 |
+| `DailyRewardCheatEvent` | C→S | **Cheat dev only** (touche P) — avance la récompense journalière d'un jour. Le serveur ne l'écoute que si `CheatConfig.dailyRewardCheatKey` (§6.25/§9) |
 | `MegaRocketCheatEvent` | C→S | **Cheat dev only** (touche G) — ramène le compte à rebours Mega Rocket à 3 s. Le serveur ne l'écoute que si `CheatConfig.megaRocketCheatKey` (§6.24/§9) |
 
 Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for state the
@@ -1365,6 +1531,8 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | Rebirth first costs | `shared/ShopBalance.ts` | `[1 000]` | Imposed cost of the 1st rebirth (~6 runs / ~2.5 min) — overrides the curve at R0 only |
 | Rebirth cost growth | `shared/ShopBalance.ts` | ×38 / rebirth | `rebirthCost(R)=floor(20 000×38^R)` outside `firstCosts` |
 | Rebirth mult growth | `shared/ShopBalance.ts` | ×8 / rebirth | `rebirthMult(R)=8^R` (geometric, no lookup table) — the `MultRebirth` factor that MULTIPLIES the additive boosts factor in `MoneyMult` (see §6.6) |
+| `dailyMultiplier(streak)` | `shared/DailyRewardConfig.ts` | ×N at day N, **uncapped** | Daily reward multiplier — the only place the streak becomes a number, clamp here to flatten the top end (§6.25) |
+| `DAILY_X3_MULTIPLIER` | `shared/DailyRewardConfig.ts` | 3 | Factor of the Robux "3X Claim" daily product (id `3709014909`) |
 | `MEGA_ROCKET_INTERVAL` | `shared/MegaRocketConfig.ts` | 360s | Délai entre deux événements Mega Rocket (§6.24) |
 | `MEGA_ROCKET_BASE_CASH_MULT` | `shared/MegaRocketConfig.ts` | 8 | Facteur de base cash d'un vol en Mega Rocket |
 | `MEGA_ROCKET_SCALE` | `shared/MegaRocketConfig.ts` | 1.15 | Échelle de la fusée mega (`Model:ScaleTo`) |
@@ -1397,6 +1565,9 @@ Dev-only flags — **must be `false`/disabled before publishing**:
 - `megaRocketCheatKey` + `megaRocketCheatDelay` — autorise la touche **G** du client à ramener
   le compte à rebours de la Mega Rocket à 3 s (§6.24). Quand le flag est faux, le serveur ne
   branche pas `MegaRocketCheatEvent` : la touche est sans effet même si le client l'envoie.
+- `dailyRewardCheatKey` — ouvre le popup Daily Rewards à **chaque** connexion, récompense déjà
+  prise ou non (§6.25), et autorise la touche **P** du client. La règle du tutorial reste
+  appliquée : tant que le tutorial tourne, le popup est toujours reporté.
 
 Cheats **client** (`client/ClientCheatConfig.ts`) — un module client ne peut pas importer
 `ServerScriptService`, d'où le fichier séparé :
@@ -1406,6 +1577,11 @@ Cheats **client** (`client/ClientCheatConfig.ts`) — un module client ne peut p
   Roblox**, elles arrivent toujours avec `gameProcessed = true`.
 - `megaRocketKey` — touche **G** = « Mega Rocket dans 3 s » (`client/MegaRocketCheat.ts`,
   §6.24). Le garde serveur `megaRocketCheatKey` doit lui aussi être vrai.
+- `dailyRewardKey` — touche **P** = « la récompense journalière avance d'un jour »
+  (`client/DailyRewardCheat.ts`, §6.25). Le garde serveur `dailyRewardCheatKey` doit lui aussi
+  être vrai. Seule exception à l'avertissement U/I/O/P ci-dessus : la touche est demandée
+  explicitement, donc ce handler **ne filtre pas** sur `gameProcessed` (il écarte uniquement le
+  cas « le joueur écrit dans un champ de texte » via `GetFocusedTextBox`).
 
 ## 10. Conventions (see also `CLAUDE.md`)
 

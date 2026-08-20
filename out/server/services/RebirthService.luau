@@ -4,6 +4,7 @@ local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Ev
 local rebirthCost = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").rebirthCost
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
+local DailyRewardService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "DailyRewardService").DailyRewardService
 local _AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService")
 local AnalyticsService = _AnalyticsService.AnalyticsService
 local TxType = _AnalyticsService.TxType
@@ -45,6 +46,9 @@ local function handleRebirth(player)
 	if room then
 		RocketPlacer:place(room)
 	end
+	-- A brand-new player had their daily reward popup deferred (the tutorial owned the
+	-- screen on join) — their first rebirth is where it finally shows. No-op otherwise.
+	DailyRewardService:onRebirth(player)
 end
 local RebirthService = {
 	init = function(self)

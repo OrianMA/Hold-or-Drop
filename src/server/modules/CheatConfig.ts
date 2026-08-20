@@ -46,7 +46,7 @@ export const simulatedOwnedPassIds: number[] = [];
 // Force le tutorial à la connexion en IGNORANT la sauvegarde tuto (le joueur le
 // refait même s'il l'a déjà terminé). À utiliser avec `resetData` pour re-tester
 // l'onboarding complet. MUST be false before publishing.
-export const forceTutorial = true;
+export const forceTutorial = false;
 
 // ── Mega Rocket ───────────────────────────────────────────────────────────────
 // Raccourcit l'intervalle entre deux Mega Rockets (normalement
@@ -61,3 +61,12 @@ export const megaRocketInterval: number | undefined = undefined;
 // MUST be false before publishing.
 export const megaRocketCheatKey = true;
 export const megaRocketCheatDelay = 3;
+
+// ── Daily reward ──────────────────────────────────────────────────────────────
+// Ouvre le popup Daily Rewards à CHAQUE connexion, même si la récompense du jour a
+// déjà été prise (§6.25), et autorise la touche P (client/DailyRewardCheat) à faire
+// "avancer d'un jour". La règle du tutorial reste appliquée : tant que le tutorial
+// tourne, le popup est toujours reporté.
+// Le serveur n'écoute DailyRewardCheatEvent que si ce flag est vrai.
+// MUST be false before publishing.
+export const dailyRewardCheatKey = false;

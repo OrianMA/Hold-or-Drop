@@ -2,10 +2,9 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local Players = _services.Players
-local SoundService = _services.SoundService
 local TweenService = _services.TweenService
-local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
+local playCashSound = TS.import(script, script.Parent.Parent, "audio", "CashSound").playCashSound
 -- Renders the local player's Money attribute into a TextLabel named "MoneyText"
 -- sitting under MoneyParent inside the InGameUI HUD. The attribute is set by the server
 -- (PlayerDataService) and auto-replicates to this client.
@@ -22,23 +21,9 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 -- with no visible jump.
 local ATTRIBUTE = "Money"
 local LABEL_NAME = "MoneyText"
--- Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual). Template
--- préchargé en SoundService pour éviter un fetch CDN au premier gain.
-local moneyGainTemplate = (function()
-	local sound = Instance.new("Sound")
-	sound.Name = "MoneyGainTemplate"
-	sound.SoundId = AudioConfig.sfx.moneyGain.id
-	sound.Volume = AudioConfig.sfx.moneyGain.volume
-	sound.Parent = SoundService
-	return sound
-end)()
+-- Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual).
 local function playMoneyGain()
-	local sound = moneyGainTemplate:Clone()
-	sound.Parent = SoundService
-	sound:Play()
-	sound.Ended:Connect(function()
-		return sound:Destroy()
-	end)
+	playCashSound()
 end
 -- Duration of the "count-up" animation. Quad-Out feels punchier than Linear.
 local TWEEN_INFO = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)

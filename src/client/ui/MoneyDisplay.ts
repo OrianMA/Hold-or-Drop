@@ -1,6 +1,6 @@
-import { Players, SoundService, TweenService } from "@rbxts/services";
-import { AudioConfig } from "shared/AudioConfig";
+import { Players, TweenService } from "@rbxts/services";
 import { FormatCash } from "shared/NumberFormat";
+import { playCashSound } from "client/audio/CashSound";
 
 // Renders the local player's Money attribute into a TextLabel named "MoneyText"
 // sitting under MoneyParent inside the InGameUI HUD. The attribute is set by the server
@@ -20,22 +20,9 @@ import { FormatCash } from "shared/NumberFormat";
 const ATTRIBUTE = "Money";
 const LABEL_NAME = "MoneyText";
 
-// Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual). Template
-// préchargé en SoundService pour éviter un fetch CDN au premier gain.
-const moneyGainTemplate = (() => {
-	const sound = new Instance("Sound");
-	sound.Name = "MoneyGainTemplate";
-	sound.SoundId = AudioConfig.sfx.moneyGain.id;
-	sound.Volume = AudioConfig.sfx.moneyGain.volume;
-	sound.Parent = SoundService;
-	return sound;
-})();
-
+// Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual).
 function playMoneyGain(): void {
-	const sound = moneyGainTemplate.Clone();
-	sound.Parent = SoundService;
-	sound.Play();
-	sound.Ended.Connect(() => sound.Destroy());
+	playCashSound();
 }
 
 // Duration of the "count-up" animation. Quad-Out feels punchier than Linear.

@@ -23,6 +23,7 @@ local initMultiplierPass = TS.import(script, script.Parent, "behaviors", "Multip
 local initMoneyBoost = TS.import(script, script.Parent, "behaviors", "MoneyBoostController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
+local initDailyRewards = TS.import(script, script.Parent, "behaviors", "DailyRewardsBehavior").init
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
@@ -31,6 +32,7 @@ local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisuali
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
 local initMegaRocketVisuals = TS.import(script, script.Parent, "ui", "MegaRocketVisuals").init
 local initMegaRocketCheat = TS.import(script, script.Parent, "MegaRocketCheat").init
+local initDailyRewardCheat = TS.import(script, script.Parent, "DailyRewardCheat").init
 local initTutorial = TS.import(script, script.Parent, "tutorial", "TutorialController").init
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
@@ -61,6 +63,7 @@ initMultiplierPass()
 initMoneyBoost()
 initRebirthMenu()
 initRebirthController()
+initDailyRewards()
 initHudProgression()
 initCostTextRotator()
 MusicController:init()
@@ -69,4 +72,5 @@ initAudioVisualizer()
 initNeonPipePulse()
 initMegaRocketVisuals()
 initMegaRocketCheat()
+initDailyRewardCheat()
 initTutorial()

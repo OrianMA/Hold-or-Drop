@@ -2,10 +2,12 @@ import { MarketplaceService, Players } from "@rbxts/services";
 import { amountForProduct } from "shared/MoneyProducts";
 import { levelGrantForProduct } from "shared/LevelProducts";
 import { isSafeRebirthProduct } from "shared/RebirthProducts";
+import { isDailyX3Product } from "shared/DailyRewardConfig";
 import { STATS } from "shared/ShopConfig";
 import { PlayerDataService } from "./PlayerDataService";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { RebirthService } from "./RebirthService";
+import { DailyRewardService } from "./DailyRewardService";
 import { AnalyticsService, TxType } from "./AnalyticsService";
 
 // Authoritative handler for ALL developer products. Owns the game's single
@@ -13,6 +15,8 @@ import { AnalyticsService, TxType } from "./AnalyticsService";
 // here:
 //   • money packs (shared/MoneyProducts.ts)   → credit Money       (ShopMoneyBuy popup)
 //   • progression products (shared/LevelProducts.ts) → add stat LEVELS (shop RobuxButtons)
+//   • safe rebirth (shared/RebirthProducts.ts) → +1 Rebirths, keeps progression
+//   • daily 3X claim (shared/DailyRewardConfig.ts) → triples today's daily reward
 //
 // On a receipt we apply the matching grant and return PurchaseGranted. We return
 // NotProcessedYet (Roblox retries later) when the buyer isn't in-game or their data
@@ -65,6 +69,15 @@ function processReceipt(receiptInfo: ReceiptInfo): Enum.ProductPurchaseDecision 
 		// before/over a fresh progression load and lands on the loaded count.
 		if (player.GetAttribute("Rebirths") === undefined) return Enum.ProductPurchaseDecision.NotProcessedYet;
 		RebirthService.safeRebirth(player);
+		return Enum.ProductPurchaseDecision.PurchaseGranted;
+	}
+
+	if (isDailyX3Product(receiptInfo.ProductId)) {
+		// The grant reads the streak keys + EffectiveBaseCash — retry until PlayerData
+		// has loaded, so a purchase made during the load isn't paid on default values
+		// (and doesn't reset the streak to 1).
+		if (player.GetAttribute("DailyLastClaim") === undefined) return Enum.ProductPurchaseDecision.NotProcessedYet;
+		DailyRewardService.claimPaid(player);
 		return Enum.ProductPurchaseDecision.PurchaseGranted;
 	}
 

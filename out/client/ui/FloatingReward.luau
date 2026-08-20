@@ -24,6 +24,11 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 -- plus EndGameFinishedEvent so the server credits the real Money through the shared
 -- pendingEarned path. Banking is skipped when a rebirth invalidated the run
 -- (FloatingCash generation), exactly like the end-game payout chunks.
+--
+-- `showAlreadyCredited` is the same text with the banking removed — for gains the
+-- server has ALREADY credited (the daily reward, §6.25). Banking there would count the
+-- money a second time on screen and fire an end-game event that has nothing to do with
+-- this gain.
 -- Reuse the template the end-game payout sprays (a Frame holding an "Amount"
 -- TextLabel), preloaded in ReplicatedStorage.
 local FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate"
@@ -99,9 +104,9 @@ local function fadeOut(frame, onDone)
 end
 -- Banks the cash and tells the server to credit it. Skips banking if a rebirth
 -- cancelled this run (gen went stale) — the server pending credit is cleared too.
-local function bank(amount, gen, onBanked)
+local function bank(amount, gen, credit, onBanked)
 	activeCount = math.max(activeCount - 1, 0)
-	if not FloatingCash:isStale(gen) then
+	if credit and not FloatingCash:isStale(gen) then
 		MoneyDisplay:addVisual(amount)
 		Events.EndGameFinishedEvent:FireServer()
 	end
@@ -110,7 +115,7 @@ local function bank(amount, gen, onBanked)
 		_result()
 	end
 end
-local function spawn(amount, ending, onBanked)
+local function spawn(amount, ending, credit, onBanked)
 	local template = getTemplate()
 	local screenGui = getScreenGui()
 	local runGen = FloatingCash:current()
@@ -118,7 +123,7 @@ local function spawn(amount, ending, onBanked)
 	activeCount += 1
 	-- No template / no laid-out screen / no fly target — still bank so the credit lands.
 	if not template or not screenGui or screenGui.AbsoluteSize.X == 0 or (ending == "fly" and not flyTarget) then
-		bank(amount, runGen, onBanked)
+		bank(amount, runGen, credit, onBanked)
 		return nil
 	end
 	local center = screenGui.AbsoluteSize / 2
@@ -135,7 +140,7 @@ local function spawn(amount, ending, onBanked)
 	end
 	local finish = function()
 		frame:Destroy()
-		bank(amount, runGen, onBanked)
+		bank(amount, runGen, credit, onBanked)
 	end
 	-- 1. Jump up.
 	local jump = TweenService:Create(frame, JUMP_TI, {
@@ -146,7 +151,7 @@ local function spawn(amount, ending, onBanked)
 		task.delay(HOLD, function()
 			-- A rebirth may have destroyed the frame while it was holding.
 			if frame.Parent == nil then
-				bank(amount, runGen, onBanked)
+				bank(amount, runGen, credit, onBanked)
 				return nil
 			end
 			if not flyTarget then
@@ -172,7 +177,12 @@ local FloatingReward = {
 	end,
 	show = function(self, amount, ending, onBanked)
 		task.spawn(function()
-			return spawn(amount, ending, onBanked)
+			return spawn(amount, ending, true, onBanked)
+		end)
+	end,
+	showAlreadyCredited = function(self, amount, ending)
+		task.spawn(function()
+			return spawn(amount, ending, false)
 		end)
 	end,
 }

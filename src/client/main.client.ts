@@ -19,6 +19,7 @@ import { init as initMultiplierPass } from "./behaviors/MultiplierPassController
 import { init as initMoneyBoost } from "./behaviors/MoneyBoostController";
 import { init as initRebirthMenu } from "./behaviors/RebirthMenuBehavior";
 import { init as initRebirthController } from "./behaviors/RebirthMenuController";
+import { init as initDailyRewards } from "./behaviors/DailyRewardsBehavior";
 import { init as initHudProgression } from "./behaviors/HudProgressionController";
 import { init as initCostTextRotator } from "./ui/CostTextRotator";
 import { MusicController } from "./audio/MusicController";
@@ -27,6 +28,7 @@ import { init as initAudioVisualizer } from "./ui/AudioVisualizer";
 import { init as initNeonPipePulse } from "./ui/NeonPipePulse";
 import { init as initMegaRocketVisuals } from "./ui/MegaRocketVisuals";
 import { init as initMegaRocketCheat } from "./MegaRocketCheat";
+import { init as initDailyRewardCheat } from "./DailyRewardCheat";
 import { init as initTutorial } from "./tutorial/TutorialController";
 
 // Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
@@ -59,6 +61,7 @@ initMultiplierPass();
 initMoneyBoost();
 initRebirthMenu();
 initRebirthController();
+initDailyRewards();
 initHudProgression();
 initCostTextRotator();
 MusicController.init();
@@ -67,4 +70,5 @@ initAudioVisualizer();
 initNeonPipePulse();
 initMegaRocketVisuals();
 initMegaRocketCheat();
+initDailyRewardCheat();
 initTutorial();

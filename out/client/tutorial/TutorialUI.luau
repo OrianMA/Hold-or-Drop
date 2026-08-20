@@ -22,6 +22,11 @@ local Z_BANNER = 10
 -- TutorialStep.textY. Voir le bloc de mesures ci-dessous dans ensure().
 local DEFAULT_BANNER_Y = 0.12
 local screenGui
+-- Le tutorial s'efface pendant qu'un popup modal occupe l'écran (DailyRewards) : sans
+-- ça le dim assombrirait le popup et le bandeau resterait par-dessus. Mémorisé au
+-- niveau du module et réappliqué dans ensure(), pour qu'une reconstruction du
+-- ScreenGui ne réaffiche pas le tutorial derrière le popup.
+local suppressed = false
 local banner
 local label
 local originFrame
@@ -78,6 +83,7 @@ TutorialUI = {
 			_condition = false
 		end
 		gui.IgnoreGuiInset = _condition
+		gui.Enabled = not suppressed
 		gui.Parent = playerGui()
 		screenGui = gui
 		-- Repère de coordonnées de CE ScreenGui. InGameUI et TutorialUI n'ont pas la même
@@ -191,6 +197,12 @@ TutorialUI = {
 	hideBanner = function(self)
 		if banner then
 			banner.Visible = false
+		end
+	end,
+	setSuppressed = function(self, value)
+		suppressed = value
+		if screenGui then
+			screenGui.Enabled = not value
 		end
 	end,
 	destroy = function(self)

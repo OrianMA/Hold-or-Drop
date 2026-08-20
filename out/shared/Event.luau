@@ -109,6 +109,21 @@ do
 	-- donc totalement inerte en production.
 	local MegaRocketCheatEvent = DefineEvent("MegaRocketCheatEvent", script)
 	_container.MegaRocketCheatEvent = MegaRocketCheatEvent
+	-- Daily reward — client → server (no args). Player clicked the free Claim button.
+	-- The server re-derives the streak + the day and never trusts the client.
+	local DailyRewardClaimEvent = DefineEvent("DailyRewardClaimEvent", script)
+	_container.DailyRewardClaimEvent = DailyRewardClaimEvent
+	-- Daily reward — server → client. Args: (amount, multiplier, bonusMultiplier).
+	-- Confirms the grant with the authoritative numbers: `amount` is the cash already
+	-- credited, `multiplier` the streak multiplier used, `bonusMultiplier` 3 when it
+	-- came from the "3X Claim" developer product (1 otherwise).
+	local DailyRewardGrantedEvent = DefineEvent("DailyRewardGrantedEvent", script)
+	_container.DailyRewardGrantedEvent = DailyRewardGrantedEvent
+	-- Cheat de dev — client → server (no args). Touche P : fait avancer la récompense
+	-- journalière d'un jour (réarme le claim + rouvre le popup). Le serveur ne
+	-- l'écoute que si CheatConfig.dailyRewardCheatKey (§6.25/§9).
+	local DailyRewardCheatEvent = DefineEvent("DailyRewardCheatEvent", script)
+	_container.DailyRewardCheatEvent = DailyRewardCheatEvent
 	-- Tutorial — client → server. Arg: stepId (string). Le client signale que la
 	-- condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
 	-- correspond pas au step courant (anti double-avance / event en retard).

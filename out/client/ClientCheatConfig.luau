@@ -12,7 +12,14 @@ local informationTextKeys = true
 -- rebours de la Mega Rocket à 3 s. Le serveur a son propre garde
 -- (server/modules/CheatConfig.megaRocketCheatKey) — les deux doivent être vrais.
 local megaRocketKey = true
+-- Touche P (client/DailyRewardCheat) : fait avancer la récompense journalière d'un
+-- jour (le dernier claim est reculé d'une journée), ce qui la réarme et rouvre le
+-- popup — de quoi rejouer l'animation et voir la streak monter sans attendre 24 h.
+-- Le serveur a son propre garde (server/modules/CheatConfig.dailyRewardCheatKey) —
+-- les deux doivent être vrais.
+local dailyRewardKey = true
 return {
 	informationTextKeys = informationTextKeys,
 	megaRocketKey = megaRocketKey,
+	dailyRewardKey = dailyRewardKey,
 }

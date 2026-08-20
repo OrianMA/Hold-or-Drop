@@ -11,7 +11,9 @@ local _MegaRocketConfig = TS.import(script, game:GetService("ReplicatedStorage")
 local MEGA_ROCKET_BASE_CASH_MULT = _MegaRocketConfig.MEGA_ROCKET_BASE_CASH_MULT
 local hasMegaRocket = _MegaRocketConfig.hasMegaRocket
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
-local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
+local _CashSound = TS.import(script, script.Parent.Parent, "audio", "CashSound")
+local playCashSound = _CashSound.playCashSound
+local preloadCashSound = _CashSound.preloadCashSound
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
 local ButtonAnimations = TS.import(script, script.Parent, "ButtonAnimations").ButtonAnimations
 local RocketSteerController = TS.import(script, script.Parent, "RocketSteerController").RocketSteerController
@@ -20,11 +22,9 @@ local ClaimFlashText = TS.import(script, script.Parent.Parent, "ui", "ClaimFlash
 local CriticalRain = TS.import(script, script.Parent.Parent, "ui", "CriticalRain").CriticalRain
 local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
-local ContentProvider = _services.ContentProvider
 local Lighting = _services.Lighting
 local Players = _services.Players
 local RunService = _services.RunService
-local SoundService = _services.SoundService
 local TweenService = _services.TweenService
 local Workspace = _services.Workspace
 -- UI refs — assigned on first setup(), never change after
@@ -100,23 +100,9 @@ local rocketMusicSubject
 local rocketBaselineY = 0
 local highAltitudeReached = false
 -- Son de cash joué au moment du claim (au lieu du clic UI générique — le ClaimButton
--- porte l'attribut NoUiClick pour que UiClickSound le saute). Template préchargé, cloné
--- à chaque claim pour éviter tout fetch CDN.
-local claimCashSoundTemplate = (function()
-	local sound = Instance.new("Sound")
-	sound.Name = "ClaimCashSoundTemplate"
-	sound.SoundId = AudioConfig.sfx.moneyGain.id
-	sound.Volume = AudioConfig.sfx.moneyGain.volume
-	sound.Parent = SoundService
-	return sound
-end)()
+-- porte l'attribut NoUiClick pour que UiClickSound le saute). Voir client/audio/CashSound.
 local function playClaimCashSound()
-	local sound = claimCashSoundTemplate:Clone()
-	sound.Parent = SoundService
-	sound:Play()
-	sound.Ended:Connect(function()
-		return sound:Destroy()
-	end)
+	playCashSound()
 end
 -- Position "en bas" du popup : sa position d'origine décalée de CLAIM_POPUP_RISE px vers le bas.
 local CLAIM_POPUP_RISE
@@ -267,11 +253,7 @@ end
 local function init()
 	-- Précharge le son de cash pour que même le TOUT premier claim de la session soit
 	-- instantané (les suivants sont déjà en cache). 100 % client : aucune latence réseau.
-	task.spawn(function()
-		pcall(function()
-			return ContentProvider:PreloadAsync({ claimCashSoundTemplate })
-		end)
-	end)
+	preloadCashSound()
 	-- Même logique pour l'image des billets de l'explosion de cash au claim.
 	MoneyBurst:preload()
 	CriticalRain:preload()

@@ -6,10 +6,12 @@ local Players = _services.Players
 local amountForProduct = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MoneyProducts").amountForProduct
 local levelGrantForProduct = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "LevelProducts").levelGrantForProduct
 local isSafeRebirthProduct = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "RebirthProducts").isSafeRebirthProduct
+local isDailyX3Product = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "DailyRewardConfig").isDailyX3Product
 local STATS = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").STATS
 local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local RebirthService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "RebirthService").RebirthService
+local DailyRewardService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "DailyRewardService").DailyRewardService
 local _AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService")
 local AnalyticsService = _AnalyticsService.AnalyticsService
 local TxType = _AnalyticsService.TxType
@@ -18,6 +20,8 @@ local TxType = _AnalyticsService.TxType
 -- here:
 --   • money packs (shared/MoneyProducts.ts)   → credit Money       (ShopMoneyBuy popup)
 --   • progression products (shared/LevelProducts.ts) → add stat LEVELS (shop RobuxButtons)
+--   • safe rebirth (shared/RebirthProducts.ts) → +1 Rebirths, keeps progression
+--   • daily 3X claim (shared/DailyRewardConfig.ts) → triples today's daily reward
 --
 -- On a receipt we apply the matching grant and return PurchaseGranted. We return
 -- NotProcessedYet (Roblox retries later) when the buyer isn't in-game or their data
@@ -65,6 +69,16 @@ local function processReceipt(receiptInfo)
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		RebirthService:safeRebirth(player)
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+	if isDailyX3Product(receiptInfo.ProductId) then
+		-- The grant reads the streak keys + EffectiveBaseCash — retry until PlayerData
+		-- has loaded, so a purchase made during the load isn't paid on default values
+		-- (and doesn't reset the streak to 1).
+		if player:GetAttribute("DailyLastClaim") == nil then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		DailyRewardService:claimPaid(player)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	warn(`MoneyProductService: unknown developer product {receiptInfo.ProductId}`)

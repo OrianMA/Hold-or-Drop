@@ -30,36 +30,54 @@ local function init()
 	-- MoneyParent (sibling of ShopMenu) mirrors the shop: the HUD's own money
 	-- display is hidden with the HUD while shopping, so this one shows the balance
 	-- while the shop is open and hides again on close.
-	local moneyParent = inGameUI:WaitForChild(MONEY_PARENT)
+	-- OPTIONAL on purpose — it is currently absent from the GUI (only HUD/MoneyParent
+	-- exists), and a WaitForChild here yields forever, which takes down every init
+	-- AFTER this one in main.client.ts (they run sequentially). A missing money mirror
+	-- costs a balance readout while shopping; it must never cost the whole client.
+	local found = inGameUI:FindFirstChild(MONEY_PARENT)
+	local _result = found
+	if _result ~= nil then
+		_result = _result:IsA("GuiObject")
+	end
+	local moneyParent = if _result then found else nil
+	if not moneyParent then
+		warn(`ShopBehavior: InGameUI/{MONEY_PARENT} introuvable — pas d'argent affiché pendant le shop`)
+	end
 	shopMenu.Visible = false
-	moneyParent.Visible = false
+	if moneyParent then
+		moneyParent.Visible = false
+	end
 	-- Heartbeat watcher is only attached while the menu is open so the closed
 	-- state has zero per-frame cost.
 	local distanceWatcher
 	local close = function()
 		shopMenu.Visible = false
-		moneyParent.Visible = false
+		if moneyParent then
+			moneyParent.Visible = false
+		end
 		InGameUIController:enable()
-		local _result = distanceWatcher
-		if _result ~= nil then
-			_result:Disconnect()
+		local _result_1 = distanceWatcher
+		if _result_1 ~= nil then
+			_result_1:Disconnect()
 		end
 		distanceWatcher = nil
 	end
 	local open = function()
 		shopMenu.Visible = true
-		moneyParent.Visible = true
+		if moneyParent then
+			moneyParent.Visible = true
+		end
 		InGameUIController:disable()
-		local _result = distanceWatcher
-		if _result ~= nil then
-			_result:Disconnect()
+		local _result_1 = distanceWatcher
+		if _result_1 ~= nil then
+			_result_1:Disconnect()
 		end
 		distanceWatcher = RunService.Heartbeat:Connect(function()
-			local _result_1 = Players.LocalPlayer.Character
-			if _result_1 ~= nil then
-				_result_1 = _result_1:FindFirstChild("HumanoidRootPart")
+			local _result_2 = Players.LocalPlayer.Character
+			if _result_2 ~= nil then
+				_result_2 = _result_2:FindFirstChild("HumanoidRootPart")
 			end
-			local root = _result_1
+			local root = _result_2
 			if not root then
 				return nil
 			end

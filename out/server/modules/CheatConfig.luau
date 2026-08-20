@@ -40,7 +40,7 @@ local simulatedOwnedPassIds = {}
 -- Force le tutorial à la connexion en IGNORANT la sauvegarde tuto (le joueur le
 -- refait même s'il l'a déjà terminé). À utiliser avec `resetData` pour re-tester
 -- l'onboarding complet. MUST be false before publishing.
-local forceTutorial = true
+local forceTutorial = false
 -- ── Mega Rocket ───────────────────────────────────────────────────────────────
 -- Raccourcit l'intervalle entre deux Mega Rockets (normalement
 -- MEGA_ROCKET_INTERVAL = 6 min) pour pouvoir tester l'événement en quelques
@@ -53,6 +53,14 @@ local megaRocketInterval = nil
 -- MUST be false before publishing.
 local megaRocketCheatKey = true
 local megaRocketCheatDelay = 3
+-- ── Daily reward ──────────────────────────────────────────────────────────────
+-- Ouvre le popup Daily Rewards à CHAQUE connexion, même si la récompense du jour a
+-- déjà été prise (§6.25), et autorise la touche P (client/DailyRewardCheat) à faire
+-- "avancer d'un jour". La règle du tutorial reste appliquée : tant que le tutorial
+-- tourne, le popup est toujours reporté.
+-- Le serveur n'écoute DailyRewardCheatEvent que si ce flag est vrai.
+-- MUST be false before publishing.
+local dailyRewardCheatKey = false
 return {
 	invincible = invincible,
 	logExplosionForecast = logExplosionForecast,
@@ -66,4 +74,5 @@ return {
 	megaRocketInterval = megaRocketInterval,
 	megaRocketCheatKey = megaRocketCheatKey,
 	megaRocketCheatDelay = megaRocketCheatDelay,
+	dailyRewardCheatKey = dailyRewardCheatKey,
 }

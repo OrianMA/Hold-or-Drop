@@ -28,6 +28,11 @@ export const AudioConfig = {
 		moneyGain: { id: "rbxassetid://120891770644830", volume: 0.6 }, // client, 2D — joué à chaque dépôt d'argent dans le HUD (MoneyDisplay.addVisual)
 		uiClick: { id: "rbxassetid://72264591133889", volume: 0.5 }, // client, 2D — clic sur n'importe quel bouton de l'UI (UiClickSound)
 		perfectClaim: { id: "rbxassetid://3406813517", volume: 0.8 }, // client, 2D — flashs "PERFECT CLAIM" (rouge) et "CRITICAL CLAIM" (doré) (ClaimFlashText)
+		// Même asset que uiClick aujourd'hui, mais un réglage à part : ce son est joué
+		// jusqu'à PARTICLE_COUNT fois d'affilée (un par billet qui atterrit dans le
+		// compteur, MoneyBurst), donc son volume doit pouvoir baisser sans toucher au
+		// clic de l'UI.
+		billPop: { id: "rbxassetid://72264591133889", volume: 0.2 }, // client, 2D — arrivée d'un billet dans le compteur (MoneyBurst, aspiration)
 		information: { id: "rbxassetid://130467592920597", volume: 0.5 }, // client, 2D — apparition d'un bandeau InformationText (Common/Rare/Epic)
 		informationLegendary: { id: "rbxassetid://137502807803779", volume: 0.6 }, // client, 2D — apparition d'un bandeau InformationText Legendary
 	},

@@ -10,7 +10,7 @@ import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
 // NB: DataStore access requires API Services enabled in Studio:
 // Game Settings → Security → "Enable Studio Access to API Services".
 
-const NUMERIC_KEYS = ["Money", "Playtime"] as const;
+const NUMERIC_KEYS = ["Money", "Playtime", "DailyStreak", "DailyLastClaim"] as const;
 export type NumericKey = (typeof NUMERIC_KEYS)[number];
 
 type PlayerData = {
@@ -20,6 +20,8 @@ type PlayerData = {
 const DEFAULT_DATA: PlayerData = {
 	Money: 0,
 	Playtime: 0, // total seconds played, accumulated across sessions
+	DailyStreak: 0, // consecutive days claimed (see DailyRewardService)
+	DailyLastClaim: 0, // UTC day index of the last claim, 0 = never claimed
 };
 
 // Bump the store name (e.g. "_v2") if you ever need to reset everyone's data.
