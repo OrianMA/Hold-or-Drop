@@ -1,7 +1,8 @@
-import { Players } from "@rbxts/services";
+import { Players, TweenService } from "@rbxts/services";
 import { rebirthCost } from "shared/ShopConfig";
 import { FormatNumber } from "shared/NumberFormat";
 import { MoneyDisplay } from "../ui/MoneyDisplay";
+import { openRebirthMenu } from "./RebirthMenuBehavior";
 
 // Drives the persistent HUD progression bar (InGameUI/HUD/BottomList/ProgressionBar)
 // and the rebirth button's percentage label (HUD/ButtonsFrame/RebirthFrame/PourcetageText).
@@ -16,6 +17,11 @@ import { MoneyDisplay } from "../ui/MoneyDisplay";
 // The fill also swaps its gradient: the "progress" gradient while filling, and the
 // "finish" gradient once the bar is full (money >= cost). Both gradients are authored
 // inside CurrentProgressionFrame in Studio.
+//
+// Two display states:
+//  - filling  → RebirthImage + RebirthLevelText ("Rebirth N") + BackgroundFrame (money/cost)
+//  - ready    → those hide, LevelUpText ("Click to rebirth") shows with a golden shimmer
+//               and RebirthButton (inside the now full-width fill) opens the rebirth popup.
 
 const player = Players.LocalPlayer;
 const PROGRESS_GRADIENT = "UIGradientProgress";
@@ -25,6 +31,12 @@ const FINISH_GRADIENT = "UiGradientFinish";
 // to read (rounded corners/stroke collapse), so the fill is hidden entirely until
 // progress reaches it. At/above it, the fill never renders thinner than this.
 const MIN_VISIBLE_PROGRESS = 0.013;
+
+// Golden shimmer on LevelUpText: the gradient sweeps left → right on a loop while a
+// slow size pulse makes the label breathe.
+const SHIMMER_INFO = new TweenInfo(1.1, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1);
+const PULSE_INFO = new TweenInfo(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true);
+const PULSE_SCALE = 1.08;
 
 function getRebirths(): number {
 	return (player.GetAttribute("Rebirths") as number | undefined) ?? 0;
@@ -39,14 +51,55 @@ export function init(): void {
 		.WaitForChild("PourcetageText") as TextLabel;
 
 	const fill = progressionBar.WaitForChild("CurrentProgressionFrame") as Frame;
-	const moneyNeededText = progressionBar.WaitForChild("BackgroundFrame").WaitForChild("MoneyNeededText") as TextLabel;
+	const backgroundFrame = progressionBar.WaitForChild("BackgroundFrame") as Frame;
+	const moneyNeededText = backgroundFrame.WaitForChild("MoneyNeededText") as TextLabel;
+	const rebirthImage = progressionBar.WaitForChild("RebirthImage") as ImageLabel;
+	const rebirthLevelText = progressionBar.WaitForChild("RebirthLevelText") as TextLabel;
+	const levelUpText = progressionBar.WaitForChild("LevelUpText") as TextLabel;
+	const rebirthButton = fill.WaitForChild("RebirthButton") as GuiButton;
 
 	const progressGradient = fill.FindFirstChild(PROGRESS_GRADIENT) as UIGradient | undefined;
 	const finishGradient = fill.FindFirstChild(FINISH_GRADIENT) as UIGradient | undefined;
+	const goldGradient = levelUpText.FindFirstChild("GoldGradient") as UIGradient | undefined;
+
+	const baseLevelUpSize = levelUpText.Size;
+	const pulsedLevelUpSize = new UDim2(
+		baseLevelUpSize.X.Scale * PULSE_SCALE,
+		baseLevelUpSize.X.Offset * PULSE_SCALE,
+		baseLevelUpSize.Y.Scale * PULSE_SCALE,
+		baseLevelUpSize.Y.Offset * PULSE_SCALE,
+	);
+	const shimmerTween = goldGradient
+		? TweenService.Create(goldGradient, SHIMMER_INFO, { Offset: new Vector2(1, 0) })
+		: undefined;
+	const pulseTween = TweenService.Create(levelUpText, PULSE_INFO, { Size: pulsedLevelUpSize });
 
 	// The cost only changes on rebirth; cached so the per-step render stays cheap.
 	let cost = rebirthCost(getRebirths());
 	let lastMoney = 0;
+	let ready = false;
+
+	// Swaps between the "filling" widgets and the "ready to rebirth" call to action.
+	function setReady(value: boolean): void {
+		if (ready === value) return;
+		ready = value;
+
+		rebirthImage.Visible = !value;
+		rebirthLevelText.Visible = !value;
+		backgroundFrame.Visible = !value;
+		levelUpText.Visible = value;
+		rebirthButton.Visible = value;
+
+		if (value) {
+			if (goldGradient) goldGradient.Offset = new Vector2(-1, 0);
+			shimmerTween?.Play();
+			pulseTween.Play();
+		} else {
+			shimmerTween?.Cancel();
+			pulseTween.Cancel();
+			levelUpText.Size = baseLevelUpSize;
+		}
+	}
 
 	function render(money: number): void {
 		lastMoney = money;
@@ -55,6 +108,9 @@ export function init(): void {
 
 		// Whole percent, floored so it only reads "100%" once the rebirth is actually affordable.
 		percentText.Text = `${math.floor(progress * 100)}%`;
+
+		const full = progress >= 1;
+		setReady(full);
 
 		// Below the minimum displayable percentage, hide the fill rather than show an
 		// unreadable sliver. At/above it, show the fill clamped to that minimum width.
@@ -66,10 +122,15 @@ export function init(): void {
 		fill.Size = new UDim2(math.max(progress, MIN_VISIBLE_PROGRESS), 0, 1, 0);
 
 		// Full bar → "finish" gradient, otherwise the "progress" gradient.
-		const full = progress >= 1;
 		if (progressGradient) progressGradient.Enabled = !full;
 		if (finishGradient) finishGradient.Enabled = full;
 	}
+
+	function renderRebirthLevel(): void {
+		rebirthLevelText.Text = `Rebirth ${getRebirths()}`;
+	}
+
+	rebirthButton.Activated.Connect(() => openRebirthMenu());
 
 	// Mirror the animated money value so the bar counts up in sync with the HUD money.
 	MoneyDisplay.subscribe(render);
@@ -77,6 +138,12 @@ export function init(): void {
 	// On rebirth the cost jumps; re-render with the current displayed money.
 	player.GetAttributeChangedSignal("Rebirths").Connect(() => {
 		cost = rebirthCost(getRebirths());
+		renderRebirthLevel();
 		render(lastMoney);
 	});
+
+	renderRebirthLevel();
+	// Force the initial state onto the widgets (setReady early-returns when unchanged).
+	ready = true;
+	setReady(false);
 }

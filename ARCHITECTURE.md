@@ -271,21 +271,27 @@ the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17
   `ButtonInGameModule.ts`) → a `{riskScale, safeWindow}` profile, which moves and widens the
   bell without changing its proportions:
   - `safeWindow` is **added** to the draw, so the shop's "Vol garanti X s" promise (§6.8) holds
-    literally whatever the dice say. It is the **primary lever** and is *heavily* FRONT-loaded
-    (`RESISTANCE_SAFE_WINDOW_CURVE` = 52): L1 ≈ 2.4s, L2 ≈ 3.9s, L3 ≈ 4.8s, L5 ≈ 5.6s, then
-    flat (cap 6s). Deliberate — the first upgrades must land as a clear jump in flight length
-    rather than a gain spread thin over 30 levels; past L5 the growth comes from `riskScale`
-    instead.
-  - `riskScale` **multiplies the median** by `riskScale^(-1/3)` — the same stretch the old
-    model produced, now stated explicitly. On a multiplicative scale stretching the median
-    stretches the whole bell, so its shape is identical at every level. Secondary lever: risk
-    has to be cut roughly ÷8 to double the duration, which is why `safeWindow` carries the
-    player-facing message.
-  At Resistance 0 both terms are neutral. Resulting means: L0 7.0s, L1 9.7s, L2 11.4s,
-  L3 12.5s, L5 13.7s, L10 15.2s, L30+ 17.0s (saturated). Tunables live in
-  `shared/ResistanceCurve.ts`
-  (`RESISTANCE_MAX_REDUCTION`, `RESISTANCE_REDUCTION_CURVE`, `RESISTANCE_MAX_SAFE_WINDOW`,
-  `RESISTANCE_SAFE_WINDOW_CURVE`).
+    literally whatever the dice say. It is the **primary lever**, and it is the sum of two
+    terms — that split *is* the balance of the stat:
+    - a FRONT-loaded **burst** (`RESISTANCE_SAFE_WINDOW_BURST` = 5s,
+      `RESISTANCE_SAFE_WINDOW_CURVE` = 9): ~**+0.5s per level at the start** (L1 +0.52s,
+      L5 +0.40s, L10 +0.29s), fading out over the first ~20 levels. A steady climb the
+      player feels level after level, not one big step on L1-L3;
+    - a **linear** term (`RESISTANCE_SAFE_WINDOW_LINEAR` = 9s): a flat **+0.09s per level,
+      L1→L100, that never saturates**. This is what keeps mid and late levels worth buying —
+      every purchase moves the number printed on the shop card.
+  - `riskScale` **multiplies the median** by `riskScale^(-1/3)`. On a multiplicative scale
+    stretching the median stretches the whole bell, so its shape is identical at every level.
+    Secondary lever and **BACK-loaded** (`RESISTANCE_REDUCTION_CURVE` = 1.2, i.e. a power of
+    `n`, not of `1-n`): negligible before L20, it takes over at the far end where the burst is
+    long spent. Risk has to be cut roughly ÷8 to double the duration, which is why
+    `safeWindow` carries the player-facing message.
+  At Resistance 0 both terms are neutral. Guaranteed seconds / mean flight: L0 0/7.0s,
+  L1 0.5/7.5s, L2 1.0/8.0s, L5 2.3/9.3s, L10 4.0/11.0s, L20 6.1/13.3s, L50 9.5/17.0s,
+  L100 14.0/22.5s. Marginal gain per level never drops below ~0.09s (it hit 0.00s past L30
+  before this pass). Tunables live in `shared/ResistanceCurve.ts`
+  (`RESISTANCE_MAX_REDUCTION`, `RESISTANCE_REDUCTION_CURVE`, `RESISTANCE_SAFE_WINDOW_BURST`,
+  `RESISTANCE_SAFE_WINDOW_CURVE`, `RESISTANCE_SAFE_WINDOW_LINEAR`).
 - The **risk loop** (`TICK_RATE` = 0.5s) no longer rolls anything: it just paces the run and
   clamps its last step to the drawn deadline so the explosion fires exactly on time.
 
@@ -566,7 +572,15 @@ second time on screen and fire an end-game event unrelated to it.
   progress reaches a minimum displayable X-scale (`MIN_VISIBLE_PROGRESS` = 0.013); below that
   the `CurrentProgressionFrame` is hidden (`Visible = false`) instead of showing an unreadable
   sliver, and at/above it the fill is clamped to that minimum width.
-  earnings cancel and restart from the current visual value.
+  The bar has **two display states**, swapped by `setReady(money >= cost)`:
+  *filling* shows `RebirthImage` + `RebirthLevelText` (`"Rebirth {R}"`, refreshed on the
+  `Rebirths` attribute) + `BackgroundFrame` (`MoneyNeededText`); *ready* hides those three
+  and shows `LevelUpText` ("Click to rebirth") plus `CurrentProgressionFrame/RebirthButton`,
+  which at 100% spans the whole bar. `LevelUpText` gets a golden call-to-action animation —
+  its authored `GoldGradient` sweeps `Offset` −1 → 1 on a loop while a reversing Sine tween
+  pulses the label to 1.08× — both cancelled (and the size restored) when the state flips
+  back. The button calls `openRebirthMenu()` from `RebirthMenuBehavior`, the same entry
+  point as the HUD rebirth icon.
 - `MoneyBoostController` (`behaviors/MoneyBoostController.ts`): drives the readout
   `HUD/BottomList/ProgressionBar/MoneyBoostText` off the replicated `MoneyTierMult` attribute
   (the highest owned money-tier game-pass multiplier, resolved by `BoostService` — see §6.6).
@@ -621,7 +635,7 @@ second time on screen and fire an end-game event unrelated to it.
   next N levels), `isAtCap`. Imported by both sides so prices/stat previews computed on the client
   always match the server.
   - Curves: BaseCash `floor(100 * 1.2^level)`, RocketSpeed `1 + level` (integer, uncapped),
-    Resistance `level` (plain integer, `maxLevel` 100). Start prices **50 / 75 / 150**
+    Resistance `level` (plain integer, `maxLevel` 100). Start prices **50 / 75 / 75**
     (BaseCash / RocketSpeed / Resistance), price growth **1.8 / 1.7 / 1.35** per stat — a
     steep wall on the two money-scaling stats, a gentle one on Resistance so it offers many
     small, affordable steps (it resets every rebirth). The RocketSpeed value scales the
@@ -683,7 +697,8 @@ A permanent money multiplier earned by resetting everything. It lives in its **o
   levels at 0); `costGrowth` = 38 deliberately outpaces that, so rebirth cycles lengthen
   progressively (R1 ≈ 5 min, R4 ≈ 8 min, R7 ≈ 16 min) instead of staying flat.
 - **`RebirthMenuBehavior` (client)** — open/close only; starts hidden regardless of the Studio
-  default (mirrors `ShopBehavior`).
+  default (mirrors `ShopBehavior`). Exports `openRebirthMenu()` so every entry point shares one
+  open path: the HUD rebirth icon and the progression bar's `RebirthButton` (§5).
 - **`RebirthMenuController` (client)** — read-only display driven by the replicated `Money` +
   `Rebirths` attributes (refreshes on either change). Renders the current/next titles
   (`RebirthInfoElements/{CurrentRebirth,NextRebirth}/RebirthLevelTitle` → `"Rebirth {R}"`), the
@@ -1513,16 +1528,18 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `FLIGHT_TIME_SIGMA` | `ButtonInGameModule.ts` | 0.35 | Width of the bell (multiplicative) — ↑ = extremes more reachable, mean unchanged |
 | `FLIGHT_TIME_MIN` / `_MAX` | `ButtonInGameModule.ts` | 0.1s / 60s | Safety clamps on the draw |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
-| `RESISTANCE_MAX_REDUCTION` | `shared/ResistanceCurve.ts` | 0.75 | Risk floor at Resistance 100 (×0.25) — secondary lever |
-| `RESISTANCE_REDUCTION_CURVE` | `shared/ResistanceCurve.ts` | 13 | ↑ = more front-loaded `riskScale` reduction |
-| `RESISTANCE_MAX_SAFE_WINDOW` | `shared/ResistanceCurve.ts` | 6s | Guaranteed no-explosion head start at Resistance 100 |
-| `RESISTANCE_SAFE_WINDOW_CURVE` | `shared/ResistanceCurve.ts` | 52 | ↑ = more front-loaded `safeWindow` — the primary lever (§6.3) |
+| `RESISTANCE_MAX_REDUCTION` | `shared/ResistanceCurve.ts` | 0.45 | Risk floor at Resistance 100 (×0.55) — secondary lever |
+| `RESISTANCE_REDUCTION_CURVE` | `shared/ResistanceCurve.ts` | 1.2 | ↑ = more back-loaded `riskScale` reduction (power of `n`) |
+| `RESISTANCE_SAFE_WINDOW_BURST` | `shared/ResistanceCurve.ts` | 5s | Front-loaded part of `safeWindow` — ~+0.5s/level at the start, spent by ~L20 |
+| `RESISTANCE_SAFE_WINDOW_CURVE` | `shared/ResistanceCurve.ts` | 9 | ↑ = burst concentrated harder on the first levels (§6.3) |
+| `RESISTANCE_SAFE_WINDOW_LINEAR` | `shared/ResistanceCurve.ts` | 9s | Flat +0.09s/level, L1→L100 — keeps late levels worth buying |
+| `RESISTANCE_MAX_SAFE_WINDOW` | `shared/ResistanceCurve.ts` | 14s | Derived (burst + linear) — guaranteed head start at Resistance 100 |
 | `LOOSE_WIN_MULTIPLIER` | `ButtonInGameModule.ts` | 0.3 | Payout factor on loss (rocket explodes) |
 | `EXPLOSION_BLAST_RADIUS` | `ButtonInGameModule.ts` | 12 | Scoped blast/fling |
 | Default `BaseCash` / `RocketSpeed` | `PlayerProgressionService.ts` | 100 / 1 | New-player progression (level 0) |
 | Value curves (BaseCash / RocketSpeed) | `shared/ShopBalance.ts` | ×1.2 per level / +1 per level | BaseCash exponential; RocketSpeed integer linear |
 | Price growth (per stat) | `shared/ShopBalance.ts` | ×1.8 / ×1.7 / ×1.35 per level | BaseCash / RocketSpeed / Resistance — each stat has its own `priceGrowth`, no shared constant |
-| Shop start prices | `shared/ShopBalance.ts` | 50 / 75 / 150 | BaseCash / RocketSpeed / Resistance lvl 1 |
+| Shop start prices | `shared/ShopBalance.ts` | 50 / 75 / 75 | BaseCash / RocketSpeed / Resistance lvl 1 |
 | `Resistance` cap (shop) | `shared/ShopBalance.ts` | 100 lvls | Max resistance level (risk curve in §6.3) |
 | `RESISTANCE_PASS` | `shared/ShopBalance.ts` | +20 lvls | Bonus resistance levels from the resistance game-pass (id 0 = inert) |
 | `COMMUNITY` | `shared/ShopBalance.ts` | group 963505568, ×2 | Group membership ⇒ +1 bonus to the boosts factor, which is then MULTIPLIED by `MultRebirth` to form `MoneyMult` |

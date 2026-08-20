@@ -46,16 +46,20 @@ export const ROCKET_SPEED = {
 
 // Resistance — 0..100. Achetée +1 par niveau. Le nombre n'est PAS un pourcentage : il
 // alimente la courbe de shared/ResistanceCurve.ts, qui le convertit en SECONDES DE VOL
-// GARANTIES (c'est ce qu'affiche le shop). La courbe est très front-loaded : L1 achète
-// déjà 2.4 s garanties (vol moyen 7.0 s → 9.7 s), L2-L3 amènent le vol à 11-12.5 s, et
-// au-delà de L5 la fenêtre ne bouge quasiment plus.
+// GARANTIES (c'est ce qu'affiche le shop). La courbe monte par paliers réguliers SANS
+// saturer : ~+0.5 s garantie par niveau au début (L1 = 0.5 s, L5 = 2.3 s, L10 = 4.0 s),
+// puis un fondu vers +0.09 s par niveau jusqu'à L100 (14 s / vol moyen 22.5 s).
 //   value = level (0..100)
-//   price = startPrice * priceGrowth ^ level   (L0→1 = 150)
+//   price = startPrice * priceGrowth ^ level   (L0→1 = 75, L4→5 = 249)
 //   Croissance douce (1.35) et prix de départ bas : la Resistance est remise à zéro à
 //   chaque rebirth, donc les niveaux qui comptent doivent être atteignables en 2-3 runs.
+//   startPrice aligné sur celui de Rocket Speed : la courbe de secondes garanties démarre
+//   à +0.5 s (voir ResistanceCurve), donc le premier niveau doit coûter l'ordre de
+//   grandeur d'un premier run (~109 $) pour rester un choix crédible face aux 2 autres
+//   stats — à 150 $ il était systématiquement ignoré en début de cycle.
 export const RESISTANCE = {
 	maxLevel: 100,
-	startPrice: 150,
+	startPrice: 75,
 	priceGrowth: 1.35,
 };
 
