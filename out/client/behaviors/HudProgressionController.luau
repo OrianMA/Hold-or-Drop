@@ -4,8 +4,9 @@ local Players = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_i
 local rebirthCost = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").rebirthCost
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local MoneyDisplay = TS.import(script, script.Parent.Parent, "ui", "MoneyDisplay").MoneyDisplay
--- Drives the persistent HUD progression bar (InGameUI/HUD/BottomList/ProgressionBar).
--- It shows the same thing as the Rebirth menu bar (RebirthMenuController): progress
+-- Drives the persistent HUD progression bar (InGameUI/HUD/BottomList/ProgressionBar)
+-- and the rebirth button's percentage label (HUD/ButtonsFrame/RebirthFrame/PourcetageText).
+-- They show the same thing as the Rebirth menu bar (RebirthMenuController): progress
 -- toward the next rebirth, Money / rebirthCost(Rebirths).
 --
 -- Instead of running its own tween, the bar MIRRORS the money HUD's displayed value
@@ -31,7 +32,9 @@ local function getRebirths()
 	return _condition
 end
 local function init()
-	local progressionBar = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI"):WaitForChild("HUD"):WaitForChild("BottomList"):WaitForChild("ProgressionBar")
+	local hud = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI"):WaitForChild("HUD")
+	local progressionBar = hud:WaitForChild("BottomList"):WaitForChild("ProgressionBar")
+	local percentText = hud:WaitForChild("ButtonsFrame"):WaitForChild("RebirthFrame"):WaitForChild("PourcetageText")
 	local fill = progressionBar:WaitForChild("CurrentProgressionFrame")
 	local moneyNeededText = progressionBar:WaitForChild("BackgroundFrame"):WaitForChild("MoneyNeededText")
 	local progressGradient = fill:FindFirstChild(PROGRESS_GRADIENT)
@@ -43,6 +46,8 @@ local function init()
 		lastMoney = money
 		local progress = math.clamp(money / cost, 0, 1)
 		moneyNeededText.Text = `{FormatNumber(math.floor(money))} / {FormatNumber(cost)}`
+		-- Whole percent, floored so it only reads "100%" once the rebirth is actually affordable.
+		percentText.Text = `{math.floor(progress * 100)}%`
 		-- Below the minimum displayable percentage, hide the fill rather than show an
 		-- unreadable sliver. At/above it, show the fill clamped to that minimum width.
 		if progress < MIN_VISIBLE_PROGRESS then

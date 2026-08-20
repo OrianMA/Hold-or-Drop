@@ -3,8 +3,9 @@ import { rebirthCost } from "shared/ShopConfig";
 import { FormatNumber } from "shared/NumberFormat";
 import { MoneyDisplay } from "../ui/MoneyDisplay";
 
-// Drives the persistent HUD progression bar (InGameUI/HUD/BottomList/ProgressionBar).
-// It shows the same thing as the Rebirth menu bar (RebirthMenuController): progress
+// Drives the persistent HUD progression bar (InGameUI/HUD/BottomList/ProgressionBar)
+// and the rebirth button's percentage label (HUD/ButtonsFrame/RebirthFrame/PourcetageText).
+// They show the same thing as the Rebirth menu bar (RebirthMenuController): progress
 // toward the next rebirth, Money / rebirthCost(Rebirths).
 //
 // Instead of running its own tween, the bar MIRRORS the money HUD's displayed value
@@ -30,11 +31,12 @@ function getRebirths(): number {
 }
 
 export function init(): void {
-	const progressionBar = (player.WaitForChild("PlayerGui") as PlayerGui)
-		.WaitForChild("InGameUI")
-		.WaitForChild("HUD")
-		.WaitForChild("BottomList")
-		.WaitForChild("ProgressionBar");
+	const hud = (player.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("InGameUI").WaitForChild("HUD");
+	const progressionBar = hud.WaitForChild("BottomList").WaitForChild("ProgressionBar");
+	const percentText = hud
+		.WaitForChild("ButtonsFrame")
+		.WaitForChild("RebirthFrame")
+		.WaitForChild("PourcetageText") as TextLabel;
 
 	const fill = progressionBar.WaitForChild("CurrentProgressionFrame") as Frame;
 	const moneyNeededText = progressionBar.WaitForChild("BackgroundFrame").WaitForChild("MoneyNeededText") as TextLabel;
@@ -50,6 +52,9 @@ export function init(): void {
 		lastMoney = money;
 		const progress = math.clamp(money / cost, 0, 1);
 		moneyNeededText.Text = `${FormatNumber(math.floor(money))} / ${FormatNumber(cost)}`;
+
+		// Whole percent, floored so it only reads "100%" once the rebirth is actually affordable.
+		percentText.Text = `${math.floor(progress * 100)}%`;
 
 		// Below the minimum displayable percentage, hide the fill rather than show an
 		// unreadable sliver. At/above it, show the fill clamped to that minimum width.
