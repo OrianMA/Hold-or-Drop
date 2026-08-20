@@ -47,3 +47,17 @@ export const simulatedOwnedPassIds: number[] = [];
 // refait même s'il l'a déjà terminé). À utiliser avec `resetData` pour re-tester
 // l'onboarding complet. MUST be false before publishing.
 export const forceTutorial = true;
+
+// ── Mega Rocket ───────────────────────────────────────────────────────────────
+// Raccourcit l'intervalle entre deux Mega Rockets (normalement
+// MEGA_ROCKET_INTERVAL = 6 min) pour pouvoir tester l'événement en quelques
+// secondes. `undefined` = intervalle normal. MUST be undefined before publishing.
+export const megaRocketInterval: number | undefined = undefined;
+
+// Touche G (client/MegaRocketCheat) : ramène le compte à rebours de la Mega Rocket
+// à `megaRocketCheatDelay` secondes, à la demande. Sans toucher à la cadence
+// normale — l'événement suivant repart sur l'intervalle habituel.
+// Le serveur n'écoute MegaRocketCheatEvent que si ce flag est vrai.
+// MUST be false before publishing.
+export const megaRocketCheatKey = true;
+export const megaRocketCheatDelay = 3;

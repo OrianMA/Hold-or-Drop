@@ -36,6 +36,14 @@ local RAINBOW_SCRIPT_NAME = "RainbowText"
 -- Au-delà, le plus ancien bandeau est retiré instantanément : l'écran ne se
 -- remplit jamais de messages.
 local MAX_ENTRIES = 5
+-- ── Descente pendant un vol ───────────────────────────────────────────────────
+-- Position Y (fraction d'écran) du HAUT de la pile pendant un vol. Le HUD de vol
+-- pose son gros MultiplierText en haut-centre (0.08 → 0.21 de l'écran), pile là
+-- où les bandeaux s'empilent : ils descendent donc sous lui le temps du vol, puis
+-- remontent à leur position Studio. `setInFlight` est piloté par
+-- RocketLaunchBehavior (décollage / fin de partie).
+local IN_FLIGHT_Y = 0.24
+local MOVE_TI = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local STYLES = {
 	Common = {
 		height = 0.08,
@@ -87,6 +95,10 @@ local function playSound(def)
 end
 -- ── Références GUI ────────────────────────────────────────────────────────────
 local cachedCanvas
+-- Position authored en Studio, capturée au premier appel de setInFlight (donc
+-- avant tout déplacement) : c'est celle qu'on restaure en fin de vol.
+local authoredPosition
+local moveTween
 local function findCanvas()
 	if cachedCanvas and cachedCanvas.Parent ~= nil then
 		return cachedCanvas
@@ -145,6 +157,23 @@ local InformationText = {
 	FADE_IN_TIME = FADE_IN_TI.Time,
 	HOLD_TIME = FINISH_HOLD,
 	FADE_OUT_TIME = FADE_OUT_TI.Time,
+	setInFlight = function(self, inFlight)
+		local canvas = findCanvas()
+		if not canvas then
+			return nil
+		end
+		if authoredPosition == nil then
+			authoredPosition = canvas.Position
+		end
+		local target = if inFlight then UDim2.new(authoredPosition.X.Scale, authoredPosition.X.Offset, IN_FLIGHT_Y, 0) else authoredPosition
+		if moveTween then
+			moveTween:Cancel()
+		end
+		moveTween = TweenService:Create(canvas, MOVE_TI, {
+			Position = target,
+		})
+		moveTween:Play()
+	end,
 	hide = function(self)
 		local _array = {}
 		local _length = #_array

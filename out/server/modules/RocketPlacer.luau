@@ -1,11 +1,17 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
-local ReplicatedStorage = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services").ReplicatedStorage
+local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local CollectionService = _services.CollectionService
+local ReplicatedStorage = _services.ReplicatedStorage
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
 local _RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher")
 local RocketLauncher = _RocketLauncher.RocketLauncher
 local ROCKET_MODEL = _RocketLauncher.ROCKET_MODEL
 local NITRO_PART = _RocketLauncher.NITRO_PART
+local _MegaRocketConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MegaRocketConfig")
+local MEGA_ROCKET_SCALE = _MegaRocketConfig.MEGA_ROCKET_SCALE
+local MEGA_ROCKET_TAG = _MegaRocketConfig.MEGA_ROCKET_TAG
+local hasMegaRocket = _MegaRocketConfig.hasMegaRocket
 -- Picks the right rocket for the room's occupant and instantiates it on the pad.
 --
 -- The rockets are authored in ReplicatedStorage/RocketModels as RocketLvl1..RocketLvlN.
@@ -72,6 +78,18 @@ local RocketPlacer = {
 			end
 		end
 		rocket.Parent = room.movableModel
+		-- Mega Rocket (§6.24) : le joueur a une Mega Rocket en attente → la fusée posée
+		-- est légèrement plus grande et porte le tag qui déclenche l'arc-en-ciel côté
+		-- client (MegaRocketVisuals). ScaleTo agit autour du pivot, donc avant le
+		-- recalage sur RocketSpawnPoint juste en dessous.
+		--
+		-- ScaleTo prend une échelle ABSOLUE, pas un facteur : les templates ne sont pas
+		-- tous authored à 1 (RocketLvl2 est à 1.5), donc un ScaleTo(1.15) sec RÉTRÉCIT
+		-- ceux-là au lieu de les grossir. On multiplie l'échelle courante.
+		if hasMegaRocket(player) then
+			rocket:ScaleTo(rocket:GetScale() * MEGA_ROCKET_SCALE)
+			CollectionService:AddTag(rocket, MEGA_ROCKET_TAG)
+		end
 		-- Move the rocket's pivot exactly onto RocketSpawnPoint's position (orientation
 		-- kept as authored). RocketSpawnPoint is the authoritative placement marker — if a
 		-- template's pivot isn't at its base, part of the rocket may sit below the floor;

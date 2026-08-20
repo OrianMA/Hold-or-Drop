@@ -103,6 +103,12 @@ do
 	-- via GetGroupsAsync) and grants the ×2 — it never trusts the event blindly.
 	local CommunityJoinedEvent = DefineEvent("CommunityJoinedEvent", script)
 	_container.CommunityJoinedEvent = CommunityJoinedEvent
+	-- Cheat de dev — client → server (no args). Touche G : replanifie le prochain
+	-- événement Mega Rocket dans MEGA_ROCKET_CHEAT_DELAY secondes. Le serveur
+	-- n'écoute cet event QUE si CheatConfig.megaRocketCheatKey est vrai — il est
+	-- donc totalement inerte en production.
+	local MegaRocketCheatEvent = DefineEvent("MegaRocketCheatEvent", script)
+	_container.MegaRocketCheatEvent = MegaRocketCheatEvent
 	-- Tutorial — client → server. Arg: stepId (string). Le client signale que la
 	-- condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
 	-- correspond pas au step courant (anti double-avance / event en retard).

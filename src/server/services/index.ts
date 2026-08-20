@@ -15,6 +15,7 @@ import { TutorialService } from "server/tutorial/TutorialService";
 import { RoomService } from "server/rooms/RoomService";
 import { PopupConfig } from "server/UI/PopupConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
+import { MegaRocketService } from "./MegaRocketService";
 
 export const services: Array<{ init(): void }> = [
 	{
@@ -52,6 +53,9 @@ export const services: Array<{ init(): void }> = [
 	ButtonTriggerService,
 	CharacterService,
 	EndGameButtonModule,
+	// Événement Mega Rocket (toutes les 6 min). Après RoomService : au top de
+	// l'événement il repose les fusées au sol, il lui faut donc les rooms construites.
+	MegaRocketService,
 	{
 		// Re-enable the button if a player disconnects mid-game
 		init() {

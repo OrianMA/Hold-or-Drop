@@ -7,6 +7,9 @@ local _RocketGameConfig = TS.import(script, game:GetService("ReplicatedStorage")
 local STARTING_MULTIPLIER = _RocketGameConfig.STARTING_MULTIPLIER
 local EXPLOSION_VIEW_DELAY = _RocketGameConfig.EXPLOSION_VIEW_DELAY
 local MULTIPLIER_TICK_RATE = _RocketGameConfig.MULTIPLIER_TICK_RATE
+local _MegaRocketConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MegaRocketConfig")
+local MEGA_ROCKET_BASE_CASH_MULT = _MegaRocketConfig.MEGA_ROCKET_BASE_CASH_MULT
+local hasMegaRocket = _MegaRocketConfig.hasMegaRocket
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local MusicController = TS.import(script, script.Parent.Parent, "audio", "MusicController").MusicController
@@ -15,6 +18,7 @@ local RocketSteerController = TS.import(script, script.Parent, "RocketSteerContr
 local MoneyBurst = TS.import(script, script.Parent.Parent, "ui", "MoneyBurst").MoneyBurst
 local ClaimFlashText = TS.import(script, script.Parent.Parent, "ui", "ClaimFlashText").ClaimFlashText
 local CriticalRain = TS.import(script, script.Parent.Parent, "ui", "CriticalRain").CriticalRain
+local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
 local ContentProvider = _services.ContentProvider
 local Lighting = _services.Lighting
@@ -417,6 +421,7 @@ local function init()
 		-- Safety net: stop the held pose if the game ended on explosion.
 		-- After a claim the loop is already stopped, so this is a no-op.
 		isGameActive = false
+		InformationText:setInFlight(false)
 		RocketSteerController:stop()
 		ButtonAnimations.stop()
 		-- Fin sans explosion (cas défensif) : la caméra n'a pas été ramenée par
@@ -611,11 +616,13 @@ local function setup(inGameUI)
 	claimLabel.Text = claimLabelOriginalText
 	-- EffectiveBaseCash (attribut répliqué) : base du gain affiché dans ResultMultiplierText.
 	-- Lu une fois par partie — comme côté serveur, il ne bouge pas en cours de hold.
+	-- Mega Rocket : le serveur applique le même ×8 au base cash du vol, l'aperçu doit
+	-- donc le refléter (shared/MegaRocketConfig).
 	local _condition_1 = (Players.LocalPlayer:GetAttribute("EffectiveBaseCash"))
 	if _condition_1 == nil then
 		_condition_1 = 100
 	end
-	resultBaseCash = _condition_1
+	resultBaseCash = _condition_1 * (if hasMegaRocket(Players.LocalPlayer) then MEGA_ROCKET_BASE_CASH_MULT else 1)
 	lastResultMultiplier = STARTING_MULTIPLIER
 	resultUpdateElapsed = 0
 	-- Bascule musicale à l'altitude : baseline = Y de la fusée maintenant (encore sur le pad).
@@ -633,6 +640,7 @@ local function setup(inGameUI)
 	else
 		rocketMusicSubject = nil
 	end
+	InformationText:setInFlight(true)
 	MusicController:startRun()
 	ButtonAnimations.playHold()
 	RocketSteerController:start()

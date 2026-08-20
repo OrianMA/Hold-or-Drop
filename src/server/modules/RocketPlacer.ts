@@ -1,7 +1,8 @@
-import { ReplicatedStorage } from "@rbxts/services";
+import { CollectionService, ReplicatedStorage } from "@rbxts/services";
 import { Room } from "server/rooms/Room";
 import { PlayerProgressionService } from "server/services/PlayerProgressionService";
 import { RocketLauncher, ROCKET_MODEL, NITRO_PART } from "server/modules/RocketLauncher";
+import { MEGA_ROCKET_SCALE, MEGA_ROCKET_TAG, hasMegaRocket } from "shared/MegaRocketConfig";
 
 // Picks the right rocket for the room's occupant and instantiates it on the pad.
 //
@@ -79,6 +80,19 @@ export const RocketPlacer = {
 			}
 		}
 		rocket.Parent = room.movableModel;
+
+		// Mega Rocket (§6.24) : le joueur a une Mega Rocket en attente → la fusée posée
+		// est légèrement plus grande et porte le tag qui déclenche l'arc-en-ciel côté
+		// client (MegaRocketVisuals). ScaleTo agit autour du pivot, donc avant le
+		// recalage sur RocketSpawnPoint juste en dessous.
+		//
+		// ScaleTo prend une échelle ABSOLUE, pas un facteur : les templates ne sont pas
+		// tous authored à 1 (RocketLvl2 est à 1.5), donc un ScaleTo(1.15) sec RÉTRÉCIT
+		// ceux-là au lieu de les grossir. On multiplie l'échelle courante.
+		if (hasMegaRocket(player)) {
+			rocket.ScaleTo(rocket.GetScale() * MEGA_ROCKET_SCALE);
+			CollectionService.AddTag(rocket, MEGA_ROCKET_TAG);
+		}
 
 		// Move the rocket's pivot exactly onto RocketSpawnPoint's position (orientation
 		// kept as authored). RocketSpawnPoint is the authoritative placement marker — if a

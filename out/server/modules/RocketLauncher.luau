@@ -320,6 +320,24 @@ local RocketLauncher = {
 		end
 		return _result == true
 	end,
+	isAtPad = function(self, room)
+		local _room = room
+		if states[_room] ~= nil then
+			return false
+		end
+		local _room_1 = room
+		if debrisConns[_room_1] ~= nil then
+			return false
+		end
+		local _room_2 = room
+		local pivot = originalPivots[_room_2]
+		if pivot == nil then
+			return true
+		end
+		local _position = room.movableModel:GetPivot().Position
+		local _position_1 = pivot.Position
+		return (_position - _position_1).Magnitude < 0.1
+	end,
 	stop = function(self, room)
 		stopRoom(room)
 	end,

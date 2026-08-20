@@ -27,6 +27,8 @@ import {
 } from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
 import { RiskParams, resistanceRiskParams } from "shared/ResistanceCurve";
+import { MEGA_ROCKET_BASE_CASH_MULT, hasMegaRocket } from "shared/MegaRocketConfig";
+import { MegaRocketService } from "server/services/MegaRocketService";
 
 // ── Game tuning ───────────────────────────────────────────────────────────────
 
@@ -179,7 +181,13 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// money game-pass tier + community add inside that boost factor — see
 	// shared/ShopConfig.moneyMult). Read once — held for the session so a mid-run
 	// boost change can't alter an in-progress hold.
-	const baseCash = PlayerProgressionService.get(player, "EffectiveBaseCash");
+	// Mega Rocket (§6.24) : si le joueur a une Mega Rocket sur le pad, CE vol paie
+	// ×MEGA_ROCKET_BASE_CASH_MULT sur le base cash. Lu une fois, comme le reste — et
+	// consommé seulement en FIN de vol (respawnRocket), pour que le client garde la
+	// même base sur son aperçu de gain pendant toute la partie.
+	const megaRun = hasMegaRocket(player);
+	const baseCash =
+		PlayerProgressionService.get(player, "EffectiveBaseCash") * (megaRun ? MEGA_ROCKET_BASE_CASH_MULT : 1);
 
 	// Resistance (0..100, incl. the pass) reshapes the explosion risk — see
 	// resistanceRiskParams. Read once and resolved to its risk profile for the run.
@@ -220,6 +228,16 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	const launchClock = os.clock();
 	const effectiveSpeed = rocketSpeed * (scripted?.speedFactor ?? 1);
 	RocketLauncher.launch(room, effectiveSpeed);
+
+	// Fin de vol : le rig revient sur le pad et une fusée NEUVE y est posée. Si ce vol
+	// portait la Mega Rocket, elle est consommée AVANT le replacement — la fusée qui
+	// apparaît est donc une fusée normale. Un vol lancé AVANT le top de l'événement ne
+	// consomme rien : le joueur retrouve sa Mega Rocket sur le pad.
+	const respawnRocket = (): void => {
+		if (megaRun) MegaRocketService.consume(player);
+		RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
+		RocketPlacer.place(room); // fusée neuve sur le pad
+	};
 
 	// Cheat de dev : annonce l'issue déjà tirée du vol (voir CheatConfig). C'est l'état AU
 	// DÉCOLLAGE — en tutorial, un run scripté peut réécrire sa deadline au claim.
@@ -304,8 +322,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		// (sinon la fusée se téléporterait sous les yeux du joueur), puis la fusée est
 		// réinstanciée neuve sur le pad — exactement comme après une explosion.
 		task.delay(GO_HOME_RESET_DELAY, () => {
-			RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
-			RocketPlacer.place(room); // fusée neuve sur le pad, comme après une explosion
+			respawnRocket(); // fusée neuve sur le pad, comme après une explosion
 		});
 	});
 
@@ -360,8 +377,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 					Events.PlayerKilledEvent.FireClient(player);
 
 					task.wait(EXPLOSION_VIEW_DELAY);
-					RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
-					RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
+					respawnRocket(); // la fusée détruite est remplacée par une neuve
 
 					const earned = math.floor(claimedBaseCash * claimedMultiplier);
 					// exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
@@ -393,8 +409,7 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 
 					// On laisse l'explosion se jouer avant de ramener le rig.
 					task.wait(EXPLOSION_VIEW_DELAY);
-					RocketLauncher.reset(room); // ramène le rig (caméra/particules) sur le pad
-					RocketPlacer.place(room); // la fusée détruite est remplacée par une neuve
+					respawnRocket(); // la fusée détruite est remplacée par une neuve
 
 					// Perte : PAS de popup de fin. Lot de consolation forfaitaire
 					// (baseCash / 3, sans le multiplicateur) montré par un seul texte qui

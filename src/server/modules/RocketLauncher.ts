@@ -300,6 +300,22 @@ export const RocketLauncher = {
 		return states.get(room)?.paused === true;
 	},
 
+	// Le rig de cette room est-il posé sur son pad, prêt pour un nouveau vol ?
+	// Faux pendant l'ascension, pendant les débris d'explosion, et tant que le rig
+	// n'est pas redescendu (fenêtre "Go Home" avant reset).
+	//
+	// Lu par MegaRocketService avant de reposer une fusée : hors du pad, un
+	// RocketPlacer.place() serait doublement destructeur — il remplacerait la fusée
+	// sous les pieds du joueur ET clearRocketCache effacerait le pivot du pad, qui
+	// est ce qui permet à reset() de faire redescendre le rig.
+	isAtPad(room: Room): boolean {
+		if (states.has(room)) return false; // en vol (ou vol gelé)
+		if (debrisConns.has(room)) return false; // débris d'explosion encore en l'air
+		const pivot = originalPivots.get(room);
+		if (pivot === undefined) return true; // jamais décollé depuis ce placement
+		return room.movableModel.GetPivot().Position.sub(pivot.Position).Magnitude < 0.1;
+	},
+
 	// Stop the ascent in place (no reset) — used on a win/release.
 	stop(room: Room): void {
 		stopRoom(room);

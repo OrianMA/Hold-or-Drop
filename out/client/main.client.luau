@@ -29,6 +29,8 @@ local MusicController = TS.import(script, script.Parent, "audio", "MusicControll
 local initUiClickSound = TS.import(script, script.Parent, "audio", "UiClickSound").init
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
+local initMegaRocketVisuals = TS.import(script, script.Parent, "ui", "MegaRocketVisuals").init
+local initMegaRocketCheat = TS.import(script, script.Parent, "MegaRocketCheat").init
 local initTutorial = TS.import(script, script.Parent, "tutorial", "TutorialController").init
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
@@ -65,4 +67,6 @@ MusicController:init()
 initUiClickSound()
 initAudioVisualizer()
 initNeonPipePulse()
+initMegaRocketVisuals()
+initMegaRocketCheat()
 initTutorial()

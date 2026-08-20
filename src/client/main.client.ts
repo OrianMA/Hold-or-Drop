@@ -25,6 +25,8 @@ import { MusicController } from "./audio/MusicController";
 import { init as initUiClickSound } from "./audio/UiClickSound";
 import { init as initAudioVisualizer } from "./ui/AudioVisualizer";
 import { init as initNeonPipePulse } from "./ui/NeonPipePulse";
+import { init as initMegaRocketVisuals } from "./ui/MegaRocketVisuals";
+import { init as initMegaRocketCheat } from "./MegaRocketCheat";
 import { init as initTutorial } from "./tutorial/TutorialController";
 
 // Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
@@ -63,4 +65,6 @@ MusicController.init();
 initUiClickSound();
 initAudioVisualizer();
 initNeonPipePulse();
+initMegaRocketVisuals();
+initMegaRocketCheat();
 initTutorial();

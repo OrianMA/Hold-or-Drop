@@ -131,7 +131,9 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 11. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
 12. `CharacterService` — normalize character scale on spawn
 13. `EndGameButtonModule.init()` — wire the payout-finished handshake
-14. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+14. `MegaRocketService` — horloge de l'événement Mega Rocket (§6.24). After `RoomService` — it
+    re-places the on-pad rockets the moment the event fires
+15. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -1115,6 +1117,13 @@ déclinés en **4 raretés**. Purement présentation, 100 % client.
   Placeholder à retravailler (arc-en-ciel mouvant).
 - **Sons** — joués par code (clones de templates persistants en `SoundService`, comme
   `UiClickSound` §6.10) depuis `AudioConfig.sfx.information` / `informationLegendary`.
+- **Descente pendant un vol** — `InformationText.setInFlight(inFlight)` déplace le CONTENEUR
+  (tween 0.25 s) entre sa position Studio et `IN_FLIGHT_Y` (0.24). Le HUD de vol pose son gros
+  `MultiplierText` en haut-centre (0.08 → 0.21 de l'écran), pile là où la pile s'empile : les
+  bandeaux passent donc dessous le temps du vol. Piloté par `RocketLaunchBehavior` — `true` au
+  décollage (`startGame`), `false` sur `GameResultEvent`, le seul point de passage commun à
+  toutes les fins de partie (explosion post-claim, perte, « Go Home »). La position authored
+  est capturée au premier appel, donc avant tout déplacement.
 - **API** — `InformationText.show(text, { rarity?, color?, holdSeconds? })`
   (`InformationTextOptions`, partagé dans `shared/InformationRarity.ts`). Le serveur passe le
   même objet d'options via `InformationTextEvent`.
@@ -1188,6 +1197,96 @@ the real viewport height, so it reads the same on mobile. `ZIndex` 55: over the 
 burst, **under** the flash text (60). `CriticalRain.preload()` (called from
 `RocketLaunchBehavior.init`) warms the image; `CriticalRain.clear()` wipes icons still falling.
 
+### 6.24 Mega Rocket (`shared/MegaRocketConfig.ts`, `server/services/MegaRocketService.ts`, `client/ui/MegaRocketVisuals.ts`)
+
+Événement global à l'échelle du serveur : toutes les `MEGA_ROCKET_INTERVAL` (**6 min**),
+**tous** les joueurs reçoivent une **Mega Rocket** — une fusée arc-en-ciel, légèrement plus
+grande, dont le vol paie `MEGA_ROCKET_BASE_CASH_MULT` (**×8**) sur le base cash. Une seule par
+événement : elle est **consommée par le vol qui la décolle**.
+
+- **État = un attribut joueur** (`MegaRocket`, répliqué — pas de RemoteEvent) : le serveur le
+  pose, `RocketPlacer` en déduit les visuels, `ButtonInGameModule` le ×8, et le client s'en sert
+  pour aligner son aperçu de gain. `hasMegaRocket(player)` (lecture pure) vit dans
+  `shared/MegaRocketConfig.ts` avec toutes les constantes ; le service ne garde que l'horloge et
+  `consume(player)`.
+- **Au top de l'événement** (`MegaRocketService`, initialisé après `RoomService` — il lui faut
+  les rooms) :
+  1. l'attribut est posé sur tous les joueurs présents ;
+  2. un bandeau **Legendary** (§6.20) est diffusé à tout le serveur via
+     `InformationTextEvent.FireAllClients` (`MEGA_ROCKET_ANNOUNCE`) ;
+  3. les fusées **encore sur leur pad** sont reposées immédiatement en version mega
+     (`RocketPlacer.place`). Les rigs qui ne sont **pas** sur leur pad (vol en cours, débris
+     d'explosion, retour « Go Home » pas encore reset) sont **sautés** — c'est leur replacement
+     de fin de vol qui posera la mega, l'attribut étant toujours là. Le garde est
+     **`RocketLauncher.isAtPad(room)`** : reposer une fusée hors du pad remplacerait le modèle
+     sous les pieds du joueur **et** `clearRocketCache` effacerait le pivot du pad, ce qui
+     empêcherait `reset()` de faire redescendre le rig.
+- **Cycle de vie du ×8** — `startButtonGame` lit `hasMegaRocket` **une fois** (`megaRun`) et
+  multiplie le `baseCash` du run ; l'attribut n'est **pas** consommé au décollage (le client lit
+  la même base au même moment pour son aperçu). Il l'est en **fin de vol**, dans le helper local
+  `respawnRocket()` — `consume` **puis** `RocketLauncher.reset` + `RocketPlacer.place` — donc la
+  fusée qui réapparaît est normale. Les trois fins de partie (explosion post-claim, perte,
+  « Go Home ») passent par ce helper. Un vol démarré **avant** le top de l'événement ne consomme
+  rien (`megaRun` était faux) : le joueur retrouve sa Mega Rocket sur le pad à l'atterrissage.
+  Comme tout passe par le `baseCash` local, le ×8 se propage automatiquement au payout, au lot
+  de consolation, à la popup de fin (§6.4) et au forecast de debug.
+- **Panneau** — `Workspace/Environment/DisplayEventPanel/SurfaceGui/MegaRocketFrame/EventText`
+  (TextLabel `TextScaled` + `UIStroke`, dans un Frame de fond, créés en Studio). Le lookup
+  serveur est **récursif** (`FindFirstChild("EventText", true)`) : le label peut être
+  ré-emboîté en Studio sans toucher au code. Le **serveur** écrit son texte une fois par
+  seconde (`megaRocketPanelText` → `"Mega Rocket in : 05:23 min"`) : c'est une instance de
+  Workspace, elle se réplique donc telle quelle à tout le monde — aucun RemoteEvent, aucun
+  contrôleur client à synchroniser. Au top de l'événement le panneau affiche
+  `MEGA_ROCKET_PANEL_FIRED` (« MEGA ROCKET ! ») pendant 5 s ; `nextEventAt` étant **absolu**,
+  cet affichage ne décale pas la cadence.
+- **Visuels** — `RocketPlacer` grossit la fusée de `MEGA_ROCKET_SCALE` (**×1.15**) et pose le
+  tag CollectionService `MEGA_ROCKET_TAG` sur le modèle `Rocket`. ⚠️ `Model:ScaleTo` prend une
+  échelle **absolue**, pas un facteur, et les templates ne sont pas tous authored à 1
+  (`RocketLvl2` est à **1.5**) : l'appel est donc `ScaleTo(GetScale() × MEGA_ROCKET_SCALE)`.
+  Un `ScaleTo(1.15)` sec **rétrécissait** Lvl2 de 23 % au lieu de le grossir. L'arc-en-ciel lui-même est
+  **100 % client** (`client/ui/MegaRocketVisuals.ts`) : les parts passent en `Neon` et leur
+  teinte défile (`CYCLE_TIME` 2.5 s) avec un décalage proportionnel à leur hauteur dans la fusée
+  (`HUE_PER_STUD`, mesuré une fois sur le pad), donc le dégradé **balaie** la fusée au lieu de la
+  faire clignoter d'un bloc. Une seule connexion `RenderStepped` à 20 Hz, ouverte à la première
+  fusée taguée et fermée quand il n'y en a plus (même approche que §6.21) ; un
+  `DescendantAdded` récupère les parts qui arrivent après le tag (StreamingEnabled).
+  Deux détails qui décident du rendu :
+  - **`UnionOperation.UsePartColor`** doit être forcé à `true` : une union garde sinon les
+    couleurs des formes qui la composent et **ignore** son `Color`. Les coques de
+    `RocketLvl1/2/3` sont des unions — sans ça elles restaient grises au milieu de
+    l'arc-en-ciel. (Les templates n'ont ni `SurfaceAppearance`, ni `TextureID`, ni `Decal`, et
+    leurs `SpecialMesh` ont un `VertexColor` neutre : à part les unions, `Color` s'applique
+    partout.) Les parts totalement transparentes sont écartées de la boucle — `RocketLvl4/5`
+    dépassent les 120 parts.
+  - **`NEON_VALUE`** (0.7) — le Neon brille proportionnellement à la luminosité de sa couleur.
+    À 1 la fusée devient un bloc de lumière blanchi par le bloom et perd ses arêtes ; c'est le
+    bouton pour doser le glow.
+
+  Le **fond du panneau** (`MegaRocketFrame`, tagué `MEGA_ROCKET_PANEL_TAG` **en Studio** — le
+  tag évite un chemin en dur et gère le streaming in/out du panneau) porte le même arc-en-ciel
+  mais en **dégradé qui DÉFILE**, pas en aplat : un `UIGradient` dont la `ColorSequence` est
+  reconstruite à chaque frame (`rainbowSequence(phase)`, `PANEL_STOPS` = 16 points, max Roblox
+  20). Un spectre complet est étalé sur la largeur, teintes **décroissantes** de gauche à
+  droite, `PANEL_CYCLE_TIME` (1.5 s) par tour — c'est le défilement qui fait l'effet, un aplat
+  qui change de teinte ne rend pas la même chose. Deux pièges :
+  - le `UIGradient` **multiplie** la couleur de fond : `BackgroundColor3` doit rester **blanc**,
+    sinon les teintes sortent teintées ;
+  - `UIGradient.Offset` ne **boucle pas** (les keypoints d'extrémité s'étirent), d'où la
+    reconstruction de la `ColorSequence` plutôt qu'un décalage d'offset.
+
+  `PANEL_VALUE` (1) est plus lumineux que `NEON_VALUE` — c'est une GuiObject, pas du Neon, il
+  n'y a pas de bloom à contenir (le `SurfaceGui` est repassé à `Brightness = 1` : à 2 les
+  couleurs se lavaient). Le dégradé est créé par le client s'il manque, donc le panneau survit à
+  une réédition du Frame en Studio. Contrairement aux fusées le panneau s'anime **en
+  permanence** : la boucle `RenderStepped` s'ouvre dès qu'il y a quelque chose à animer
+  (panneau **ou** fusée) et ne se ferme que quand il n'y a plus rien.
+- **Test** — `CheatConfig.megaRocketInterval` (normalement `undefined`) raccourcit l'intervalle
+  pour voir l'événement en quelques secondes. La touche **G** (`client/MegaRocketCheat.ts` →
+  `MegaRocketCheatEvent` → `MegaRocketService`) ramène le compte à rebours courant à
+  `megaRocketCheatDelay` (**3 s**) à la demande, sans toucher à la cadence : l'événement
+  d'après repart sur l'intervalle normal. Le serveur ne **branche même pas** l'event quand
+  `megaRocketCheatKey` est faux. **MUST be `undefined` / `false` before publishing.**
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -1214,6 +1313,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `ShopPurchaseEvent` | C→S | Player clicked a cash buy button (arg: `ShopItemId`) |
 | `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |
 | `CommunityJoinedEvent` | C→S | Native join card returned Joined/AlreadyMember — server re-checks (GetGroupsAsync) + grants ×2 |
+| `MegaRocketCheatEvent` | C→S | **Cheat dev only** (touche G) — ramène le compte à rebours Mega Rocket à 3 s. Le serveur ne l'écoute que si `CheatConfig.megaRocketCheatKey` (§6.24/§9) |
 
 Keep RemoteEvents minimal (per CLAUDE.md). Prefer **player Attributes** for state the
 owning client just needs to read (used for `Money`, progression, `AssignedRoom`,
@@ -1265,6 +1365,9 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | Rebirth first costs | `shared/ShopBalance.ts` | `[1 000]` | Imposed cost of the 1st rebirth (~6 runs / ~2.5 min) — overrides the curve at R0 only |
 | Rebirth cost growth | `shared/ShopBalance.ts` | ×38 / rebirth | `rebirthCost(R)=floor(20 000×38^R)` outside `firstCosts` |
 | Rebirth mult growth | `shared/ShopBalance.ts` | ×8 / rebirth | `rebirthMult(R)=8^R` (geometric, no lookup table) — the `MultRebirth` factor that MULTIPLIES the additive boosts factor in `MoneyMult` (see §6.6) |
+| `MEGA_ROCKET_INTERVAL` | `shared/MegaRocketConfig.ts` | 360s | Délai entre deux événements Mega Rocket (§6.24) |
+| `MEGA_ROCKET_BASE_CASH_MULT` | `shared/MegaRocketConfig.ts` | 8 | Facteur de base cash d'un vol en Mega Rocket |
+| `MEGA_ROCKET_SCALE` | `shared/MegaRocketConfig.ts` | 1.15 | Échelle de la fusée mega (`Model:ScaleTo`) |
 | `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
 | `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |
 | `VISIBLE_ROWS` | `shared/LeaderboardConfig.ts` | 15 | Rows visible before scrolling |
@@ -1289,6 +1392,11 @@ Dev-only flags — **must be `false`/disabled before publishing**:
   game-pass ownership and treats only the listed ids as owned (empty = own nothing), so the
   buy flow can be tested from a not-owned state even on an account that owns every pass (§6.6).
 - `forceTutorial` — le tutorial rejoue à la connexion en ignorant la sauvegarde tuto.
+- `megaRocketInterval` — raccourcit l'intervalle entre deux Mega Rockets (§6.24) pour voir
+  l'événement en quelques secondes. `undefined` = intervalle normal (6 min).
+- `megaRocketCheatKey` + `megaRocketCheatDelay` — autorise la touche **G** du client à ramener
+  le compte à rebours de la Mega Rocket à 3 s (§6.24). Quand le flag est faux, le serveur ne
+  branche pas `MegaRocketCheatEvent` : la touche est sans effet même si le client l'envoie.
 
 Cheats **client** (`client/ClientCheatConfig.ts`) — un module client ne peut pas importer
 `ServerScriptService`, d'où le fichier séparé :
@@ -1296,6 +1404,8 @@ Cheats **client** (`client/ClientCheatConfig.ts`) — un module client ne peut p
   Legendary (`client/ui/InformationTextTest.ts`, §6.20). Appuyer plusieurs fois pour vérifier
   l'empilement. ⚠️ éviter U/I/O/P : **I et O sont les touches de zoom caméra par défaut de
   Roblox**, elles arrivent toujours avec `gameProcessed = true`.
+- `megaRocketKey` — touche **G** = « Mega Rocket dans 3 s » (`client/MegaRocketCheat.ts`,
+  §6.24). Le garde serveur `megaRocketCheatKey` doit lui aussi être vrai.
 
 ## 10. Conventions (see also `CLAUDE.md`)
 

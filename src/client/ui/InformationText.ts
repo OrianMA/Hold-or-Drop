@@ -38,6 +38,15 @@ const RAINBOW_SCRIPT_NAME = "RainbowText";
 // remplit jamais de messages.
 const MAX_ENTRIES = 5;
 
+// ── Descente pendant un vol ───────────────────────────────────────────────────
+// Position Y (fraction d'écran) du HAUT de la pile pendant un vol. Le HUD de vol
+// pose son gros MultiplierText en haut-centre (0.08 → 0.21 de l'écran), pile là
+// où les bandeaux s'empilent : ils descendent donc sous lui le temps du vol, puis
+// remontent à leur position Studio. `setInFlight` est piloté par
+// RocketLaunchBehavior (décollage / fin de partie).
+const IN_FLIGHT_Y = 0.24;
+const MOVE_TI = new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+
 interface RarityStyle {
 	// Hauteur du bandeau en fraction de la HAUTEUR D'ÉCRAN (texte TextScaled,
 	// donc c'est aussi ce qui donne la taille du texte).
@@ -88,6 +97,10 @@ function playSound(def: { id: string; volume: number }): void {
 
 // ── Références GUI ────────────────────────────────────────────────────────────
 let cachedCanvas: CanvasGroup | undefined;
+// Position authored en Studio, capturée au premier appel de setInFlight (donc
+// avant tout déplacement) : c'est celle qu'on restaure en fin de vol.
+let authoredPosition: UDim2 | undefined;
+let moveTween: Tween | undefined;
 
 function findCanvas(): CanvasGroup | undefined {
 	if (cachedCanvas && cachedCanvas.Parent !== undefined) return cachedCanvas;
@@ -151,6 +164,23 @@ export const InformationText = {
 	FADE_IN_TIME: FADE_IN_TI.Time,
 	HOLD_TIME: FINISH_HOLD,
 	FADE_OUT_TIME: FADE_OUT_TI.Time,
+
+	// Pendant un vol, la pile descend pour ne pas recouvrir le MultiplierText du HUD
+	// de vol ; en fin de vol elle remonte à sa position Studio. Appelé par
+	// RocketLaunchBehavior au décollage et sur GameResultEvent (toutes les fins de
+	// partie passent par là : explosion post-claim, perte, "Go Home").
+	setInFlight(inFlight: boolean): void {
+		const canvas = findCanvas();
+		if (!canvas) return;
+		if (authoredPosition === undefined) authoredPosition = canvas.Position;
+
+		const target = inFlight
+			? new UDim2(authoredPosition.X.Scale, authoredPosition.X.Offset, IN_FLIGHT_Y, 0)
+			: authoredPosition;
+		if (moveTween) moveTween.Cancel();
+		moveTween = TweenService.Create(canvas, MOVE_TI, { Position: target });
+		moveTween.Play();
+	},
 
 	// Vide la pile instantanément, en pleine animation. Utilisé quand le paiement
 	// de fin de partie est annulé par un autre popup : le "Finish" ne doit pas

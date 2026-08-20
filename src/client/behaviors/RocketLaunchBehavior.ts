@@ -2,6 +2,7 @@ import { Events } from "shared/Event";
 import { CameraController } from "shared/CameraController";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { STARTING_MULTIPLIER, EXPLOSION_VIEW_DELAY, MULTIPLIER_TICK_RATE } from "shared/RocketGameConfig";
+import { MEGA_ROCKET_BASE_CASH_MULT, hasMegaRocket } from "shared/MegaRocketConfig";
 import { FormatNumber } from "shared/NumberFormat";
 import { AudioConfig } from "shared/AudioConfig";
 import { MusicController } from "client/audio/MusicController";
@@ -10,6 +11,7 @@ import { RocketSteerController } from "client/behaviors/RocketSteerController";
 import { MoneyBurst } from "client/ui/MoneyBurst";
 import { ClaimFlashText } from "client/ui/ClaimFlashText";
 import { CriticalRain } from "client/ui/CriticalRain";
+import { InformationText } from "client/ui/InformationText";
 import { ContentProvider, Lighting, Players, RunService, SoundService, TweenService, Workspace } from "@rbxts/services";
 
 // UI refs — assigned on first setup(), never change after
@@ -390,6 +392,7 @@ export function init(): void {
 		// Safety net: stop the held pose if the game ended on explosion.
 		// After a claim the loop is already stopped, so this is a no-op.
 		isGameActive = false;
+		InformationText.setInFlight(false); // les bandeaux remontent à leur place
 		RocketSteerController.stop(); // filet de sécurité : coupe le pilotage à toute fin de partie
 		ButtonAnimations.stop();
 		// Fin sans explosion (cas défensif) : la caméra n'a pas été ramenée par
@@ -561,7 +564,11 @@ export function setup(inGameUI: ScreenGui): void {
 	claimLabel.Text = claimLabelOriginalText; // le bouton repart en "Claim"
 	// EffectiveBaseCash (attribut répliqué) : base du gain affiché dans ResultMultiplierText.
 	// Lu une fois par partie — comme côté serveur, il ne bouge pas en cours de hold.
-	resultBaseCash = (Players.LocalPlayer.GetAttribute("EffectiveBaseCash") as number | undefined) ?? 100;
+	// Mega Rocket : le serveur applique le même ×8 au base cash du vol, l'aperçu doit
+	// donc le refléter (shared/MegaRocketConfig).
+	resultBaseCash =
+		((Players.LocalPlayer.GetAttribute("EffectiveBaseCash") as number | undefined) ?? 100) *
+		(hasMegaRocket(Players.LocalPlayer) ? MEGA_ROCKET_BASE_CASH_MULT : 1);
 	lastResultMultiplier = STARTING_MULTIPLIER;
 	resultUpdateElapsed = 0;
 	// Bascule musicale à l'altitude : baseline = Y de la fusée maintenant (encore sur le pad).
@@ -575,6 +582,7 @@ export function setup(inGameUI: ScreenGui): void {
 	} else {
 		rocketMusicSubject = undefined;
 	}
+	InformationText.setInFlight(true); // les bandeaux descendent sous le MultiplierText
 	MusicController.startRun(); // début du hold → la BGM de base continue de jouer
 	ButtonAnimations.playHold(); // remplace la pose "interact" : le perso appuie et reste sur le bouton
 	RocketSteerController.start(); // le mouvement natif gauche/droite pilote la fusée pendant le vol

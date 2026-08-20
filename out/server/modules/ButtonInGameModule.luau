@@ -29,6 +29,10 @@ local perfectClaimWindow = _RocketGameConfig.perfectClaimWindow
 local multiplierAfter = _RocketGameConfig.multiplierAfter
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
 local resistanceRiskParams = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ResistanceCurve").resistanceRiskParams
+local _MegaRocketConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MegaRocketConfig")
+local MEGA_ROCKET_BASE_CASH_MULT = _MegaRocketConfig.MEGA_ROCKET_BASE_CASH_MULT
+local hasMegaRocket = _MegaRocketConfig.hasMegaRocket
+local MegaRocketService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "MegaRocketService").MegaRocketService
 -- ── Game tuning ───────────────────────────────────────────────────────────────
 local TICK_RATE = 0.5
 -- Lot de consolation sur une perte (explosion sans claim) : baseCash / 3 —
@@ -160,7 +164,12 @@ local function startButtonGame(player, session)
 	-- money game-pass tier + community add inside that boost factor — see
 	-- shared/ShopConfig.moneyMult). Read once — held for the session so a mid-run
 	-- boost change can't alter an in-progress hold.
-	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash")
+	-- Mega Rocket (§6.24) : si le joueur a une Mega Rocket sur le pad, CE vol paie
+	-- ×MEGA_ROCKET_BASE_CASH_MULT sur le base cash. Lu une fois, comme le reste — et
+	-- consommé seulement en FIN de vol (respawnRocket), pour que le client garde la
+	-- même base sur son aperçu de gain pendant toute la partie.
+	local megaRun = hasMegaRocket(player)
+	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash") * (if megaRun then MEGA_ROCKET_BASE_CASH_MULT else 1)
 	-- Resistance (0..100, incl. the pass) reshapes the explosion risk — see
 	-- resistanceRiskParams. Read once and resolved to its risk profile for the run.
 	local resistance = PlayerProgressionService:get(player, "Resistance")
@@ -201,6 +210,17 @@ local function startButtonGame(player, session)
 	end
 	local effectiveSpeed = rocketSpeed * _condition
 	RocketLauncher:launch(room, effectiveSpeed)
+	-- Fin de vol : le rig revient sur le pad et une fusée NEUVE y est posée. Si ce vol
+	-- portait la Mega Rocket, elle est consommée AVANT le replacement — la fusée qui
+	-- apparaît est donc une fusée normale. Un vol lancé AVANT le top de l'événement ne
+	-- consomme rien : le joueur retrouve sa Mega Rocket sur le pad.
+	local respawnRocket = function()
+		if megaRun then
+			MegaRocketService:consume(player)
+		end
+		RocketLauncher:reset(room)
+		RocketPlacer:place(room)
+	end
 	-- Cheat de dev : annonce l'issue déjà tirée du vol (voir CheatConfig). C'est l'état AU
 	-- DÉCOLLAGE — en tutorial, un run scripté peut réécrire sa deadline au claim.
 	if logExplosionForecast then
@@ -296,8 +316,7 @@ local function startButtonGame(player, session)
 		-- (sinon la fusée se téléporterait sous les yeux du joueur), puis la fusée est
 		-- réinstanciée neuve sur le pad — exactement comme après une explosion.
 		task.delay(GO_HOME_RESET_DELAY, function()
-			RocketLauncher:reset(room)
-			RocketPlacer:place(room)
+			respawnRocket()
 		end)
 	end)
 	-- ── Boucle multiplier ─────────────────────────────────────────────────────
@@ -347,8 +366,7 @@ local function startButtonGame(player, session)
 					-- Le client garde la caméra orbitale sur la fusée qui explose, puis revient.
 					Events.PlayerKilledEvent:FireClient(player)
 					task.wait(EXPLOSION_VIEW_DELAY)
-					RocketLauncher:reset(room)
-					RocketPlacer:place(room)
+					respawnRocket()
 					local earned = math.floor(claimedBaseCash * claimedMultiplier)
 					-- exploded=true : côté client PlayerKilledEvent gère la caméra (pas de double retour).
 					Events.GameResultEvent:FireClient(player, true, earned, claimedMultiplier)
@@ -373,8 +391,7 @@ local function startButtonGame(player, session)
 					Events.PlayerKilledEvent:FireClient(player)
 					-- On laisse l'explosion se jouer avant de ramener le rig.
 					task.wait(EXPLOSION_VIEW_DELAY)
-					RocketLauncher:reset(room)
-					RocketPlacer:place(room)
+					respawnRocket()
 					-- Perte : PAS de popup de fin. Lot de consolation forfaitaire
 					-- (baseCash / 3, sans le multiplicateur) montré par un seul texte qui
 					-- saute puis file vers l'argent du HUD (client LossRewardBehavior).

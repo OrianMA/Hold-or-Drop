@@ -8,6 +8,11 @@
 --   J = Common   K = Rare   L = Epic   M = Legendary
 -- Appuyer plusieurs fois d'affilée pour vérifier l'empilement vertical.
 local informationTextKeys = true
+-- Touche G (client/MegaRocketCheat) : demande au serveur de ramener le compte à
+-- rebours de la Mega Rocket à 3 s. Le serveur a son propre garde
+-- (server/modules/CheatConfig.megaRocketCheatKey) — les deux doivent être vrais.
+local megaRocketKey = true
 return {
 	informationTextKeys = informationTextKeys,
+	megaRocketKey = megaRocketKey,
 }
