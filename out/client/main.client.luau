@@ -24,6 +24,7 @@ local initMoneyBoost = TS.import(script, script.Parent, "behaviors", "MoneyBoost
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
 local initDailyRewards = TS.import(script, script.Parent, "behaviors", "DailyRewardsBehavior").init
+local initQuests = TS.import(script, script.Parent, "behaviors", "QuestsBehavior").init
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
@@ -64,6 +65,7 @@ initMoneyBoost()
 initRebirthMenu()
 initRebirthController()
 initDailyRewards()
+initQuests()
 initHudProgression()
 initCostTextRotator()
 MusicController:init()

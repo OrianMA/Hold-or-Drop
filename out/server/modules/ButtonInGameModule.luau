@@ -14,6 +14,7 @@ local invincible = _CheatConfig.invincible
 local logExplosionForecast = _CheatConfig.logExplosionForecast
 local EndGameButtonModule = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "EndGameButtonModule").EndGameButtonModule
 local AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService").AnalyticsService
+local QuestService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "QuestService").QuestService
 local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
 local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
 local TutorialHooks = TS.import(script, game:GetService("ServerScriptService"), "TS", "tutorial", "TutorialHooks").TutorialHooks
@@ -235,6 +236,8 @@ local function startButtonGame(player, session)
 		end
 		logForecast(_exp, _condition_1, effectiveSpeed, baseCash)
 	end
+	-- Quêtes : un décollage compte, quelle que soit son issue (une perte aussi).
+	QuestService:report(player, "RocketsLaunched", 1)
 	-- Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
 	AnalyticsService:custom(player, "RocketLaunched", rocketSpeed)
 	AnalyticsService:runStep(player, runId, 1, "Launch")
@@ -279,6 +282,9 @@ local function startButtonGame(player, session)
 		if _result_1 ~= nil then
 			_result_1.onClaim()
 		end
+		-- Quêtes : le multiplicateur VERROUILLÉ (donc sans les bonus Perfect/Critical,
+		-- qui gonflent le base cash) s'ajoute au total cumulé. Une perte n'ajoute rien.
+		QuestService:report(player, "MultiplierTotal", claimedMultiplier)
 		-- Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
 		AnalyticsService:custom(player, "RunClaimed", claimedMultiplier)
 		if perfect then

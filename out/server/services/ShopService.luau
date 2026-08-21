@@ -10,6 +10,7 @@ local PlayerDataService = TS.import(script, game:GetService("ServerScriptService
 local _AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService")
 local AnalyticsService = _AnalyticsService.AnalyticsService
 local TxType = _AnalyticsService.TxType
+local QuestService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "QuestService").QuestService
 local NeonPipeColors = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "NeonPipeColors").NeonPipeColors
 -- Authoritative shop purchases. The client pre-checks affordability for instant
 -- feedback, but every purchase is fully re-validated here — never trust the
@@ -44,6 +45,9 @@ local function handlePurchase(player, itemId)
 	end
 	PlayerDataService:add(player, "Money", -price)
 	PlayerProgressionService:addLevel(player, item.stat, item.quantity)
+	-- Quêtes : "Buy N upgrades" compte les NIVEAUX achetés (un item peut en donner
+	-- plusieurs), pas les clics.
+	QuestService:report(player, "UpgradesBought", item.quantity)
 	-- Analytics: cash Sink (with the resulting balance) + per-item counter + onboarding step 4.
 	AnalyticsService:cashSink(player, price, PlayerDataService:get(player, "Money"), TxType.Shop, itemId)
 	AnalyticsService:custom(player, "ShopPurchase", price, itemId)

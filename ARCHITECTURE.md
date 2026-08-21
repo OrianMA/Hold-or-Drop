@@ -50,6 +50,7 @@ src/
 │   │   ├── index.ts         # Service registry + boot ORDER (critical)
 │   │   ├── RoomService… (rooms/) PlayerDataService, PlayerProgressionService,
 │   │   ├── ShopService, MoneyProductService, ButtonTriggerService, ButtonSessionService, CharacterService, UiService
+│   │   ├── QuestService          # quêtes + ScrollToken (§6.26)
 │   ├── rooms/
 │   │   ├── Room.ts          # One room wrapper (parts, ownership, billboard)
 │   │   └── RoomService.ts   # player ↔ room assignment
@@ -70,6 +71,7 @@ src/
 │   ├── main.client.ts       # Entry: wires up all client behaviors
 │   ├── behaviors/           # ButtonMenu / RocketLaunch / EndGameButton / LossReward / Shop behaviors
 │   │   └── ShopBehavior (open/close), ShopItemsController (4 upgrade buttons), ShopMoneyBuyBehavior (Robux money popup)
+│   │   └── QuestsBehavior        # panneau des quêtes (§6.26)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
 │   ├── audio/MusicController.ts  # BGM playlist + high-altitude ascent track
 │   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, MoneyBurst, etc.)
@@ -127,17 +129,20 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 8. `DailyRewardService` — daily streak → `DailyMultiplier` / `DailyClaimed` /
    `DailyAutoOpen` attributes + the claim grant (§6.25). Needs PlayerData (streak keys +
    `Money`) and PlayerProgression (`EffectiveBaseCash`, `isFirstSession`) ready
-9. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
+9. `QuestService` — quêtes + ScrollToken (§6.26) : progression, versement de la
+   récompense et publication des attributs `Q_<id>` / `QR_<id>`. Needs PlayerData ready
+   (crédite `ScrollTokens` par le même chemin que `Money`)
+10. `LeaderboardService` — global money + playtime rankings (OrderedDataStore) and the podium;
    self-driven 60s refresh loop (needs PlayerData ready — reads `Money`/`Playtime`)
-10. `AnalyticsService` — official Roblox analytics wrapper (§6.19); logs the onboarding funnel
+11. `AnalyticsService` — official Roblox analytics wrapper (§6.19); logs the onboarding funnel
    join step. Needs PlayerProgression ready (reads `isFirstSession` for the onboarding gate)
-11. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
-12. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
-13. `CharacterService` — normalize character scale on spawn
-14. `EndGameButtonModule.init()` — wire the payout-finished handshake
-15. `MegaRocketService` — horloge de l'événement Mega Rocket (§6.24). After `RoomService` — it
+12. `RoomService` — scan `Workspace/PlayerZones`, build rooms, assign players
+13. `ButtonTriggerService` — attach a `ButtonModule` to each room (needs rooms built first)
+14. `CharacterService` — normalize character scale on spawn
+15. `EndGameButtonModule.init()` — wire the payout-finished handshake
+16. `MegaRocketService` — horloge de l'événement Mega Rocket (§6.24). After `RoomService` — it
     re-places the on-pad rockets the moment the event fires
-16. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+17. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -482,7 +487,8 @@ second time on screen and fire an end-game event unrelated to it.
 ### 6.6 Persistence (`PlayerDataService`, `PlayerProgressionService`)
 - Both follow the same pattern: **DataStore-backed, mirrored to player Attributes** so the
   owning client can read state directly via replication.
-- `PlayerDataService` → `Money`, **`Playtime`** (total seconds played, accumulated across
+- `PlayerDataService` → `Money`, **`ScrollTokens`** (la monnaie des quêtes, §6.26),
+  **`Playtime`** (total seconds played, accumulated across
   sessions) **and the two daily-reward keys `DailyStreak` / `DailyLastClaim`** (§6.25) — all
   default 0 for existing saves, no version bump (store `PlayerData_v1`).
 - `PlayerProgressionService` → stores the **levels** `BaseCashLevel`, `RocketSpeedLevel`,
@@ -1465,6 +1471,61 @@ Revenir jouer chaque jour paie **`EffectiveBaseCash × N`**, où *N* est le nomb
   séquence est **relancée** sur les nouvelles valeurs plutôt que les labels réécrits, sinon le
   compteur viserait encore l'ancien total.
 
+### 6.26 Quêtes & ScrollToken (`shared/QuestConfig.ts`, `server/services/QuestService.ts`, `client/behaviors/QuestsBehavior.ts`)
+
+**18 quêtes = 3 métriques × 6 difficultés.** Les trois quêtes d'une difficulté sont les
+mêmes que celles de la difficulté suivante, seule la VALEUR de l'objectif change. Chaque
+accomplissement paie des **ScrollToken**, la seconde monnaie.
+
+| Quête | Métrique | Alimentée par | Easy → ??? |
+|-------|----------|---------------|------------|
+| Launch N rockets | `RocketsLaunched` | `ButtonInGameModule`, au décollage (une perte compte) | 5 · 60 · 300 · 1 250 · 5 000 · 20 000 |
+| Buy N upgrades | `UpgradesBought` | `ShopService`, après un achat validé (NIVEAUX achetés) | 3 · 40 · 200 · 1 000 · 5 000 · 25 000 |
+| Obtain Nx multiplier in total | `MultiplierTotal` | `ButtonInGameModule`, au claim (`+= claimedMultiplier`) | 10 · 100 · 1 000 · 10 000 · 100 000 · 1 000 000 |
+
+Récompenses (Easy → ???) : 50/60/70 · 150/250/375 · 1K/1.25K/1.57K · 5K/7.5K/8K ·
+25K/30K/35K · 100K/125K/135K. **Tout se retouche dans `shared/QuestConfig.ts`** (table
+`TUNING`, un bloc par difficulté) — c'est le seul fichier à éditer pour rééquilibrer.
+
+- **`MultiplierTotal` cumule le multiplicateur VERROUILLÉ**, pas le gain : Perfect Claim
+  (×3) et Critical Claim (×10) multiplient le *base cash* (§6.3), donc ils ne gonflent pas
+  le compteur. Une explosion avant claim n'ajoute rien. Le total est fractionnaire côté
+  serveur (×1.0786…), arrondi à l'affichage seulement.
+- **Boucle de vie d'une quête** : disponible (`TimeLeftText` = "Enable") → objectif atteint
+  → récompense versée immédiatement + `QUEST_RESET_SECONDS` (**5 min**) de cooldown pendant
+  lesquelles la barre reste pleine et le libellé affiche `Reset in : 4m 32s` → la
+  progression retombe à 0 et la quête redevient disponible. **Une quête en cooldown
+  n'enregistre AUCUNE progression** ; les autres difficultés de la même métrique, elles,
+  continuent d'avancer.
+- **Persistance** — store dédié `QuestData_v1` (même patron que `PlayerProgressionService` :
+  garde `loadedPlayers`, save sur `PlayerRemoving` + `BindToClose` en parallèle). Le
+  cooldown est stocké en **`os.time()` absolu** pour qu'il continue de s'écouler hors ligne :
+  un cooldown expiré pendant la déconnexion est rechargé comme un reset déjà fait. Les
+  ScrollToken, eux, vivent dans `PlayerDataService` (clé `ScrollTokens`, §6.6) — exactement
+  le même chemin que `Money`.
+- **Réplication : zéro RemoteEvent.** Le serveur publie deux attributs par quête —
+  `Q_<id>` (progression) et `QR_<id>` (instant de reset, `0` = disponible). `QR_` est
+  exprimé en **`Workspace:GetServerTimeNow()`** et non en `os.time()` : c'est la seule
+  horloge réellement partagée client/serveur, donc le compte à rebours ne dépend pas de
+  l'heure de la machine du joueur. La conversion os.time → temps serveur se fait au moment
+  de la publication (`publish`).
+- **Un seul point d'entrée de progression** : `QuestService.report(player, metric, amount)`.
+  Il alimente les 6 difficultés de la métrique d'un coup et saute celles en cooldown. Une
+  boucle 1 s (`tickCooldowns`) réarme les quêtes dont le cooldown est échu.
+- **UI** (`QuestsBehavior`, client) — popup `InGameUI/QuestsPanel`, ouverte par
+  `HUD/ButtonsFrame/QuestsFrame/ImageButton`, fermée par `Header/CloseButtonFrame/CloseButton` ;
+  l'ouverture masque le HUD (`InGameUIController.disable`). Ce n'est **pas** un `PopupType`
+  (§6.5, réservé au flow gameplay du bouton). Le header affiche le solde
+  (`Header/ScrollTokenCount/ScrollCountText`, tenu à jour même popup fermé). Chaque ligne est
+  une Frame de `Body/ScrollingFrame` **nommée dans `QuestConfig`** (`B*` easy, `C*` mid,
+  `D*` hard, `E*` insane, `F*` impossible, `H*` ???) contenant `QuestTitletext`,
+  `TimeLeftText`, `ProgressionFrame/CurrentProgressionFrame` (barre, taille X en scale 0..1,
+  masquée sous 1.3 % comme la barre de rebirth), `ProgressionFrame/TextLabel` ("55 / 100") et
+  `Rewardtext`. Les lignes sont résolues en `FindFirstChild` (jamais `WaitForChild`) : une
+  Frame manquante coûte une ligne, pas le blocage de tous les init clients suivants. Le
+  repaint est piloté par les attributs (et n'a lieu que popup ouvert) ; seul le compte à
+  rebours tourne sur un Heartbeat throttlé à 1 s, uniquement tant que le popup est affiché.
+
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
 `DefineEvent` creates the `RemoteEvent` on the server and `WaitForChild`s it on the client,
@@ -1553,6 +1614,8 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `MEGA_ROCKET_INTERVAL` | `shared/MegaRocketConfig.ts` | 360s | Délai entre deux événements Mega Rocket (§6.24) |
 | `MEGA_ROCKET_BASE_CASH_MULT` | `shared/MegaRocketConfig.ts` | 8 | Facteur de base cash d'un vol en Mega Rocket |
 | `MEGA_ROCKET_SCALE` | `shared/MegaRocketConfig.ts` | 1.15 | Échelle de la fusée mega (`Model:ScaleTo`) |
+| `TUNING` (quêtes) | `shared/QuestConfig.ts` | 3 métriques × 6 difficultés | Objectifs + récompenses ScrollToken de chaque quête (§6.26) — LE fichier de rééquilibrage |
+| `QUEST_RESET_SECONDS` | `shared/QuestConfig.ts` | 300s | Cooldown avant qu'une quête accomplie ne reparte à zéro |
 | `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
 | `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |
 | `VISIBLE_ROWS` | `shared/LeaderboardConfig.ts` | 15 | Rows visible before scrolling |

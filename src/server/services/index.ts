@@ -10,6 +10,7 @@ import { BoostService } from "./BoostService";
 import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
 import { DailyRewardService } from "./DailyRewardService";
+import { QuestService } from "./QuestService";
 import { LeaderboardService } from "./LeaderboardService";
 import { AnalyticsService } from "./AnalyticsService";
 import { TutorialService } from "server/tutorial/TutorialService";
@@ -42,6 +43,9 @@ export const services: Array<{ init(): void }> = [
 	// grants the cash. Needs PlayerData (streak keys + Money) and PlayerProgression
 	// (EffectiveBaseCash) ready.
 	DailyRewardService,
+	// Quêtes + ScrollToken : progression, versement et publication des attributs
+	// Q_<id> / QR_<id>. Needs PlayerData ready (crédite ScrollTokens comme Money).
+	QuestService,
 	// Global leaderboards + podium. Needs PlayerData (Money/Playtime) ready; its
 	// refresh loop is self-driven so ordering past PlayerData is not load-bearing.
 	LeaderboardService,

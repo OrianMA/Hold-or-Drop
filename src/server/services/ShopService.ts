@@ -3,6 +3,7 @@ import { ITEMS, ShopItemId, isAtCap, priceForItem } from "shared/ShopConfig";
 import { PlayerProgressionService } from "./PlayerProgressionService";
 import { PlayerDataService } from "./PlayerDataService";
 import { AnalyticsService, TxType } from "./AnalyticsService";
+import { QuestService } from "./QuestService";
 import { NeonPipeColors } from "server/modules/NeonPipeColors";
 
 // Authoritative shop purchases. The client pre-checks affordability for instant
@@ -33,6 +34,10 @@ function handlePurchase(player: Player, itemId: unknown): void {
 
 	PlayerDataService.add(player, "Money", -price);
 	PlayerProgressionService.addLevel(player, item.stat, item.quantity);
+
+	// Quêtes : "Buy N upgrades" compte les NIVEAUX achetés (un item peut en donner
+	// plusieurs), pas les clics.
+	QuestService.report(player, "UpgradesBought", item.quantity);
 
 	// Analytics: cash Sink (with the resulting balance) + per-item counter + onboarding step 4.
 	AnalyticsService.cashSink(player, price, PlayerDataService.get(player, "Money"), TxType.Shop, itemId);

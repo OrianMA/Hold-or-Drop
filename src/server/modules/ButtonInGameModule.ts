@@ -11,6 +11,7 @@ import {
 } from "server/modules/CheatConfig";
 import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 import { AnalyticsService } from "server/services/AnalyticsService";
+import { QuestService } from "server/services/QuestService";
 import { RocketLauncher } from "server/modules/RocketLauncher";
 import { RocketPlacer } from "server/modules/RocketPlacer";
 import { TutorialHooks } from "server/tutorial/TutorialHooks";
@@ -243,6 +244,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	// DÉCOLLAGE — en tutorial, un run scripté peut réécrire sa deadline au claim.
 	if (logExplosionForecast) logForecast(player, scripted?.explosionAt() ?? explosionAt, effectiveSpeed, baseCash);
 
+	// Quêtes : un décollage compte, quelle que soit son issue (une perte aussi).
+	QuestService.report(player, "RocketsLaunched", 1);
+
 	// Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
 	AnalyticsService.custom(player, "RocketLaunched", rocketSpeed);
 	AnalyticsService.runStep(player, runId, 1, "Launch");
@@ -286,6 +290,10 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		claimedBaseCash = baseCash * claimBonus;
 		Events.ClaimAcceptedEvent.FireClient(player, claimedMultiplier, perfect, critical, claimedBaseCash);
 		scripted?.onClaim(); // tutorial : relance la fusée gelée + programme l'explosion
+
+		// Quêtes : le multiplicateur VERROUILLÉ (donc sans les bonus Perfect/Critical,
+		// qui gonflent le base cash) s'ajoute au total cumulé. Une perte n'ajoute rien.
+		QuestService.report(player, "MultiplierTotal", claimedMultiplier);
 
 		// Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
 		AnalyticsService.custom(player, "RunClaimed", claimedMultiplier);
