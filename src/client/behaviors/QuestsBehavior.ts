@@ -10,6 +10,9 @@ import {
 	questResetAttr,
 } from "shared/QuestConfig";
 import { InGameUIController } from "client/ui/InGameUIController";
+import { InformationText } from "client/ui/InformationText";
+import { CriticalRain } from "client/ui/CriticalRain";
+import { Events } from "shared/Event";
 
 // Ouvre / ferme le panneau des quêtes (InGameUI/QuestsPanel) et le peint.
 //   • HUD/ButtonsFrame/QuestsFrame/ImageButton ouvre
@@ -30,6 +33,11 @@ import { InGameUIController } from "client/ui/InGameUIController";
 const player = Players.LocalPlayer;
 
 const POPUP_NAME = "QuestsPanel";
+
+// Célébration d'un accomplissement : bandeau Epic + la pluie d'icônes du Critical
+// Claim (même simulation, autre image — voir client/ui/CriticalRain).
+const COMPLETE_TEXT = "Quest finish";
+const COMPLETE_RAIN_IMAGE = "rbxassetid://17368118782";
 
 // Plus petite largeur de barre affichable : en dessous, le sliver est illisible
 // (coins arrondis + contour qui s'écrasent), donc on masque la barre. Même
@@ -197,6 +205,14 @@ export function init(): void {
 	// Le compteur de tokens, lui, se met à jour même panneau fermé : il est bon marché
 	// et évite tout décalage à l'ouverture suivante.
 	player.GetAttributeChangedSignal(SCROLL_TOKENS_ATTR).Connect(renderTokens);
+
+	// Quête accomplie : le serveur a déjà versé la récompense et publié l'état, cet
+	// event ne sert qu'à la célébration.
+	CriticalRain.preload(COMPLETE_RAIN_IMAGE);
+	Events.QuestCompletedEvent.OnClientEvent.Connect(() => {
+		InformationText.show(COMPLETE_TEXT, { rarity: "Epic" });
+		CriticalRain.play(COMPLETE_RAIN_IMAGE);
+	});
 
 	renderAll();
 }

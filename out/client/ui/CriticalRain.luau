@@ -10,6 +10,10 @@ local RunService = _services.RunService
 -- poignée d'images tombent du haut de l'écran, dérivent en tournant doucement et
 -- se dissolvent en bas. Purement client, purement visuel.
 --
+-- `play`/`preload` acceptent une IMAGE : la même simulation sert aussi la pluie
+-- jouée à l'accomplissement d'une quête (§6.26), qui doit être exactement le même
+-- effet avec une autre icône. Sans argument, c'est l'icône du Critical Claim.
+--
 -- Même approche que MoneyBurst : pas de ParticleEmitter, c'est de la 2D écran, donc
 -- une mini simulation en pixels dans RenderStepped.
 local RAIN_IMAGE = "rbxassetid://13506500866"
@@ -99,17 +103,23 @@ local function step(dt)
 end
 -- ── API ─────────────────────────────────────────────────────────────────────────
 local CriticalRain = {
-	preload = function(self)
+	preload = function(self, image)
+		if image == nil then
+			image = RAIN_IMAGE
+		end
 		task.spawn(function()
 			local probe = Instance.new("ImageLabel")
-			probe.Image = RAIN_IMAGE
+			probe.Image = image
 			pcall(function()
 				return ContentProvider:PreloadAsync({ probe })
 			end)
 			probe:Destroy()
 		end)
 	end,
-	play = function(self)
+	play = function(self, image)
+		if image == nil then
+			image = RAIN_IMAGE
+		end
 		local screenGui = getScreenGui()
 		if not screenGui then
 			return nil
@@ -127,7 +137,7 @@ local CriticalRain = {
 			local y = -size - math.random() * SPAWN_BAND * scale
 			local label = Instance.new("ImageLabel")
 			label.Name = LABEL_NAME
-			label.Image = RAIN_IMAGE
+			label.Image = image
 			label.BackgroundTransparency = 1
 			label.AnchorPoint = Vector2.new(0.5, 0.5)
 			label.Position = UDim2.new(0, x, 0, y)

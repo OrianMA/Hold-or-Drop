@@ -1,7 +1,6 @@
 import { DataStoreService, Players, Workspace } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
 import { Events } from "shared/Event";
-import { FormatNumber } from "shared/NumberFormat";
 import { QUESTS, QUEST_RESET_SECONDS, Quest, QuestMetric, questProgressAttr, questResetAttr } from "shared/QuestConfig";
 import { PlayerDataService } from "./PlayerDataService";
 import { AnalyticsService } from "./AnalyticsService";
@@ -27,8 +26,6 @@ const dataStore = DataStoreService.GetDataStore(STORE_NAME);
 // Cadence du balayage des cooldowns arrivés à terme. 1s : le libellé côté client
 // descend à la seconde, inutile d'être plus fin.
 const COOLDOWN_TICK = 1;
-
-const REWARD_COLOR = new Color3(1, 0.85, 0.35);
 
 interface QuestState {
 	// questId → progression (peut être fractionnaire pour MultiplierTotal).
@@ -137,10 +134,8 @@ function complete(player: Player, state: QuestState, quest: Quest): void {
 
 	PlayerDataService.add(player, "ScrollTokens", quest.reward);
 
-	Events.InformationTextEvent.FireClient(player, `${quest.title} — +${FormatNumber(quest.reward)} Scroll Tokens`, {
-		rarity: "Rare",
-		color: REWARD_COLOR,
-	});
+	// Présentation : le client s'occupe du bandeau Epic + de la pluie d'icônes.
+	Events.QuestCompletedEvent.FireClient(player);
 	AnalyticsService.custom(player, "QuestCompleted", quest.reward, quest.id);
 }
 

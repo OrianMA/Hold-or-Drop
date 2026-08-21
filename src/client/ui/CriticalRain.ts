@@ -6,6 +6,10 @@ import { ContentProvider, Players, RunService } from "@rbxts/services";
 // poignée d'images tombent du haut de l'écran, dérivent en tournant doucement et
 // se dissolvent en bas. Purement client, purement visuel.
 //
+// `play`/`preload` acceptent une IMAGE : la même simulation sert aussi la pluie
+// jouée à l'accomplissement d'une quête (§6.26), qui doit être exactement le même
+// effet avec une autre icône. Sans argument, c'est l'icône du Critical Claim.
+//
 // Même approche que MoneyBurst : pas de ParticleEmitter, c'est de la 2D écran, donc
 // une mini simulation en pixels dans RenderStepped.
 
@@ -122,17 +126,17 @@ function step(dt: number): void {
 export const CriticalRain = {
 	// Met l'image en cache pour que la première pluie de la session ne s'affiche pas
 	// vide. À appeler une fois au démarrage du client.
-	preload(): void {
+	preload(image = RAIN_IMAGE): void {
 		task.spawn(() => {
 			const probe = new Instance("ImageLabel");
-			probe.Image = RAIN_IMAGE;
+			probe.Image = image;
 			pcall(() => ContentProvider.PreloadAsync([probe]));
 			probe.Destroy();
 		});
 	},
 
 	// Lâche la pluie. Rejouable : les gouttes en vol continuent leur chute.
-	play(): void {
+	play(image = RAIN_IMAGE): void {
 		const screenGui = getScreenGui();
 		if (!screenGui) return;
 
@@ -150,7 +154,7 @@ export const CriticalRain = {
 
 			const label = new Instance("ImageLabel");
 			label.Name = LABEL_NAME;
-			label.Image = RAIN_IMAGE;
+			label.Image = image;
 			label.BackgroundTransparency = 1;
 			label.AnchorPoint = new Vector2(0.5, 0.5);
 			label.Position = new UDim2(0, x, 0, y);

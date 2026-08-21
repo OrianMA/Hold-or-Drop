@@ -1259,7 +1259,7 @@ player reads.
 
 ### 6.23 Critical Claim rain (`client/ui/CriticalRain.ts`)
 
-Small 2D icon rain (`rbxassetid://13506500866`) dropped by `CriticalRain.play()` on the same
+Small 2D icon rain (`rbxassetid://13506500866` par défaut) dropped by `CriticalRain.play()` on the same
 frame as the golden flash (§6.22), from the `ClaimAcceptedEvent` handler. Same technique as the
 cash burst (§6.21) — `ImageLabel`s simulated in pixels inside `RenderStepped`, no
 `ParticleEmitter`, since it has to read over the HUD — but a fall instead of an explosion.
@@ -1276,6 +1276,10 @@ a safety net). All pixel constants are authored for `REFERENCE_HEIGHT` (900 px) 
 the real viewport height, so it reads the same on mobile. `ZIndex` 55: over the HUD and the cash
 burst, **under** the flash text (60). `CriticalRain.preload()` (called from
 `RocketLaunchBehavior.init`) warms the image; `CriticalRain.clear()` wipes icons still falling.
+
+`play(image?)` / `preload(image?)` prennent une **image optionnelle** : la même simulation
+sert la pluie jouée à l'accomplissement d'une quête (§6.26), qui doit être exactement le même
+effet avec une autre icône. Sans argument, c'est celle du Critical Claim.
 
 ### 6.24 Mega Rocket (`shared/MegaRocketConfig.ts`, `server/services/MegaRocketService.ts`, `client/ui/MegaRocketVisuals.ts`)
 
@@ -1509,6 +1513,13 @@ Récompenses (Easy → ???) : 50/60/70 · 150/250/375 · 1K/1.25K/1.57K · 5K/7.
   horloge réellement partagée client/serveur, donc le compte à rebours ne dépend pas de
   l'heure de la machine du joueur. La conversion os.time → temps serveur se fait au moment
   de la publication (`publish`).
+- **Célébration** (`QuestCompletedEvent`, S→C, sans argument) — le seul RemoteEvent du
+  système, et il ne transporte **rien** : la récompense est déjà versée et l'état déjà publié
+  par les attributs, c'est un pur signal de présentation. Le client flashe le bandeau **Epic**
+  "Quest finish" (§6.20) et lâche la **pluie d'icônes** du Critical Claim (§6.23) avec
+  l'icône de parchemin `rbxassetid://17368118782`. Un event plutôt qu'une détection de
+  transition sur `QR_<id>` côté client : au join les attributs arrivent par réplication, et une
+  quête rechargée EN COOLDOWN déclencherait une fausse pluie.
 - **Un seul point d'entrée de progression** : `QuestService.report(player, metric, amount)`.
   Il alimente les 6 difficultés de la métrique d'un coup et saute celles en cooldown. Une
   boucle 1 s (`tickCooldowns`) réarme les quêtes dont le cooldown est échu.
@@ -1553,6 +1564,7 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `RebirthEvent` | C→S | Player clicked Rebirth (no args) — server validates + resets |
 | `DailyRewardClaimEvent` | C→S | Player clicked the free daily Claim (no args) — server re-derives streak + day (§6.25) |
 | `DailyRewardGrantedEvent` | S→C | Daily reward credited: `amount`, `multiplier` (streak), `bonusMultiplier` (3 on the Robux ×3, else 1) |
+| `QuestCompletedEvent` | S→C | Quest finished (no args) — presentation only: Epic banner "Quest finish" + icon rain (§6.26) |
 | `CommunityJoinedEvent` | C→S | Native join card returned Joined/AlreadyMember — server re-checks (GetGroupsAsync) + grants ×2 |
 | `DailyRewardCheatEvent` | C→S | **Cheat dev only** (touche P) — avance la récompense journalière d'un jour. Le serveur ne l'écoute que si `CheatConfig.dailyRewardCheatKey` (§6.25/§9) |
 | `MegaRocketCheatEvent` | C→S | **Cheat dev only** (touche G) — ramène le compte à rebours Mega Rocket à 3 s. Le serveur ne l'écoute que si `CheatConfig.megaRocketCheatKey` (§6.24/§9) |

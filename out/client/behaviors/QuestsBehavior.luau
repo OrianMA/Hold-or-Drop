@@ -13,6 +13,9 @@ local formatQuestTimer = _QuestConfig.formatQuestTimer
 local questProgressAttr = _QuestConfig.questProgressAttr
 local questResetAttr = _QuestConfig.questResetAttr
 local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
+local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
+local CriticalRain = TS.import(script, script.Parent.Parent, "ui", "CriticalRain").CriticalRain
+local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 -- Ouvre / ferme le panneau des quêtes (InGameUI/QuestsPanel) et le peint.
 --   • HUD/ButtonsFrame/QuestsFrame/ImageButton ouvre
 --   • Header/CloseButtonFrame/CloseButton ferme
@@ -30,6 +33,10 @@ local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGame
 --   Rewardtext                            "+1.25K"
 local player = Players.LocalPlayer
 local POPUP_NAME = "QuestsPanel"
+-- Célébration d'un accomplissement : bandeau Epic + la pluie d'icônes du Critical
+-- Claim (même simulation, autre image — voir client/ui/CriticalRain).
+local COMPLETE_TEXT = "Quest finish"
+local COMPLETE_RAIN_IMAGE = "rbxassetid://17368118782"
 -- Plus petite largeur de barre affichable : en dessous, le sliver est illisible
 -- (coins arrondis + contour qui s'écrasent), donc on masque la barre. Même
 -- raisonnement que la barre de rebirth du HUD.
@@ -228,6 +235,15 @@ local function init()
 	-- Le compteur de tokens, lui, se met à jour même panneau fermé : il est bon marché
 	-- et évite tout décalage à l'ouverture suivante.
 	player:GetAttributeChangedSignal(SCROLL_TOKENS_ATTR):Connect(renderTokens)
+	-- Quête accomplie : le serveur a déjà versé la récompense et publié l'état, cet
+	-- event ne sert qu'à la célébration.
+	CriticalRain:preload(COMPLETE_RAIN_IMAGE)
+	Events.QuestCompletedEvent.OnClientEvent:Connect(function()
+		InformationText:show(COMPLETE_TEXT, {
+			rarity = "Epic",
+		})
+		CriticalRain:play(COMPLETE_RAIN_IMAGE)
+	end)
 	renderAll()
 end
 return {

@@ -6,7 +6,6 @@ local Players = _services.Players
 local Workspace = _services.Workspace
 local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").resetData
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
-local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local _QuestConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "QuestConfig")
 local QUESTS = _QuestConfig.QUESTS
 local QUEST_RESET_SECONDS = _QuestConfig.QUEST_RESET_SECONDS
@@ -33,7 +32,6 @@ local dataStore = DataStoreService:GetDataStore(STORE_NAME)
 -- Cadence du balayage des cooldowns arrivés à terme. 1s : le libellé côté client
 -- descend à la seconde, inutile d'être plus fin.
 local COOLDOWN_TICK = 1
-local REWARD_COLOR = Color3.new(1, 0.85, 0.35)
 -- Forme persistée (tables plates, indexées par questId).
 local states = {}
 -- Seuls les joueurs dont le chargement a RÉUSSI sont sauvegardables — un échec
@@ -179,10 +177,8 @@ local function complete(player, state, quest)
 	_resetAt[_id_1] = _arg1
 	publish(player, state, quest)
 	PlayerDataService:add(player, "ScrollTokens", quest.reward)
-	Events.InformationTextEvent:FireClient(player, `{quest.title} — +{FormatNumber(quest.reward)} Scroll Tokens`, {
-		rarity = "Rare",
-		color = REWARD_COLOR,
-	})
+	-- Présentation : le client s'occupe du bandeau Epic + de la pluie d'icônes.
+	Events.QuestCompletedEvent:FireClient(player)
 	AnalyticsService:custom(player, "QuestCompleted", quest.reward, quest.id)
 end
 -- Fin de cooldown : la quête repart de zéro et redevient "Enable".

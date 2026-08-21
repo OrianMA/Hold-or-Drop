@@ -124,6 +124,13 @@ do
 	-- l'écoute que si CheatConfig.dailyRewardCheatKey (§6.25/§9).
 	local DailyRewardCheatEvent = DefineEvent("DailyRewardCheatEvent", script)
 	_container.DailyRewardCheatEvent = DailyRewardCheatEvent
+	-- Quête accomplie — server → client (no args). Signal de PRÉSENTATION seulement :
+	-- la récompense est déjà versée et l'état déjà publié par les attributs Q_/QR_
+	-- (§6.26). Le client flashe le bandeau Epic "Quest finish" + la pluie d'icônes.
+	-- Un event plutôt qu'une lecture d'attribut : au join les attributs arrivent par
+	-- réplication, et une quête rechargée EN COOLDOWN déclencherait une fausse pluie.
+	local QuestCompletedEvent = DefineEvent("QuestCompletedEvent", script)
+	_container.QuestCompletedEvent = QuestCompletedEvent
 	-- Tutorial — client → server. Arg: stepId (string). Le client signale que la
 	-- condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
 	-- correspond pas au step courant (anti double-avance / event en retard).
