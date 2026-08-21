@@ -260,8 +260,7 @@ local function init()
 		-- Et le même "+montant" léger que la récompense de consolation d'une explosion
 		-- (§6.4) — en version sans crédit : le serveur a déjà encaissé le gain.
 		FloatingReward:showAlreadyCredited(amount, "fly")
-		local suffix = if bonus > 1 then ` (x{mult} x{bonus})` else ` (x{mult})`
-		InformationText:show(`Daily reward +${FormatCash(amount)}{suffix}`, {
+		InformationText:show(`Daily reward +{FormatCash(amount)}$`, {
 			color = REWARD_COLOR,
 		})
 	end)

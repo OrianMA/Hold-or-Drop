@@ -20,7 +20,7 @@ const RAIN_IMAGE = "rbxassetid://13506500866";
 // remises à l'échelle du viewport réel (mobile compris).
 const REFERENCE_HEIGHT = 900;
 
-const PARTICLE_COUNT = 24; // pluie légère : on doit voir passer les icônes, pas un rideau
+const PARTICLE_COUNT = 40; // pluie fournie, mais on doit encore voir passer les icônes, pas un rideau
 const ICON_SIZE = 60; // px (image carrée mise à l'échelle)
 const ICON_SIZE_JITTER = 0.3; // ±30 % de taille pour casser la régularité
 

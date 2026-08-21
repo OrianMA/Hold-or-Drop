@@ -72,6 +72,13 @@ function titleFor(metric: QuestMetric, target: number): string {
 // METRIC_ORDER : décollages (le plus accessible) → améliorations → multiplicateur
 // cumulé (le plus dur), ce qui correspond aux récompenses croissantes.
 // `frames` liste les Frames Studio de la difficulté, dans ce même ordre.
+//
+// RAMPE : décollages et améliorations montent d'environ ×3 par difficulté (et non
+// ×5 à ×12 comme au premier jet). Le but est qu'une quête tombe SOUVENT — à ~2.5
+// décollages/min et ~2 achats/min, ça donne grosso modo 2 min / 10 min / 30 min /
+// 1h40 / 5h / 16h par palier, au lieu d'un mur dès la difficulté Mid. Le cooldown
+// de 5 min (QUEST_RESET_SECONDS) fait le reste : les paliers bas se re-terminent en
+// boucle pendant que les hauts avancent en arrière-plan.
 const METRIC_ORDER: readonly QuestMetric[] = ["RocketsLaunched", "UpgradesBought", "MultiplierTotal"];
 
 interface DifficultyTuning {
@@ -91,31 +98,31 @@ const TUNING: readonly DifficultyTuning[] = [
 	{
 		difficulty: "Mid",
 		frames: ["C2_QuestElement", "C3_QuestElement", "C4_QuestElement"],
-		targets: [60, 40, 100],
+		targets: [25, 20, 100],
 		rewards: [150, 250, 375],
 	},
 	{
 		difficulty: "Hard",
 		frames: ["D2_QuestElement", "D3_QuestElement", "D4_QuestElement"],
-		targets: [300, 200, 1_000],
+		targets: [75, 60, 1_000],
 		rewards: [1_000, 1_250, 1_570],
 	},
 	{
 		difficulty: "Insane",
 		frames: ["E1_QuestElement", "E2_QuestElement", "E3_QuestElement"],
-		targets: [1_250, 1_000, 10_000],
+		targets: [250, 200, 10_000],
 		rewards: [5_000, 7_500, 8_000],
 	},
 	{
 		difficulty: "Impossible",
 		frames: ["F2_QuestElement", "F3_QuestElement", "F4_QuestElement"],
-		targets: [5_000, 5_000, 100_000],
+		targets: [750, 600, 100_000],
 		rewards: [25_000, 30_000, 35_000],
 	},
 	{
 		difficulty: "Unknown", // la difficulté "???"
 		frames: ["H2_QuestElement", "H3_QuestElement", "H4_QuestElement"],
-		targets: [20_000, 25_000, 1_000_000],
+		targets: [2_500, 2_000, 1_000_000],
 		rewards: [100_000, 125_000, 135_000],
 	},
 ];

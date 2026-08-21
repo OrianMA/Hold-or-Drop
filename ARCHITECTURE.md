@@ -1264,7 +1264,7 @@ frame as the golden flash (§6.22), from the `ClaimAcceptedEvent` handler. Same 
 cash burst (§6.21) — `ImageLabel`s simulated in pixels inside `RenderStepped`, no
 `ParticleEmitter`, since it has to read over the HUD — but a fall instead of an explosion.
 
-`PARTICLE_COUNT` (24) icons spawn spread across the screen width (column + noise, no clumps)
+`PARTICLE_COUNT` (40) icons spawn spread across the screen width (column + noise, no clumps)
 and, crucially, **staggered in height**: each starts somewhere in a `SPAWN_BAND` (1600 px) band
 *above* the top edge, so they enter the frame one after another and read as rain rather than a
 single volley — no timers involved. `SPAWN_BAND` is therefore also the rain's **duration** knob:
@@ -1483,13 +1483,21 @@ accomplissement paie des **ScrollToken**, la seconde monnaie.
 
 | Quête | Métrique | Alimentée par | Easy → ??? |
 |-------|----------|---------------|------------|
-| Launch N rockets | `RocketsLaunched` | `ButtonInGameModule`, au décollage (une perte compte) | 5 · 60 · 300 · 1 250 · 5 000 · 20 000 |
-| Buy N upgrades | `UpgradesBought` | `ShopService`, après un achat validé (NIVEAUX achetés) | 3 · 40 · 200 · 1 000 · 5 000 · 25 000 |
+| Launch N rockets | `RocketsLaunched` | `ButtonInGameModule`, au décollage (une perte compte) | 5 · 25 · 75 · 250 · 750 · 2 500 |
+| Buy N upgrades | `UpgradesBought` | `ShopService`, après un achat validé (NIVEAUX achetés) | 3 · 20 · 60 · 200 · 600 · 2 000 |
 | Obtain Nx multiplier in total | `MultiplierTotal` | `ButtonInGameModule`, au claim (`+= claimedMultiplier`) | 10 · 100 · 1 000 · 10 000 · 100 000 · 1 000 000 |
 
 Récompenses (Easy → ???) : 50/60/70 · 150/250/375 · 1K/1.25K/1.57K · 5K/7.5K/8K ·
 25K/30K/35K · 100K/125K/135K. **Tout se retouche dans `shared/QuestConfig.ts`** (table
 `TUNING`, un bloc par difficulté) — c'est le seul fichier à éditer pour rééquilibrer.
+
+**Rampe.** Décollages et améliorations montent d'environ **×3 par difficulté** : à ~2.5
+décollages/min et ~2 achats/min ça donne ~2 min / 10 min / 30 min / 1h40 / 5h / 16h par
+palier. Combiné au cooldown de 5 min, les paliers bas se re-terminent en boucle pendant que
+les hauts avancent en arrière-plan — c'est ce flux constant qui fait vivre la monnaie. Le
+total de multiplicateur, lui, garde une rampe ×10 : il **s'auto-accélère** (un vol vaut ×1.4
+au niveau 0 mais ×30 en rebirths profonds), donc ses paliers se rapprochent tout seuls à
+mesure que le joueur progresse.
 
 - **`MultiplierTotal` cumule le multiplicateur VERROUILLÉ**, pas le gain : Perfect Claim
   (×3) et Critical Claim (×10) multiplient le *base cash* (§6.3), donc ils ne gonflent pas

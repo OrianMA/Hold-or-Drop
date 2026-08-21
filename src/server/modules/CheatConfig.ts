@@ -10,7 +10,7 @@ export const invincible = false; // le bouton n'explosera jamais
 // de secondes la fusée explosera, le multiplicateur que le vol aura atteint à cet
 // instant, le gain correspondant, et à partir de quand le claim compte comme Perfect
 // Claim. Sert à tester le timing sans jouer à l'aveugle. MUST be false before publishing.
-export const logExplosionForecast = true;
+export const logExplosionForecast = false;
 
 // Wipe the player's persisted data (Money + progression values) on join — they
 // load in with the default profile every time, and the next regular save

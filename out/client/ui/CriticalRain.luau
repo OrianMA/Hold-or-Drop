@@ -21,7 +21,7 @@ local RAIN_IMAGE = "rbxassetid://13506500866"
 -- Les valeurs en pixels sont exprimées pour un écran de REFERENCE_HEIGHT px et
 -- remises à l'échelle du viewport réel (mobile compris).
 local REFERENCE_HEIGHT = 900
-local PARTICLE_COUNT = 24
+local PARTICLE_COUNT = 40
 local ICON_SIZE = 60
 local ICON_SIZE_JITTER = 0.3
 -- Les icônes ne sont pas lâchées par un timer : elles démarrent réparties dans une

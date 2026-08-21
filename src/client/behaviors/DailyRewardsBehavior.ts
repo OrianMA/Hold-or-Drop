@@ -241,8 +241,7 @@ export function init(): void {
 		// Et le même "+montant" léger que la récompense de consolation d'une explosion
 		// (§6.4) — en version sans crédit : le serveur a déjà encaissé le gain.
 		FloatingReward.showAlreadyCredited(amount, "fly");
-		const suffix = bonus > 1 ? ` (x${mult} x${bonus})` : ` (x${mult})`;
-		InformationText.show(`Daily reward +$${FormatCash(amount)}${suffix}`, { color: REWARD_COLOR });
+		InformationText.show(`Daily reward +${FormatCash(amount)}$`, { color: REWARD_COLOR });
 	});
 
 	// Keep an open popup in sync if the numbers move underneath it. This is not
