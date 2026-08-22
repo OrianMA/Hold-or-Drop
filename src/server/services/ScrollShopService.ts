@@ -1,5 +1,4 @@
 import { Events } from "shared/Event";
-import { FormatNumber } from "shared/NumberFormat";
 import { isAtCap } from "shared/ShopConfig";
 import {
 	SCROLL_MONEY_BOOST,
@@ -43,7 +42,7 @@ function applyEffect(player: Player, item: ScrollShopItem): boolean {
 
 	if (item.id === "MoneyMultiplier") {
 		if (hasMoneyBoost(player)) {
-			deny(player, "1.25x Money déjà possédé");
+			deny(player, "Already owned");
 			return false;
 		}
 		PlayerDataService.set(player, SCROLL_MONEY_BOOST.attribute as "ScrollMoneyBoost", 1);
@@ -61,7 +60,7 @@ function applyEffect(player: Player, item: ScrollShopItem): boolean {
 	// Les trois derniers sont des +1 niveau de stat, payés en tokens au lieu du cash.
 	const stat = item.id; // "RocketSpeed" | "BaseCash" | "Resistance"
 	if (isAtCap(stat, PlayerProgressionService.getLevel(player, stat))) {
-		deny(player, "Niveau maximum atteint");
+		deny(player, "Max level reached");
 		return false;
 	}
 	PlayerProgressionService.addLevel(player, stat, 1);
@@ -74,13 +73,13 @@ function handlePurchase(player: Player, itemId: unknown): void {
 	if (!item) return;
 
 	if (item.oneShot === true && item.id === "MoneyMultiplier" && hasMoneyBoost(player)) {
-		deny(player, "1.25x Money déjà possédé");
+		deny(player, "Already owned");
 		return;
 	}
 
 	const balance = PlayerDataService.get(player, "ScrollTokens");
 	if (balance < item.price) {
-		deny(player, `Pas assez de Scroll Tokens (${FormatNumber(item.price)})`);
+		deny(player, "Not enough tokens");
 		return;
 	}
 

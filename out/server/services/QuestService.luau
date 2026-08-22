@@ -4,7 +4,10 @@ local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts
 local DataStoreService = _services.DataStoreService
 local Players = _services.Players
 local Workspace = _services.Workspace
-local RESET_DATA_CHEAT = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig").resetData
+local _CheatConfig = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "CheatConfig")
+local RESET_DATA_CHEAT = _CheatConfig.resetData
+local questCheatKey = _CheatConfig.questCheatKey
+local questCheatTokens = _CheatConfig.questCheatTokens
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 local _QuestConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "QuestConfig")
 local QUESTS = _QuestConfig.QUESTS
@@ -244,6 +247,41 @@ local QuestService = {
 				tickCooldowns()
 			end
 		end)
+		-- Cheat de dev (touche U) : termine la première quête disponible par le chemin
+		-- NORMAL — récompense, bandeau Epic et pluie d'icônes compris — puis crédite le
+		-- bonus de test. L'event n'est même pas branché quand le cheat est éteint, il
+		-- est donc totalement inerte en production.
+		if questCheatKey then
+			Events.QuestCheatEvent.OnServerEvent:Connect(function(player)
+				local _player = player
+				local state = states[_player]
+				if not state then
+					return nil
+				end
+				-- ▼ ReadonlyArray.find ▼
+				local _callback = function(quest)
+					local _resetAt = state.resetAt
+					local _id = quest.id
+					return _resetAt[_id] == nil
+				end
+				local _result
+				for _i, _v in QUESTS do
+					if _callback(_v, _i - 1, QUESTS) == true then
+						_result = _v
+						break
+					end
+				end
+				-- ▲ ReadonlyArray.find ▲
+				local available = _result
+				-- Tout en cooldown : on garde au moins la célébration.
+				if available then
+					complete(player, state, available)
+				else
+					Events.QuestCompletedEvent:FireClient(player)
+				end
+				PlayerDataService:add(player, "ScrollTokens", questCheatTokens)
+			end)
+		end
 	end,
 	report = function(self, player, metric, amount)
 		if amount <= 0 then

@@ -29,6 +29,13 @@ local FADE_OUT_TI = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirect
 local FINISH_HOLD = 0.2
 local DEFAULT_COLOR = Color3.new(1, 1, 1)
 local CANVAS_NAME = "InformationTextCanvasGroup"
+-- Le conteneur des bandeaux est un FRÈRE des popups sous InGameUI, qui est en
+-- ZIndexBehavior.Sibling : à ZIndex égal, c'est l'ordre dans l'Explorer qui tranche,
+-- et QuestsPanel (comme les autres popups) passait donc DEVANT le bandeau. Un
+-- message qui explique pourquoi un achat vient d'être refusé doit toujours être
+-- lisible, y compris par-dessus le menu qui l'a déclenché : on le force au-dessus de
+-- tout (le plus haut ZIndex authoré ailleurs est 10, sur RocketLaunch).
+local CANVAS_Z_INDEX = 50
 local TEMPLATE_NAME = "InformationEntry"
 local LABEL_NAME = "InformationText"
 local LEGENDARY_LABEL_NAME = "LegendaryText"
@@ -109,6 +116,7 @@ local function findCanvas()
 	end
 	for _, desc in gui:GetDescendants() do
 		if desc.Name == CANVAS_NAME and desc:IsA("CanvasGroup") then
+			desc.ZIndex = CANVAS_Z_INDEX
 			cachedCanvas = desc
 			return desc
 		end

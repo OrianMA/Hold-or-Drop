@@ -189,6 +189,24 @@ export const QuestService = {
 				tickCooldowns();
 			}
 		});
+
+		// Cheat de dev (touche U) : termine la première quête disponible par le chemin
+		// NORMAL — récompense, bandeau Epic et pluie d'icônes compris — puis crédite le
+		// bonus de test. L'event n'est même pas branché quand le cheat est éteint, il
+		// est donc totalement inerte en production.
+		if (questCheatKey) {
+			Events.QuestCheatEvent.OnServerEvent.Connect((player) => {
+				const state = states.get(player);
+				if (!state) return;
+
+				const available = QUESTS.find((quest) => state.resetAt.get(quest.id) === undefined);
+				// Tout en cooldown : on garde au moins la célébration.
+				if (available) complete(player, state, available);
+				else Events.QuestCompletedEvent.FireClient(player);
+
+				PlayerDataService.add(player, "ScrollTokens", questCheatTokens);
+			});
+		}
 	},
 
 	// SEUL point d'entrée de progression. Alimente toutes les quêtes de la métrique

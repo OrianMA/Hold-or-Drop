@@ -29,6 +29,14 @@ const FINISH_HOLD = 0.2;
 
 const DEFAULT_COLOR = new Color3(1, 1, 1);
 const CANVAS_NAME = "InformationTextCanvasGroup";
+
+// Le conteneur des bandeaux est un FRÈRE des popups sous InGameUI, qui est en
+// ZIndexBehavior.Sibling : à ZIndex égal, c'est l'ordre dans l'Explorer qui tranche,
+// et QuestsPanel (comme les autres popups) passait donc DEVANT le bandeau. Un
+// message qui explique pourquoi un achat vient d'être refusé doit toujours être
+// lisible, y compris par-dessus le menu qui l'a déclenché : on le force au-dessus de
+// tout (le plus haut ZIndex authoré ailleurs est 10, sur RocketLaunch).
+const CANVAS_Z_INDEX = 50;
 const TEMPLATE_NAME = "InformationEntry";
 const LABEL_NAME = "InformationText";
 const LEGENDARY_LABEL_NAME = "LegendaryText";
@@ -108,6 +116,7 @@ function findCanvas(): CanvasGroup | undefined {
 	if (!gui) return undefined;
 	for (const desc of gui.GetDescendants()) {
 		if (desc.Name === CANVAS_NAME && desc.IsA("CanvasGroup")) {
+			desc.ZIndex = CANVAS_Z_INDEX;
 			cachedCanvas = desc;
 			return desc;
 		}

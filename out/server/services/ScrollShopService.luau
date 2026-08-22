@@ -1,7 +1,6 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
-local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local isAtCap = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopConfig").isAtCap
 local _ScrollShopConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ScrollShopConfig")
 local SCROLL_MONEY_BOOST = _ScrollShopConfig.SCROLL_MONEY_BOOST
@@ -38,7 +37,7 @@ local function applyEffect(player, item)
 	end
 	if item.id == "MoneyMultiplier" then
 		if hasMoneyBoost(player) then
-			deny(player, "1.25x Money déjà possédé")
+			deny(player, "Already owned")
 			return false
 		end
 		PlayerDataService:set(player, SCROLL_MONEY_BOOST.attribute, 1)
@@ -54,7 +53,7 @@ local function applyEffect(player, item)
 	-- Les trois derniers sont des +1 niveau de stat, payés en tokens au lieu du cash.
 	local stat = item.id
 	if isAtCap(stat, PlayerProgressionService:getLevel(player, stat)) then
-		deny(player, "Niveau maximum atteint")
+		deny(player, "Max level reached")
 		return false
 	end
 	PlayerProgressionService:addLevel(player, stat, 1)
@@ -70,12 +69,12 @@ local function handlePurchase(player, itemId)
 		return nil
 	end
 	if item.oneShot == true and item.id == "MoneyMultiplier" and hasMoneyBoost(player) then
-		deny(player, "1.25x Money déjà possédé")
+		deny(player, "Already owned")
 		return nil
 	end
 	local balance = PlayerDataService:get(player, "ScrollTokens")
 	if balance < item.price then
-		deny(player, `Pas assez de Scroll Tokens ({FormatNumber(item.price)})`)
+		deny(player, "Not enough tokens")
 		return nil
 	end
 	-- L'effet passe AVANT le débit : un refus tardif (stat au plafond) ne doit jamais
