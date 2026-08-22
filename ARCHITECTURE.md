@@ -623,12 +623,16 @@ second time on screen and fire an end-game event unrelated to it.
   includes the HUD's own `MoneyParent` money display — so `ShopBehavior` also toggles a
   **second `MoneyParent`** (a direct sibling of `ShopMenu` under `InGameUI`, hidden by
   default) in lockstep with the shop: visible while shopping, hidden on every close path.
-  > That second `MoneyParent` is **currently absent from the GUI** — no balance is shown
-  > while the shop is open. `ShopBehavior` resolves it with `FindFirstChild` and warns
-  > instead of `WaitForChild`: the client inits run **sequentially** in `main.client.ts`,
-  > so an infinite yield here silently kills every behavior registered after the shop
-  > (rebirth menu, daily rewards, HUD progression…). Re-authoring the frame in Studio
-  > brings the readout back with no code change.
+  > `ShopBehavior` resolves it with `FindFirstChild` and warns instead of `WaitForChild`:
+  > the client inits run **sequentially** in `main.client.ts`, so an infinite yield here
+  > silently kills every behavior registered after the shop (rebirth menu, daily rewards,
+  > HUD progression…). If the frame is missing, only the balance readout while shopping is
+  > lost — re-authoring it in Studio brings it back with no code change.
+  > Le miroir est un duplicata complet du `MoneyParent` du HUD, **`PlusButton` compris** :
+  > `ShopMoneyBuyBehavior` branche donc les DEUX "+" sur la même ouverture (§6.15), sinon
+  > celui du miroir serait un bouton mort. Là aussi la résolution est en `FindFirstChild`.
+  > `MoneyText` n'a besoin de rien : `MoneyDisplay` écrit dans **tous** les labels de ce nom
+  > sous `InGameUI`.
   Four buttons map to the upgrades:
   `BButtonMoney` = BaseCash +1, `BX5ButtonMoney` = BaseCash +5, `ARocketSpeed` = RocketSpeed +1,
   `DSafety` = Resistance +1 (the Studio frame is still named `DSafety`; only the code stat and

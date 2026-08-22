@@ -4,7 +4,10 @@ import { MONEY_PRODUCTS } from "shared/MoneyProducts";
 
 // Opens / closes the "buy money with Robux" popup (InGameUI/ShopMoneyBuy) and
 // wires its 9 product buttons to MarketplaceService developer-product prompts.
-//   • Opened by the HUD's MoneyParent/PlusButton/TextButton.
+//   • Opened by MoneyParent/PlusButton/TextButton — celui du HUD, ET celui du
+//     miroir InGameUI/MoneyParent affiché pendant le shop (§6.8) quand il existe :
+//     les deux "+" sont le même bouton pour le joueur, il serait mort dans le miroir
+//     s'il n'était pas branché lui aussi.
 //   • Closed by ShopMoneyBuy/Header/CloseButtonFrame/CloseButton.
 //   • Body/MoneyElement{n}/Button prompts MONEY_PRODUCTS[n-1].productId; the server
 //     (MoneyProductService) credits the money on a successful receipt.
@@ -24,12 +27,20 @@ export function init(): void {
 		.WaitForChild("CloseButton") as GuiButton;
 	const body = popup.WaitForChild("Body");
 
-	// The opener lives inside the HUD itself.
+	// L'ouvreur du HUD existe toujours : lui seul est attendu (WaitForChild).
 	const openButton = inGameUI
 		.WaitForChild("HUD")
 		.WaitForChild("MoneyParent")
 		.WaitForChild("PlusButton")
 		.WaitForChild("TextButton") as GuiButton;
+
+	// Le miroir affiché pendant le shop est OPTIONNEL (§6.8) : on le résout en
+	// FindFirstChild, jamais en WaitForChild — les init clients sont séquentiels, un
+	// yield infini ici tuerait tous les comportements enregistrés après celui-ci.
+	const mirrorButton = inGameUI
+		.FindFirstChild("MoneyParent")
+		?.FindFirstChild("PlusButton")
+		?.FindFirstChild("TextButton");
 
 	popup.Visible = false; // start hidden regardless of the Studio default
 
@@ -44,6 +55,7 @@ export function init(): void {
 	};
 
 	openButton.Activated.Connect(open);
+	if (mirrorButton?.IsA("GuiButton")) mirrorButton.Activated.Connect(open);
 	closeButton.Activated.Connect(close);
 
 	// Wire each product button to prompt its developer product. Order matches the
