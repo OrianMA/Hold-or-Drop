@@ -39,6 +39,11 @@ const INTERVAL = megaRocketInterval ?? MEGA_ROCKET_INTERVAL;
 
 // Instant (os.clock) du prochain événement.
 let nextEventAt = 0;
+// Tant que cet instant n'est pas passé, la boucle laisse « MEGA ROCKET ! » sur le
+// panneau au lieu d'y réécrire le compte à rebours. C'est ce qui permet de déclencher
+// l'événement DEPUIS L'EXTÉRIEUR de la boucle (achat ScrollToken, §6.27) sans que la
+// seconde suivante n'efface le message.
+let panelHoldUntil = 0;
 
 function findPanelLabel(): TextLabel | undefined {
 	const environment = Workspace.FindFirstChild("Environment");
@@ -56,11 +61,13 @@ function setPanelText(text: string): void {
 }
 
 // Top de l'événement : tout le monde gagne sa Mega Rocket.
-function fireEvent(): void {
+// `announce` remplace le bandeau par défaut — un déclenchement acheté annonce QUI l'a
+// payé plutôt que le message d'horloge.
+function fireEvent(announce = MEGA_ROCKET_ANNOUNCE): void {
 	for (const player of Players.GetPlayers()) player.SetAttribute(MEGA_ROCKET_ATTR, true);
 
 	// Bandeau légendaire pour tout le serveur (§6.20).
-	Events.InformationTextEvent.FireAllClients(MEGA_ROCKET_ANNOUNCE, { rarity: "Legendary" });
+	Events.InformationTextEvent.FireAllClients(announce, { rarity: "Legendary" });
 
 	// Fusées au sol → elles deviennent mega immédiatement. Un rig qui n'est pas sur
 	// son pad (vol en cours, explosion, retour "Go Home" en attente) n'est JAMAIS
@@ -92,6 +99,10 @@ export const MegaRocketService = {
 			while (true) {
 				task.wait(1);
 
+				// Un déclenchement acheté vient d'écrire « MEGA ROCKET ! » : on ne touche
+				// pas au panneau tant que son temps d'affichage n'est pas écoulé.
+				if (os.clock() < panelHoldUntil) continue;
+
 				if (os.clock() >= nextEventAt) {
 					// `nextEventAt` est absolu : l'affichage de « MEGA ROCKET ! » ci-dessous
 					// ne décale donc pas la cadence de l'événement suivant.
@@ -105,6 +116,16 @@ export const MegaRocketService = {
 				setPanelText(megaRocketPanelText(nextEventAt - os.clock()));
 			}
 		});
+	},
+
+	// Déclenche l'événement TOUT DE SUITE, hors horloge — utilisé par l'achat en
+	// ScrollToken (§6.27). La cadence normale REPART de maintenant : sans ça, un achat
+	// juste avant l'échéance donnerait deux Mega Rockets à quelques secondes d'écart.
+	fireNow(announce: string): void {
+		nextEventAt = os.clock() + INTERVAL;
+		fireEvent(announce);
+		setPanelText(MEGA_ROCKET_PANEL_FIRED);
+		panelHoldUntil = os.clock() + FIRED_TEXT_DURATION;
 	},
 
 	// La Mega Rocket vient d'être utilisée (le vol qui la portait est terminé) :

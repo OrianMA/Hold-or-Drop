@@ -8,24 +8,32 @@ local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS
 local _QuestConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "QuestConfig")
 local QUESTS = _QuestConfig.QUESTS
 local QUEST_AVAILABLE_LABEL = _QuestConfig.QUEST_AVAILABLE_LABEL
-local SCROLL_TOKENS_ATTR = _QuestConfig.SCROLL_TOKENS_ATTR
 local formatQuestTimer = _QuestConfig.formatQuestTimer
 local questProgressAttr = _QuestConfig.questProgressAttr
 local questResetAttr = _QuestConfig.questResetAttr
 local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGameUIController").InGameUIController
 local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
 local CriticalRain = TS.import(script, script.Parent.Parent, "ui", "CriticalRain").CriticalRain
+local QuestsBodyAnimation = TS.import(script, script.Parent.Parent, "ui", "QuestsBodyAnimation").QuestsBodyAnimation
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 -- Ouvre / ferme le panneau des quêtes (InGameUI/QuestsPanel) et le peint.
 --   • HUD/ButtonsFrame/QuestsFrame/ImageButton ouvre
 --   • Header/CloseButtonFrame/CloseButton ferme
 -- Ouvrir masque le HUD persistant (même patron que ShopBehavior / DailyRewards).
 --
--- Tout ce qui s'affiche vient d'attributs répliqués — ScrollTokens pour le compteur
--- du header, Q_<id> / QR_<id> pour chaque ligne (voir server/services/QuestService).
--- Aucun aller-retour réseau : le client ne fait que lire et peindre.
+-- Le panneau a DEUX bodies exclusifs, choisis par les onglets de
+-- QuestsPanel/ButtonsFrame :
+--   • QuestsFrame/TextButton → QuestsBody (les 18 quêtes, peintes ici)
+--   • ShopFrame/TextButton   → BuyRewardBody (la boutique, ScrollShopController)
+-- Chaque affichage rejoue la cascade du body (QuestsBodyAnimation), ouverture du
+-- panneau comprise : changer d'onglet doit se lire comme un changement d'écran.
 --
--- Une ligne = une Frame de Body/ScrollingFrame, nommée dans shared/QuestConfig :
+-- Tout ce qui s'affiche vient d'attributs répliqués — ScrollTokens pour le compteur
+-- du header (ScrollTokenDisplay), Q_<id> / QR_<id> pour chaque ligne (voir
+-- server/services/QuestService). Aucun aller-retour réseau : le client ne fait que
+-- lire et peindre.
+--
+-- Une ligne = une Frame de QuestsBody/ScrollingFrame, nommée dans shared/QuestConfig :
 --   QuestTitletext                        titre de la quête
 --   TimeLeftText                          "Enable" ou "Reset in : 4m 32s"
 --   ProgressionFrame/CurrentProgressionFrame   barre (taille X en scale, 0..1)
@@ -44,13 +52,6 @@ local MIN_VISIBLE_PROGRESS = 0.013
 -- Cadence de rafraîchissement des comptes à rebours, uniquement pendant que le
 -- panneau est ouvert (fermé, ce code ne coûte rien).
 local TIMER_TICK = 1
-local function scrollTokens()
-	local _condition = (player:GetAttribute(SCROLL_TOKENS_ATTR))
-	if _condition == nil then
-		_condition = 0
-	end
-	return _condition
-end
 local function questProgress(quest)
 	local _condition = (player:GetAttribute(questProgressAttr(quest.id)))
 	if _condition == nil then
@@ -166,8 +167,12 @@ local function init()
 	local popup = inGameUI:WaitForChild(POPUP_NAME)
 	local header = popup:WaitForChild("Header")
 	local closeButton = header:WaitForChild("CloseButtonFrame"):WaitForChild("CloseButton")
-	local tokenText = header:WaitForChild("ScrollTokenCount"):WaitForChild("ScrollCountText")
-	local scrollingFrame = popup:WaitForChild("Body"):WaitForChild("ScrollingFrame")
+	local questsBody = popup:WaitForChild("QuestsBody")
+	local buyRewardBody = popup:WaitForChild("BuyRewardBody")
+	local scrollingFrame = questsBody:WaitForChild("ScrollingFrame")
+	local tabs = popup:WaitForChild("ButtonsFrame")
+	local questsTab = tabs:WaitForChild("QuestsFrame"):WaitForChild("TextButton")
+	local shopTab = tabs:WaitForChild("ShopFrame"):WaitForChild("TextButton")
 	local hud = inGameUI:WaitForChild("HUD")
 	local openButton = hud:WaitForChild("ButtonsFrame"):WaitForChild("QuestsFrame"):WaitForChild("ImageButton")
 	popup.Visible = false
@@ -178,21 +183,36 @@ local function init()
 			table.insert(rows, row)
 		end
 	end
-	local renderTokens = function()
-		tokenText.Text = FormatNumber(scrollTokens())
-	end
 	local renderAll = function()
-		renderTokens()
 		for _, row in rows do
 			renderRow(row)
 		end
 	end
 	local timerLoop
 	local sinceTick = 0
+	-- Affiche UN body et rejoue sa cascade. L'autre est masqué et sa propre cascade
+	-- coupée, sinon il resterait figé à demi transparent pour son prochain affichage.
+	local showBody = function(body, other)
+		if body == questsBody then
+			renderAll()
+		end
+		QuestsBodyAnimation:stop(other)
+		other.Visible = false
+		body.Visible = true
+		QuestsBodyAnimation:play(body)
+	end
+	local showQuests = function()
+		return showBody(questsBody, buyRewardBody)
+	end
+	local showShop = function()
+		return showBody(buyRewardBody, questsBody)
+	end
 	local open = function()
-		renderAll()
 		popup.Visible = true
 		InGameUIController:disable()
+		-- Le panneau s'ouvre TOUJOURS sur les quêtes, quel que soit l'onglet quitté la
+		-- fois d'avant : c'est le contenu que le bouton du HUD promet.
+		showQuests()
 		local _result = timerLoop
 		if _result ~= nil then
 			_result:Disconnect()
@@ -204,6 +224,10 @@ local function init()
 				return nil
 			end
 			sinceTick = 0
+			-- Rien à rafraîchir quand la boutique occupe l'écran.
+			if not questsBody.Visible then
+				return nil
+			end
 			for _, row in rows do
 				renderTimer(row)
 			end
@@ -220,6 +244,8 @@ local function init()
 	end
 	openButton.Activated:Connect(open)
 	closeButton.Activated:Connect(close)
+	questsTab.Activated:Connect(showQuests)
+	shopTab.Activated:Connect(showShop)
 	-- Le serveur pousse la progression et les cooldowns par attributs : on ne repeint
 	-- que la ligne concernée, et seulement si le panneau est à l'écran (fermé, l'état
 	-- est de toute façon relu à l'ouverture).
@@ -232,9 +258,6 @@ local function init()
 			end)
 		end
 	end
-	-- Le compteur de tokens, lui, se met à jour même panneau fermé : il est bon marché
-	-- et évite tout décalage à l'ouverture suivante.
-	player:GetAttributeChangedSignal(SCROLL_TOKENS_ATTR):Connect(renderTokens)
 	-- Quête accomplie : le serveur a déjà versé la récompense et publié l'état, cet
 	-- event ne sert qu'à la célébration.
 	CriticalRain:preload(COMPLETE_RAIN_IMAGE)

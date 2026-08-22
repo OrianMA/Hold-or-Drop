@@ -25,6 +25,8 @@ local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMe
 local initRebirthController = TS.import(script, script.Parent, "behaviors", "RebirthMenuController").init
 local initDailyRewards = TS.import(script, script.Parent, "behaviors", "DailyRewardsBehavior").init
 local initQuests = TS.import(script, script.Parent, "behaviors", "QuestsBehavior").init
+local initScrollShop = TS.import(script, script.Parent, "behaviors", "ScrollShopController").init
+local ScrollTokenDisplay = TS.import(script, script.Parent, "ui", "ScrollTokenDisplay").ScrollTokenDisplay
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
@@ -34,6 +36,7 @@ local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse"
 local initMegaRocketVisuals = TS.import(script, script.Parent, "ui", "MegaRocketVisuals").init
 local initMegaRocketCheat = TS.import(script, script.Parent, "MegaRocketCheat").init
 local initDailyRewardCheat = TS.import(script, script.Parent, "DailyRewardCheat").init
+local initQuestCheat = TS.import(script, script.Parent, "QuestCheat").init
 local initTutorial = TS.import(script, script.Parent, "tutorial", "TutorialController").init
 -- Keep InGameUI (the persistent HUD + popups) alive across respawns. By default a
 -- ScreenGui resets on spawn, so dying would wipe PlayerGui and invalidate the
@@ -65,7 +68,9 @@ initMoneyBoost()
 initRebirthMenu()
 initRebirthController()
 initDailyRewards()
+ScrollTokenDisplay:init()
 initQuests()
+initScrollShop()
 initHudProgression()
 initCostTextRotator()
 MusicController:init()
@@ -75,4 +80,5 @@ initNeonPipePulse()
 initMegaRocketVisuals()
 initMegaRocketCheat()
 initDailyRewardCheat()
+initQuestCheat()
 initTutorial()

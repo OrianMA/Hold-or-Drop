@@ -9,6 +9,7 @@ local STATS = _ShopConfig.STATS
 local rebirthMult = _ShopConfig.rebirthMult
 local moneyMult = _ShopConfig.moneyMult
 local effectiveResistance = _ShopConfig.effectiveResistance
+local SCROLL_MONEY_BOOST = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ScrollShopConfig").SCROLL_MONEY_BOOST
 -- Per-player progression. The LEVELS are the persisted source of truth; the
 -- effective values (BaseCash, RocketSpeed, Resistance) are *derived* from
 -- the levels via shared/ShopConfig and mirrored to attributes so the owning
@@ -108,14 +109,21 @@ function deriveValues(player)
 	end
 	local tierMult = _condition_2
 	local inCommunity = player:GetAttribute(IN_COMMUNITY_ATTR) == true
-	local mMult = moneyMult(multRebirth, tierMult, inCommunity)
-	player:SetAttribute(MONEY_MULT_ATTR, mMult)
-	player:SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult))
-	local _condition_3 = (player:GetAttribute(STATS.Resistance.levelAttribute))
+	-- Boost ×1.25 acheté en ScrollToken : persisté par PlayerDataService (0/1), donc
+	-- déjà posé en attribut quand on arrive ici (PlayerData init AVANT Progression).
+	local _condition_3 = (player:GetAttribute(SCROLL_MONEY_BOOST.attribute))
 	if _condition_3 == nil then
 		_condition_3 = 0
 	end
-	local resistanceLevel = _condition_3
+	local hasScrollBoost = _condition_3 > 0
+	local mMult = moneyMult(multRebirth, tierMult, inCommunity, hasScrollBoost)
+	player:SetAttribute(MONEY_MULT_ATTR, mMult)
+	player:SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult))
+	local _condition_4 = (player:GetAttribute(STATS.Resistance.levelAttribute))
+	if _condition_4 == nil then
+		_condition_4 = 0
+	end
+	local resistanceLevel = _condition_4
 	local rawResistance = STATS.Resistance.valueFor(resistanceLevel)
 	local hasPass = player:GetAttribute(HAS_RESISTANCE_PASS_ATTR) == true
 	player:SetAttribute(STATS.Resistance.valueAttribute, effectiveResistance(rawResistance, hasPass))

@@ -45,6 +45,11 @@ end
 local INTERVAL = _condition
 -- Instant (os.clock) du prochain événement.
 local nextEventAt = 0
+-- Tant que cet instant n'est pas passé, la boucle laisse « MEGA ROCKET ! » sur le
+-- panneau au lieu d'y réécrire le compte à rebours. C'est ce qui permet de déclencher
+-- l'événement DEPUIS L'EXTÉRIEUR de la boucle (achat ScrollToken, §6.27) sans que la
+-- seconde suivante n'efface le message.
+local panelHoldUntil = 0
 local function findPanelLabel()
 	local environment = Workspace:FindFirstChild("Environment")
 	local _panel = environment
@@ -73,12 +78,17 @@ local function setPanelText(text)
 	end
 end
 -- Top de l'événement : tout le monde gagne sa Mega Rocket.
-local function fireEvent()
+-- `announce` remplace le bandeau par défaut — un déclenchement acheté annonce QUI l'a
+-- payé plutôt que le message d'horloge.
+local function fireEvent(announce)
+	if announce == nil then
+		announce = MEGA_ROCKET_ANNOUNCE
+	end
 	for _, player in Players:GetPlayers() do
 		player:SetAttribute(MEGA_ROCKET_ATTR, true)
 	end
 	-- Bandeau légendaire pour tout le serveur (§6.20).
-	Events.InformationTextEvent:FireAllClients(MEGA_ROCKET_ANNOUNCE, {
+	Events.InformationTextEvent:FireAllClients(announce, {
 		rarity = "Legendary",
 	})
 	-- Fusées au sol → elles deviennent mega immédiatement. Un rig qui n'est pas sur
@@ -111,6 +121,11 @@ local MegaRocketService = {
 		task.spawn(function()
 			while true do
 				task.wait(1)
+				-- Un déclenchement acheté vient d'écrire « MEGA ROCKET ! » : on ne touche
+				-- pas au panneau tant que son temps d'affichage n'est pas écoulé.
+				if os.clock() < panelHoldUntil then
+					continue
+				end
 				if os.clock() >= nextEventAt then
 					-- `nextEventAt` est absolu : l'affichage de « MEGA ROCKET ! » ci-dessous
 					-- ne décale donc pas la cadence de l'événement suivant.
@@ -123,6 +138,12 @@ local MegaRocketService = {
 				setPanelText(megaRocketPanelText(nextEventAt - os.clock()))
 			end
 		end)
+	end,
+	fireNow = function(self, announce)
+		nextEventAt = os.clock() + INTERVAL
+		fireEvent(announce)
+		setPanelText(MEGA_ROCKET_PANEL_FIRED)
+		panelHoldUntil = os.clock() + FIRED_TEXT_DURATION
 	end,
 	consume = function(self, player)
 		player:SetAttribute(MEGA_ROCKET_ATTR, false)

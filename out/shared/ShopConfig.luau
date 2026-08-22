@@ -2,6 +2,7 @@
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local FormatNumber = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatNumber
 local resistanceRiskParams = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ResistanceCurve").resistanceRiskParams
+local SCROLL_MONEY_BOOST = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ScrollShopConfig").SCROLL_MONEY_BOOST
 local _ShopBalance = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ShopBalance")
 local BASE_CASH = _ShopBalance.BASE_CASH
 local COMMUNITY = _ShopBalance.COMMUNITY
@@ -151,10 +152,17 @@ end
 -- Conséquence voulue : un pass ×2 reste ×2 quel que soit le niveau de rebirth. Avec un
 -- modèle purement additif, un MultRebirth de 4096 écraserait les paliers MONEY_TIERS
 -- (un pass ×2 n'ajouterait plus que +1 sur 4096) et les rendrait invendables.
-local function moneyMult(multRebirth, moneyTierMult, inCommunity)
+local function moneyMult(multRebirth, moneyTierMult, inCommunity, hasScrollBoost)
+	if hasScrollBoost == nil then
+		hasScrollBoost = false
+	end
 	local communityBonus = if inCommunity then COMMUNITY.mult - 1 else 0
 	local tierBonus = moneyTierMult - 1
-	return multRebirth * (1 + communityBonus + tierBonus)
+	-- Le ×1.25 acheté en ScrollToken (§6.27) rejoint les autres boosts DANS le facteur
+	-- additif, pour la même raison qu'eux : multiplié par-dessus un MultRebirth énorme
+	-- il resterait un vrai +25 %, mais additionné il ne peut pas écraser les game-passes.
+	local scrollBonus = if hasScrollBoost then SCROLL_MONEY_BOOST.mult - 1 else 0
+	return multRebirth * (1 + communityBonus + tierBonus + scrollBonus)
 end
 -- Effective resistance used by the risk loop: shop Resistance + the resistance
 -- game pass (flat bonus levels), capped at the max level.

@@ -1,6 +1,7 @@
 import { DataStoreService, Players } from "@rbxts/services";
 import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
 import { ShopStat, STATS, rebirthMult, moneyMult, effectiveResistance } from "shared/ShopConfig";
+import { SCROLL_MONEY_BOOST } from "shared/ScrollShopConfig";
 
 // Per-player progression. The LEVELS are the persisted source of truth; the
 // effective values (BaseCash, RocketSpeed, Resistance) are *derived* from
@@ -93,8 +94,11 @@ function deriveValues(player: Player): void {
 	const multRebirth = (player.GetAttribute(MULT_REBIRTH_ATTR) as number | undefined) ?? rebirthMult(0);
 	const tierMult = (player.GetAttribute(MONEY_TIER_MULT_ATTR) as number | undefined) ?? 1;
 	const inCommunity = player.GetAttribute(IN_COMMUNITY_ATTR) === true;
+	// Boost ×1.25 acheté en ScrollToken : persisté par PlayerDataService (0/1), donc
+	// déjà posé en attribut quand on arrive ici (PlayerData init AVANT Progression).
+	const hasScrollBoost = ((player.GetAttribute(SCROLL_MONEY_BOOST.attribute) as number | undefined) ?? 0) > 0;
 
-	const mMult = moneyMult(multRebirth, tierMult, inCommunity);
+	const mMult = moneyMult(multRebirth, tierMult, inCommunity, hasScrollBoost);
 	player.SetAttribute(MONEY_MULT_ATTR, mMult);
 	player.SetAttribute(EFFECTIVE_BASE_CASH_ATTR, math.floor(rawBase * mMult));
 

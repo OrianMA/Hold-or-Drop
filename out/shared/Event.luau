@@ -131,6 +131,20 @@ do
 	-- réplication, et une quête rechargée EN COOLDOWN déclencherait une fausse pluie.
 	local QuestCompletedEvent = DefineEvent("QuestCompletedEvent", script)
 	_container.QuestCompletedEvent = QuestCompletedEvent
+	-- Boutique ScrollToken (§6.27) — client → server. Arg: itemId (ScrollShopItemId).
+	-- Le serveur revalide le prix, le solde et l'unicité : le client ne décide rien.
+	local ScrollShopPurchaseEvent = DefineEvent("ScrollShopPurchaseEvent", script)
+	_container.ScrollShopPurchaseEvent = ScrollShopPurchaseEvent
+	-- Boutique ScrollToken — server → client. Args: (itemId, price). Achat confirmé :
+	-- les tokens sont DÉJÀ débités et l'effet appliqué, le client joue l'animation de
+	-- dépense + le bandeau de l'objet. Un refus passe par InformationTextEvent.
+	local ScrollShopPurchasedEvent = DefineEvent("ScrollShopPurchasedEvent", script)
+	_container.ScrollShopPurchasedEvent = ScrollShopPurchasedEvent
+	-- Cheat de dev — client → server (no args). Touche U : termine une quête
+	-- disponible (récompense + célébration) et crédite QUEST_CHEAT_TOKENS. Le serveur
+	-- n'écoute que si CheatConfig.questCheatKey (§9).
+	local QuestCheatEvent = DefineEvent("QuestCheatEvent", script)
+	_container.QuestCheatEvent = QuestCheatEvent
 	-- Tutorial — client → server. Arg: stepId (string). Le client signale que la
 	-- condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
 	-- correspond pas au step courant (anti double-avance / event en retard).

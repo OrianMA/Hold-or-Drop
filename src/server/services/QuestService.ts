@@ -1,5 +1,5 @@
 import { DataStoreService, Players, Workspace } from "@rbxts/services";
-import { resetData as RESET_DATA_CHEAT } from "server/modules/CheatConfig";
+import { resetData as RESET_DATA_CHEAT, questCheatKey, questCheatTokens } from "server/modules/CheatConfig";
 import { Events } from "shared/Event";
 import { QUESTS, QUEST_RESET_SECONDS, Quest, QuestMetric, questProgressAttr, questResetAttr } from "shared/QuestConfig";
 import { PlayerDataService } from "./PlayerDataService";

@@ -11,6 +11,7 @@ import { ShopService } from "./ShopService";
 import { RebirthService } from "./RebirthService";
 import { DailyRewardService } from "./DailyRewardService";
 import { QuestService } from "./QuestService";
+import { ScrollShopService } from "./ScrollShopService";
 import { LeaderboardService } from "./LeaderboardService";
 import { AnalyticsService } from "./AnalyticsService";
 import { TutorialService } from "server/tutorial/TutorialService";
@@ -65,6 +66,9 @@ export const services: Array<{ init(): void }> = [
 	// Événement Mega Rocket (toutes les 6 min). Après RoomService : au top de
 	// l'événement il repose les fusées au sol, il lui faut donc les rooms construites.
 	MegaRocketService,
+	// Boutique ScrollToken (§6.27) : dépense les tokens des quêtes. Après
+	// MegaRocketService (elle appelle fireNow) et PlayerData/PlayerProgression.
+	ScrollShopService,
 	{
 		// Re-enable the button if a player disconnects mid-game
 		init() {

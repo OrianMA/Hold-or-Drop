@@ -120,6 +120,20 @@ export namespace Events {
 	// réplication, et une quête rechargée EN COOLDOWN déclencherait une fausse pluie.
 	export const QuestCompletedEvent = DefineEvent("QuestCompletedEvent", script);
 
+	// Boutique ScrollToken (§6.27) — client → server. Arg: itemId (ScrollShopItemId).
+	// Le serveur revalide le prix, le solde et l'unicité : le client ne décide rien.
+	export const ScrollShopPurchaseEvent = DefineEvent("ScrollShopPurchaseEvent", script);
+
+	// Boutique ScrollToken — server → client. Args: (itemId, price). Achat confirmé :
+	// les tokens sont DÉJÀ débités et l'effet appliqué, le client joue l'animation de
+	// dépense + le bandeau de l'objet. Un refus passe par InformationTextEvent.
+	export const ScrollShopPurchasedEvent = DefineEvent("ScrollShopPurchasedEvent", script);
+
+	// Cheat de dev — client → server (no args). Touche U : termine une quête
+	// disponible (récompense + célébration) et crédite QUEST_CHEAT_TOKENS. Le serveur
+	// n'écoute que si CheatConfig.questCheatKey (§9).
+	export const QuestCheatEvent = DefineEvent("QuestCheatEvent", script);
+
 	// Tutorial — client → server. Arg: stepId (string). Le client signale que la
 	// condition du step courant est remplie ; le serveur IGNORE l'event si l'id ne
 	// correspond pas au step courant (anti double-avance / event en retard).

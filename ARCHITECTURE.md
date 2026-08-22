@@ -51,6 +51,7 @@ src/
 │   │   ├── RoomService… (rooms/) PlayerDataService, PlayerProgressionService,
 │   │   ├── ShopService, MoneyProductService, ButtonTriggerService, ButtonSessionService, CharacterService, UiService
 │   │   ├── QuestService          # quêtes + ScrollToken (§6.26)
+│   │   ├── ScrollShopService     # dépense des ScrollToken (§6.27)
 │   ├── rooms/
 │   │   ├── Room.ts          # One room wrapper (parts, ownership, billboard)
 │   │   └── RoomService.ts   # player ↔ room assignment
@@ -71,7 +72,8 @@ src/
 │   ├── main.client.ts       # Entry: wires up all client behaviors
 │   ├── behaviors/           # ButtonMenu / RocketLaunch / EndGameButton / LossReward / Shop behaviors
 │   │   └── ShopBehavior (open/close), ShopItemsController (4 upgrade buttons), ShopMoneyBuyBehavior (Robux money popup)
-│   │   └── QuestsBehavior        # panneau des quêtes (§6.26)
+│   │   └── QuestsBehavior        # panneau des quêtes, 2 onglets (§6.26)
+│   │   └── ScrollShopController  # boutique ScrollToken (§6.27)
 │   ├── rooms/RoomPromptController.ts  # Per-client ProximityPrompt visibility
 │   ├── audio/MusicController.ts  # BGM playlist + high-altitude ascent track
 │   └── ui/                  # HUD + effects (MoneyDisplay, InGameUIController, MoneyBurst, etc.)
@@ -142,7 +144,9 @@ on each. **Order is load-bearing** and documented inline in `index.ts`:
 15. `EndGameButtonModule.init()` — wire the payout-finished handshake
 16. `MegaRocketService` — horloge de l'événement Mega Rocket (§6.24). After `RoomService` — it
     re-places the on-pad rockets the moment the event fires
-17. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
+17. `ScrollShopService` — dépense des ScrollToken (§6.27). Après `MegaRocketService`
+    (il appelle `fireNow`) et PlayerData / PlayerProgression (débit + effets)
+18. `PlayerRemoving` → `ButtonSessionService.cleanup` — release session on disconnect
 
 The client (`main.client.ts`) initializes its behaviors/controllers eagerly; most only act
 once a server event fires.
@@ -488,6 +492,7 @@ second time on screen and fire an end-game event unrelated to it.
 - Both follow the same pattern: **DataStore-backed, mirrored to player Attributes** so the
   owning client can read state directly via replication.
 - `PlayerDataService` → `Money`, **`ScrollTokens`** (la monnaie des quêtes, §6.26),
+  **`ScrollMoneyBoost`** (0/1 — le ×1.25 argent permanent acheté en tokens, §6.27),
   **`Playtime`** (total seconds played, accumulated across
   sessions) **and the two daily-reward keys `DailyStreak` / `DailyLastClaim`** (§6.25) — all
   default 0 for existing saves, no version bump (store `PlayerData_v1`).
@@ -579,8 +584,8 @@ second time on screen and fire an end-game event unrelated to it.
   the `CurrentProgressionFrame` is hidden (`Visible = false`) instead of showing an unreadable
   sliver, and at/above it the fill is clamped to that minimum width.
   The bar has **two display states**, swapped by `setReady(money >= cost)`:
-  *filling* shows `RebirthImage` + `RebirthLevelText` (`"Rebirth {R}"`, refreshed on the
-  `Rebirths` attribute) + `BackgroundFrame` (`MoneyNeededText`); *ready* hides those three
+  *filling* shows `RebirthFrame` (`RebirthImage` + `RebirthLevelText` — `"Rebirth {R}"`,
+  refreshed on the `Rebirths` attribute) + `BackgroundFrame` (`MoneyNeededText`); *ready* hides both
   and shows `LevelUpText` ("Click to rebirth") plus `CurrentProgressionFrame/RebirthButton`,
   which at 100% spans the whole bar. `LevelUpText` gets a golden call-to-action animation —
   its authored `GoldGradient` sweeps `Offset` −1 → 1 on a loop while a reversing Sine tween
@@ -1535,7 +1540,7 @@ mesure que le joueur progresse.
   `HUD/ButtonsFrame/QuestsFrame/ImageButton`, fermée par `Header/CloseButtonFrame/CloseButton` ;
   l'ouverture masque le HUD (`InGameUIController.disable`). Ce n'est **pas** un `PopupType`
   (§6.5, réservé au flow gameplay du bouton). Le header affiche le solde
-  (`Header/ScrollTokenCount/ScrollCountText`, tenu à jour même popup fermé). Chaque ligne est
+  (`Header/ScrollTokenCount/ScrollCountText`, rendu par `ScrollTokenDisplay`). Chaque ligne est
   une Frame de `Body/ScrollingFrame` **nommée dans `QuestConfig`** (`B*` easy, `C*` mid,
   `D*` hard, `E*` insane, `F*` impossible, `H*` ???) contenant `QuestTitletext`,
   `TimeLeftText`, `ProgressionFrame/CurrentProgressionFrame` (barre, taille X en scale 0..1,
@@ -1543,7 +1548,67 @@ mesure que le joueur progresse.
   `Rewardtext`. Les lignes sont résolues en `FindFirstChild` (jamais `WaitForChild`) : une
   Frame manquante coûte une ligne, pas le blocage de tous les init clients suivants. Le
   repaint est piloté par les attributs (et n'a lieu que popup ouvert) ; seul le compte à
-  rebours tourne sur un Heartbeat throttlé à 1 s, uniquement tant que le popup est affiché.
+  rebours tourne sur un Heartbeat throttlé à 1 s, uniquement tant que le popup est affiché
+  **et que l'onglet quêtes est celui à l'écran**.
+- **Deux onglets, deux bodies exclusifs** (`QuestsPanel/ButtonsFrame`) :
+  `QuestsFrame/TextButton` → `QuestsBody` (les quêtes), `ShopFrame/TextButton` →
+  `BuyRewardBody` (la boutique, §6.27). Le panneau s'ouvre **toujours** sur les quêtes, quel
+  que soit l'onglet quitté la fois d'avant — c'est ce que promet le bouton du HUD.
+- **Cascade d'affichage** (`client/ui/QuestsBodyAnimation.ts`) — rejouée à chaque affichage
+  d'un body, ouverture **et** changement d'onglet, pour qu'une bascule se lise comme un
+  changement d'écran. Les éléments se révèlent l'un après l'autre en **fondu**
+  (`FADE_DURATION` 0.22 s, `STAGGER` 0.035 s), pilotés par une seule boucle `RenderStepped`
+  plutôt que par ~180 tweens. Fondu et pas glissement/échelle : les deux bodies sont sous un
+  layout (`UIListLayout` / `UIGridLayout`) qui possède position **et** taille de ses enfants,
+  donc toute animation de géométrie ferait re-couler la liste à chaque frame ; la transparence
+  n'a aucun effet sur le layout. Les opacités d'origine sont capturées au premier passage puis
+  restaurées (même discipline que `DailyRewardsAnimation`), et l'opacité d'origine sert de
+  **plancher** — un élément authoré à 0.5 ne devient jamais plus opaque que 0.5. L'ordre suivi
+  est l'ordre **alphabétique**, qui est exactement celui des deux layouts (`SortOrder.Name`).
+
+### 6.27 Boutique ScrollToken (`shared/ScrollShopConfig.ts`, `server/services/ScrollShopService.ts`, `client/behaviors/ScrollShopController.ts`)
+
+Le **puits** de la monnaie des quêtes : 6 achats payés en ScrollToken, dans le second onglet
+du panneau (`QuestsPanel/BuyRewardBody`, §6.26). Aucun achat n'invente de mécanique — chacun
+appelle un système existant.
+
+| Objet | Frame Studio | Prix | Effet |
+|-------|--------------|------|-------|
+| Skip rebirth | `ASafeRebirth` | 350K | `PlayerProgressionService.safeRebirth` — +1 rebirth, niveaux ET argent conservés (§6.9) |
+| 1.25x Money | `BMoneyMultiplier` | 250K | **Une seule fois**, permanent : `ScrollMoneyBoost` = 1 → +0.25 dans le facteur de boosts (§6.6) |
+| Mega rocket | `CMegaRocket` | 50K | `MegaRocketService.fireNow` — l'événement part tout de suite **pour tout le serveur** (§6.24) |
+| Rocket speed | `DRocketSpeed` | 15K | +1 niveau `RocketSpeed` |
+| Base cash | `ERocketBaseCash` | 20K | +1 niveau `BaseCash` |
+| Resistance | `FRocketResistance` | 25K | +1 niveau `Resistance` |
+
+- **Le prix vient de la config, jamais de Studio.** `ScrollShopController` réécrit
+  `{Element}/BuyButtonFrame/DisplayElementFrame/TextLabel` au démarrage depuis
+  `SCROLL_SHOP_ITEMS` : changer un prix dans `shared/ScrollShopConfig.ts` le change à l'écran
+  **et** au débit, sans retoucher la GUI.
+- **Achat immédiat, autorité serveur.** Le clic envoie `ScrollShopPurchaseEvent(itemId)` et
+  rien d'autre : le client ne pré-valide rien (il ne connaît ni le solde exact ni les
+  plafonds). Le serveur revalide solde / unicité / plafond de stat, **applique l'effet AVANT
+  de débiter** — un refus tardif (stat au max) ne doit jamais coûter de tokens — puis répond
+  `ScrollShopPurchasedEvent(itemId, price)`. Un refus part en bandeau rouge
+  (`InformationTextEvent`). Un anti-double-clic de 0.4 s côté client n'est qu'un confort ;
+  la vraie garde est le solde revalidé.
+- **Retour visuel** — `ScrollTokenDisplay.spend(price)` : le compteur du header **défile**
+  vers son nouveau solde (proxy `NumberValue` tweené, comme `MoneyDisplay`), prend une claque
+  d'échelle, et un « -350K » monte et s'efface au-dessus. Le label volant est un **clone du
+  compteur** : il hérite police, taille et contour, donc il reste juste si le style bouge en
+  Studio. Il est parenté au **ScreenGui**, pas au compteur : le `UIListLayout` du compteur le
+  rangerait dans sa liste et décalerait l'icône. Puis le bandeau propre à l'objet
+  (`successText`). Le Mega Rocket n'en a pas : il diffuse déjà son bandeau **Legendary** à
+  tout le serveur (« *X* triggered the MEGA ROCKET »), en dire plus ferait doublon.
+- **Le ×1.25 est ADDITIF** (`shared/ShopConfig.moneyMult`), comme la communauté et les
+  game-passes : il ajoute +0.25 au facteur de boosts, lui-même multiplié par `MultRebirth`.
+  Multiplié par-dessus, il resterait un vrai +25 % ; additionné, il ne peut pas écraser les
+  boosts vendus en Robux. Persisté en 0/1 par `PlayerDataService` (`ScrollMoneyBoost`), donc
+  déjà répliqué — `deriveValues` le lit directement.
+- **`MegaRocketService.fireNow(announce)`** déclenche l'événement **hors horloge** et
+  **réarme la cadence normale à partir de maintenant** : sans ça, un achat juste avant
+  l'échéance donnerait deux Mega Rockets à quelques secondes d'intervalle. Un `panelHoldUntil`
+  empêche la boucle du panneau d'effacer « MEGA ROCKET ! » la seconde suivante.
 
 ## 7. Networking — Event Catalog (`shared/Event.ts`)
 
@@ -1573,6 +1638,9 @@ parented to the `Event` ModuleScript. Direction noted per event:
 | `DailyRewardClaimEvent` | C→S | Player clicked the free daily Claim (no args) — server re-derives streak + day (§6.25) |
 | `DailyRewardGrantedEvent` | S→C | Daily reward credited: `amount`, `multiplier` (streak), `bonusMultiplier` (3 on the Robux ×3, else 1) |
 | `QuestCompletedEvent` | S→C | Quest finished (no args) — presentation only: Epic banner "Quest finish" + icon rain (§6.26) |
+| `ScrollShopPurchaseEvent` | C→S | Intention d'achat en ScrollToken: `itemId`. Prix / solde / unicité revalidés serveur (§6.27) |
+| `ScrollShopPurchasedEvent` | S→C | Achat confirmé: `itemId`, `price` — tokens déjà débités, effet déjà appliqué (§6.27) |
+| `QuestCheatEvent` | C→S | Cheat dev (touche U): termine une quête + crédite `questCheatTokens` (§9) |
 | `CommunityJoinedEvent` | C→S | Native join card returned Joined/AlreadyMember — server re-checks (GetGroupsAsync) + grants ×2 |
 | `DailyRewardCheatEvent` | C→S | **Cheat dev only** (touche P) — avance la récompense journalière d'un jour. Le serveur ne l'écoute que si `CheatConfig.dailyRewardCheatKey` (§6.25/§9) |
 | `MegaRocketCheatEvent` | C→S | **Cheat dev only** (touche G) — ramène le compte à rebours Mega Rocket à 3 s. Le serveur ne l'écoute que si `CheatConfig.megaRocketCheatKey` (§6.24/§9) |
@@ -1636,6 +1704,8 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `MEGA_ROCKET_SCALE` | `shared/MegaRocketConfig.ts` | 1.15 | Échelle de la fusée mega (`Model:ScaleTo`) |
 | `TUNING` (quêtes) | `shared/QuestConfig.ts` | 3 métriques × 6 difficultés | Objectifs + récompenses ScrollToken de chaque quête (§6.26) — LE fichier de rééquilibrage |
 | `QUEST_RESET_SECONDS` | `shared/QuestConfig.ts` | 300s | Cooldown avant qu'une quête accomplie ne reparte à zéro |
+| `SCROLL_SHOP_ITEMS` | `shared/ScrollShopConfig.ts` | 350K/250K/50K/15K/20K/25K | Prix des 6 achats en ScrollToken (§6.27) — le prix affiché EST celui-ci |
+| `SCROLL_MONEY_BOOST` | `shared/ScrollShopConfig.ts` | ×1.25 | Boost d'argent permanent acheté en tokens, additif dans `moneyMult` |
 | `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
 | `TOP_N` | `shared/LeaderboardConfig.ts` | 50 | Entries stored/shown per leaderboard |
 | `VISIBLE_ROWS` | `shared/LeaderboardConfig.ts` | 15 | Rows visible before scrolling |
@@ -1665,6 +1735,10 @@ Dev-only flags — **must be `false`/disabled before publishing**:
 - `megaRocketCheatKey` + `megaRocketCheatDelay` — autorise la touche **G** du client à ramener
   le compte à rebours de la Mega Rocket à 3 s (§6.24). Quand le flag est faux, le serveur ne
   branche pas `MegaRocketCheatEvent` : la touche est sans effet même si le client l'envoie.
+- `questCheatKey` + `questCheatTokens` — autorise la touche **U** du client à terminer la
+  première quête disponible par le chemin normal (récompense, bandeau Epic et pluie d'icônes
+  compris) puis à créditer 100K ScrollToken, de quoi tester la boutique (§6.27) sans farmer.
+  Quand le flag est faux, `QuestCheatEvent` n'est même pas branché.
 - `dailyRewardCheatKey` — ouvre le popup Daily Rewards à **chaque** connexion, récompense déjà
   prise ou non (§6.25), et autorise la touche **P** du client. La règle du tutorial reste
   appliquée : tant que le tutorial tourne, le popup est toujours reporté.
@@ -1677,6 +1751,10 @@ Cheats **client** (`client/ClientCheatConfig.ts`) — un module client ne peut p
   Roblox**, elles arrivent toujours avec `gameProcessed = true`.
 - `megaRocketKey` — touche **G** = « Mega Rocket dans 3 s » (`client/MegaRocketCheat.ts`,
   §6.24). Le garde serveur `megaRocketCheatKey` doit lui aussi être vrai.
+- `questFinishKey` — touche **U** = « termine une quête + 100K tokens »
+  (`client/QuestCheat.ts`, §6.26/§6.27). Le garde serveur `questCheatKey` doit lui aussi être
+  vrai. Comme la touche P ci-dessous, ce handler **ne filtre pas** sur `gameProcessed` (la
+  touche est demandée explicitement) et n'écarte que le cas « le joueur écrit dans un champ ».
 - `dailyRewardKey` — touche **P** = « la récompense journalière avance d'un jour »
   (`client/DailyRewardCheat.ts`, §6.25). Le garde serveur `dailyRewardCheatKey` doit lui aussi
   être vrai. Seule exception à l'avertissement U/I/O/P ci-dessus : la touche est demandée

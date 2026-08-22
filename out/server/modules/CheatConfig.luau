@@ -61,6 +61,14 @@ local megaRocketCheatDelay = 3
 -- Le serveur n'écoute DailyRewardCheatEvent que si ce flag est vrai.
 -- MUST be false before publishing.
 local dailyRewardCheatKey = false
+-- ── Quêtes ────────────────────────────────────────────────────────────────────
+-- Touche U (client/QuestCheat) : termine la première quête DISPONIBLE (récompense,
+-- bandeau Epic et pluie d'icônes compris) puis crédite `questCheatTokens` en plus,
+-- de quoi tester la boutique ScrollToken sans farmer (§6.26/§6.27).
+-- Le serveur n'écoute QuestCheatEvent que si ce flag est vrai.
+-- MUST be false before publishing.
+local questCheatKey = true
+local questCheatTokens = 100_000
 return {
 	invincible = invincible,
 	logExplosionForecast = logExplosionForecast,
@@ -75,4 +83,6 @@ return {
 	megaRocketCheatKey = megaRocketCheatKey,
 	megaRocketCheatDelay = megaRocketCheatDelay,
 	dailyRewardCheatKey = dailyRewardCheatKey,
+	questCheatKey = questCheatKey,
+	questCheatTokens = questCheatTokens,
 }

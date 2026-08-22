@@ -1,5 +1,6 @@
 import { FormatNumber } from "./NumberFormat";
 import { resistanceRiskParams } from "./ResistanceCurve";
+import { SCROLL_MONEY_BOOST } from "./ScrollShopConfig";
 import {
 	BASE_CASH,
 	COMMUNITY,
@@ -154,10 +155,19 @@ export function rebirthMult(rebirths: number): number {
 // Conséquence voulue : un pass ×2 reste ×2 quel que soit le niveau de rebirth. Avec un
 // modèle purement additif, un MultRebirth de 4096 écraserait les paliers MONEY_TIERS
 // (un pass ×2 n'ajouterait plus que +1 sur 4096) et les rendrait invendables.
-export function moneyMult(multRebirth: number, moneyTierMult: number, inCommunity: boolean): number {
+export function moneyMult(
+	multRebirth: number,
+	moneyTierMult: number,
+	inCommunity: boolean,
+	hasScrollBoost = false,
+): number {
 	const communityBonus = inCommunity ? COMMUNITY.mult - 1 : 0;
 	const tierBonus = moneyTierMult - 1;
-	return multRebirth * (1 + communityBonus + tierBonus);
+	// Le ×1.25 acheté en ScrollToken (§6.27) rejoint les autres boosts DANS le facteur
+	// additif, pour la même raison qu'eux : multiplié par-dessus un MultRebirth énorme
+	// il resterait un vrai +25 %, mais additionné il ne peut pas écraser les game-passes.
+	const scrollBonus = hasScrollBoost ? SCROLL_MONEY_BOOST.mult - 1 : 0;
+	return multRebirth * (1 + communityBonus + tierBonus + scrollBonus);
 }
 
 // Effective resistance used by the risk loop: shop Resistance + the resistance

@@ -4,7 +4,6 @@ import {
 	QUESTS,
 	QUEST_AVAILABLE_LABEL,
 	Quest,
-	SCROLL_TOKENS_ATTR,
 	formatQuestTimer,
 	questProgressAttr,
 	questResetAttr,
@@ -12,6 +11,7 @@ import {
 import { InGameUIController } from "client/ui/InGameUIController";
 import { InformationText } from "client/ui/InformationText";
 import { CriticalRain } from "client/ui/CriticalRain";
+import { QuestsBodyAnimation } from "client/ui/QuestsBodyAnimation";
 import { Events } from "shared/Event";
 
 // Ouvre / ferme le panneau des quêtes (InGameUI/QuestsPanel) et le peint.
@@ -19,11 +19,19 @@ import { Events } from "shared/Event";
 //   • Header/CloseButtonFrame/CloseButton ferme
 // Ouvrir masque le HUD persistant (même patron que ShopBehavior / DailyRewards).
 //
-// Tout ce qui s'affiche vient d'attributs répliqués — ScrollTokens pour le compteur
-// du header, Q_<id> / QR_<id> pour chaque ligne (voir server/services/QuestService).
-// Aucun aller-retour réseau : le client ne fait que lire et peindre.
+// Le panneau a DEUX bodies exclusifs, choisis par les onglets de
+// QuestsPanel/ButtonsFrame :
+//   • QuestsFrame/TextButton → QuestsBody (les 18 quêtes, peintes ici)
+//   • ShopFrame/TextButton   → BuyRewardBody (la boutique, ScrollShopController)
+// Chaque affichage rejoue la cascade du body (QuestsBodyAnimation), ouverture du
+// panneau comprise : changer d'onglet doit se lire comme un changement d'écran.
 //
-// Une ligne = une Frame de Body/ScrollingFrame, nommée dans shared/QuestConfig :
+// Tout ce qui s'affiche vient d'attributs répliqués — ScrollTokens pour le compteur
+// du header (ScrollTokenDisplay), Q_<id> / QR_<id> pour chaque ligne (voir
+// server/services/QuestService). Aucun aller-retour réseau : le client ne fait que
+// lire et peindre.
+//
+// Une ligne = une Frame de QuestsBody/ScrollingFrame, nommée dans shared/QuestConfig :
 //   QuestTitletext                        titre de la quête
 //   TimeLeftText                          "Enable" ou "Reset in : 4m 32s"
 //   ProgressionFrame/CurrentProgressionFrame   barre (taille X en scale, 0..1)
@@ -55,10 +63,6 @@ interface QuestRow {
 	readonly fill: Frame;
 	readonly progressText: TextLabel;
 	readonly reward: TextLabel;
-}
-
-function scrollTokens(): number {
-	return (player.GetAttribute(SCROLL_TOKENS_ATTR) as number | undefined) ?? 0;
 }
 
 function questProgress(quest: Quest): number {
@@ -137,8 +141,13 @@ export function init(): void {
 	const popup = inGameUI.WaitForChild(POPUP_NAME) as GuiObject;
 	const header = popup.WaitForChild("Header");
 	const closeButton = header.WaitForChild("CloseButtonFrame").WaitForChild("CloseButton") as GuiButton;
-	const tokenText = header.WaitForChild("ScrollTokenCount").WaitForChild("ScrollCountText") as TextLabel;
-	const scrollingFrame = popup.WaitForChild("Body").WaitForChild("ScrollingFrame");
+	const questsBody = popup.WaitForChild("QuestsBody") as GuiObject;
+	const buyRewardBody = popup.WaitForChild("BuyRewardBody") as GuiObject;
+	const scrollingFrame = questsBody.WaitForChild("ScrollingFrame");
+
+	const tabs = popup.WaitForChild("ButtonsFrame");
+	const questsTab = tabs.WaitForChild("QuestsFrame").WaitForChild("TextButton") as GuiButton;
+	const shopTab = tabs.WaitForChild("ShopFrame").WaitForChild("TextButton") as GuiButton;
 
 	const hud = inGameUI.WaitForChild("HUD") as GuiObject;
 	const openButton = hud
@@ -154,22 +163,32 @@ export function init(): void {
 		if (row) rows.push(row);
 	}
 
-	const renderTokens = (): void => {
-		tokenText.Text = FormatNumber(scrollTokens());
-	};
-
 	const renderAll = (): void => {
-		renderTokens();
 		for (const row of rows) renderRow(row);
 	};
 
 	let timerLoop: RBXScriptConnection | undefined;
 	let sinceTick = 0;
 
+	// Affiche UN body et rejoue sa cascade. L'autre est masqué et sa propre cascade
+	// coupée, sinon il resterait figé à demi transparent pour son prochain affichage.
+	const showBody = (body: GuiObject, other: GuiObject): void => {
+		if (body === questsBody) renderAll();
+		QuestsBodyAnimation.stop(other);
+		other.Visible = false;
+		body.Visible = true;
+		QuestsBodyAnimation.play(body);
+	};
+
+	const showQuests = (): void => showBody(questsBody, buyRewardBody);
+	const showShop = (): void => showBody(buyRewardBody, questsBody);
+
 	const open = (): void => {
-		renderAll();
 		popup.Visible = true;
 		InGameUIController.disable();
+		// Le panneau s'ouvre TOUJOURS sur les quêtes, quel que soit l'onglet quitté la
+		// fois d'avant : c'est le contenu que le bouton du HUD promet.
+		showQuests();
 
 		timerLoop?.Disconnect();
 		sinceTick = TIMER_TICK; // premier rafraîchissement immédiat
@@ -177,6 +196,8 @@ export function init(): void {
 			sinceTick += delta;
 			if (sinceTick < TIMER_TICK) return;
 			sinceTick = 0;
+			// Rien à rafraîchir quand la boutique occupe l'écran.
+			if (!questsBody.Visible) return;
 			for (const row of rows) renderTimer(row);
 		});
 	};
@@ -190,6 +211,8 @@ export function init(): void {
 
 	openButton.Activated.Connect(open);
 	closeButton.Activated.Connect(close);
+	questsTab.Activated.Connect(showQuests);
+	shopTab.Activated.Connect(showShop);
 
 	// Le serveur pousse la progression et les cooldowns par attributs : on ne repeint
 	// que la ligne concernée, et seulement si le panneau est à l'écran (fermé, l'état
@@ -201,10 +224,6 @@ export function init(): void {
 			});
 		}
 	}
-
-	// Le compteur de tokens, lui, se met à jour même panneau fermé : il est bon marché
-	// et évite tout décalage à l'ouverture suivante.
-	player.GetAttributeChangedSignal(SCROLL_TOKENS_ATTR).Connect(renderTokens);
 
 	// Quête accomplie : le serveur a déjà versé la récompense et publié l'état, cet
 	// event ne sert qu'à la célébration.

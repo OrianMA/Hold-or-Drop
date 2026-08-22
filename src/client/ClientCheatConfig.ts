@@ -20,3 +20,8 @@ export const megaRocketKey = true;
 // Le serveur a son propre garde (server/modules/CheatConfig.dailyRewardCheatKey) —
 // les deux doivent être vrais.
 export const dailyRewardKey = true;
+
+// Touche U (client/QuestCheat) : termine une quête à la demande et crédite 100K
+// ScrollToken. Le serveur a son propre garde
+// (server/modules/CheatConfig.questCheatKey) — les deux doivent être vrais.
+export const questFinishKey = true;

@@ -18,8 +18,13 @@ local megaRocketKey = true
 -- Le serveur a son propre garde (server/modules/CheatConfig.dailyRewardCheatKey) —
 -- les deux doivent être vrais.
 local dailyRewardKey = true
+-- Touche U (client/QuestCheat) : termine une quête à la demande et crédite 100K
+-- ScrollToken. Le serveur a son propre garde
+-- (server/modules/CheatConfig.questCheatKey) — les deux doivent être vrais.
+local questFinishKey = true
 return {
 	informationTextKeys = informationTextKeys,
 	megaRocketKey = megaRocketKey,
 	dailyRewardKey = dailyRewardKey,
+	questFinishKey = questFinishKey,
 }
