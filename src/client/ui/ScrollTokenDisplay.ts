@@ -11,7 +11,9 @@ import { SCROLL_TOKENS_ATTR } from "shared/QuestConfig";
 // qu'un gain de quête comme une dépense en boutique se voient passer.
 //
 // `spend(amount)` ajoute la lecture d'une dépense : un « -350K » qui monte et
-// s'efface au-dessus du compteur, plus une petite claque d'échelle sur le compteur.
+// s'efface, plus une petite claque d'échelle sur le compteur. Le texte volant est
+// **centré en X sur le panneau** (et non collé au compteur, coincé dans un coin) :
+// c'est le milieu de l'écran de la boutique, donc là où le regard est déjà.
 // Le label volant est un CLONE du compteur : il hérite police, taille et contour,
 // donc il reste juste même si le style change en Studio.
 
@@ -36,6 +38,9 @@ const SPEND_TWEEN = new TweenInfo(0.85, Enum.EasingStyle.Quad, Enum.EasingDirect
 
 let label: TextLabel | undefined;
 let counter: GuiObject | undefined;
+// Le panneau entier : il ne sert qu'à donner sa largeur au texte volant, pour le
+// centrer horizontalement dessus.
+let panel: GuiObject | undefined;
 let counterScale: UIScale | undefined;
 let screenGui: GuiObject | undefined;
 
@@ -68,10 +73,12 @@ function refresh(): void {
 export const ScrollTokenDisplay = {
 	init(): void {
 		const inGameUI = (player.WaitForChild("PlayerGui") as PlayerGui).WaitForChild("InGameUI") as GuiObject;
-		const header = inGameUI.WaitForChild("QuestsPanel").WaitForChild("Header");
+		const questsPanel = inGameUI.WaitForChild("QuestsPanel") as GuiObject;
+		const header = questsPanel.WaitForChild("Header");
 		const counterFrame = header.WaitForChild(COUNTER_NAME) as GuiObject;
 
 		screenGui = inGameUI;
+		panel = questsPanel;
 		counter = counterFrame;
 		label = counterFrame.WaitForChild(LABEL_NAME) as TextLabel;
 
@@ -106,7 +113,7 @@ export const ScrollTokenDisplay = {
 			punchIn.Play();
 		}
 
-		if (!label || !counter || !screenGui) return;
+		if (!label || !counter || !screenGui || !panel) return;
 
 		// Clone du compteur : même police, même contour, même taille — aucun style à
 		// dupliquer ici.
@@ -116,17 +123,25 @@ export const ScrollTokenDisplay = {
 		flying.TextColor3 = SPEND_COLOR;
 		flying.ZIndex = label.ZIndex + 10;
 		flying.AutomaticSize = Enum.AutomaticSize.None;
+		// Le compteur est ancré en son centre : sans remettre l'ancre en haut-à-gauche,
+		// la position posée plus bas placerait le MILIEU du label là où on veut son coin,
+		// soit un décalage d'une demi-largeur de panneau.
+		flying.AnchorPoint = new Vector2(0, 0);
 
-		// Positionné en pixels au-dessus du compteur : le label vit sous le ScreenGui,
-		// pas sous le compteur, sinon le UIListLayout du compteur le rangerait dans sa
-		// liste et décalerait l'icône.
-		const origin = counter.AbsolutePosition.sub(screenGui.AbsolutePosition);
-		flying.Size = new UDim2(0, counter.AbsoluteSize.X, 0, counter.AbsoluteSize.Y);
-		flying.Position = new UDim2(0, origin.X, 0, origin.Y);
+		// Positionné en pixels : le label vit sous le ScreenGui, pas sous le compteur,
+		// sinon le UIListLayout du compteur le rangerait dans sa liste et décalerait
+		// l'icône. Il est large comme le PANNEAU et centre son texte, ce qui le pose
+		// pile au milieu en X quelle que soit la résolution ; la hauteur reste celle du
+		// compteur, donc il part du bandeau du haut.
+		const panelLeft = panel.AbsolutePosition.X - screenGui.AbsolutePosition.X;
+		const originY = counter.AbsolutePosition.Y - screenGui.AbsolutePosition.Y;
+		flying.Size = new UDim2(0, panel.AbsoluteSize.X, 0, counter.AbsoluteSize.Y);
+		flying.Position = new UDim2(0, panelLeft, 0, originY);
+		flying.TextXAlignment = Enum.TextXAlignment.Center;
 		flying.BackgroundTransparency = 1;
 		flying.Parent = screenGui;
 
-		const rise = new UDim2(0, origin.X, 0, origin.Y - SPEND_RISE);
+		const rise = new UDim2(0, panelLeft, 0, originY - SPEND_RISE);
 		TweenService.Create(flying, SPEND_TWEEN, { Position: rise, TextTransparency: 1 }).Play();
 		for (const child of flying.GetDescendants()) {
 			if (child.IsA("UIStroke")) TweenService.Create(child, SPEND_TWEEN, { Transparency: 1 }).Play();

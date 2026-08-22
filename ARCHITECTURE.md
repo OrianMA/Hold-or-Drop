@@ -1607,10 +1607,13 @@ appelle un système existant.
   la vraie garde est le solde revalidé.
 - **Retour visuel** — `ScrollTokenDisplay.spend(price)` : le compteur du header **défile**
   vers son nouveau solde (proxy `NumberValue` tweené, comme `MoneyDisplay`), prend une claque
-  d'échelle, et un « -350K » monte et s'efface au-dessus. Le label volant est un **clone du
-  compteur** : il hérite police, taille et contour, donc il reste juste si le style bouge en
-  Studio. Il est parenté au **ScreenGui**, pas au compteur : le `UIListLayout` du compteur le
-  rangerait dans sa liste et décalerait l'icône. Puis le bandeau propre à l'objet
+  d'échelle, et un « -350K » monte et s'efface **au centre du panneau en X**, à la hauteur du
+  compteur. Le label volant est un **clone du compteur** : il hérite police, taille et contour,
+  donc il reste juste si le style bouge en Studio — mais son `AnchorPoint` est remis à (0,0),
+  sinon l'ancre centrée du compteur décalerait la pose d'une demi-largeur de panneau. Il prend
+  la largeur du panneau et centre son texte, ce qui le pose au milieu quelle que soit la
+  résolution. Il est parenté au **ScreenGui**, pas au compteur : le `UIListLayout` du compteur
+  le rangerait dans sa liste et décalerait l'icône. Puis le bandeau propre à l'objet
   (`successText`). Le Mega Rocket n'en a pas : il diffuse déjà son bandeau **Legendary** à
   tout le serveur (« *X* triggered the MEGA ROCKET »), en dire plus ferait doublon.
 - **Le ×1.25 est ADDITIF** (`shared/ShopConfig.moneyMult`), comme la communauté et les

@@ -14,7 +14,9 @@ local SCROLL_TOKENS_ATTR = TS.import(script, game:GetService("ReplicatedStorage"
 -- qu'un gain de quête comme une dépense en boutique se voient passer.
 --
 -- `spend(amount)` ajoute la lecture d'une dépense : un « -350K » qui monte et
--- s'efface au-dessus du compteur, plus une petite claque d'échelle sur le compteur.
+-- s'efface, plus une petite claque d'échelle sur le compteur. Le texte volant est
+-- **centré en X sur le panneau** (et non collé au compteur, coincé dans un coin) :
+-- c'est le milieu de l'écran de la boutique, donc là où le regard est déjà.
 -- Le label volant est un CLONE du compteur : il hérite police, taille et contour,
 -- donc il reste juste même si le style change en Studio.
 local player = Players.LocalPlayer
@@ -33,6 +35,9 @@ local SPEND_RISE = 60
 local SPEND_TWEEN = TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local label
 local counter
+-- Le panneau entier : il ne sert qu'à donner sa largeur au texte volant, pour le
+-- centrer horizontalement dessus.
+local panel
 local counterScale
 local screenGui
 local proxy
@@ -71,9 +76,11 @@ end
 local ScrollTokenDisplay = {
 	init = function(self)
 		local inGameUI = (player:WaitForChild("PlayerGui")):WaitForChild("InGameUI")
-		local header = inGameUI:WaitForChild("QuestsPanel"):WaitForChild("Header")
+		local questsPanel = inGameUI:WaitForChild("QuestsPanel")
+		local header = questsPanel:WaitForChild("Header")
 		local counterFrame = header:WaitForChild(COUNTER_NAME)
 		screenGui = inGameUI
+		panel = questsPanel
 		counter = counterFrame
 		label = counterFrame:WaitForChild(LABEL_NAME)
 		-- UIScale posé à la volée côté client (identité à 1 : rien ne bouge tant qu'on
@@ -108,7 +115,7 @@ local ScrollTokenDisplay = {
 			end)
 			punchIn:Play()
 		end
-		if not label or not counter or not screenGui then
+		if not label or not counter or not screenGui or not panel then
 			return nil
 		end
 		-- Clone du compteur : même police, même contour, même taille — aucun style à
@@ -119,17 +126,23 @@ local ScrollTokenDisplay = {
 		flying.TextColor3 = SPEND_COLOR
 		flying.ZIndex = label.ZIndex + 10
 		flying.AutomaticSize = Enum.AutomaticSize.None
-		-- Positionné en pixels au-dessus du compteur : le label vit sous le ScreenGui,
-		-- pas sous le compteur, sinon le UIListLayout du compteur le rangerait dans sa
-		-- liste et décalerait l'icône.
-		local _absolutePosition = counter.AbsolutePosition
-		local _absolutePosition_1 = screenGui.AbsolutePosition
-		local origin = _absolutePosition - _absolutePosition_1
-		flying.Size = UDim2.new(0, counter.AbsoluteSize.X, 0, counter.AbsoluteSize.Y)
-		flying.Position = UDim2.new(0, origin.X, 0, origin.Y)
+		-- Le compteur est ancré en son centre : sans remettre l'ancre en haut-à-gauche,
+		-- la position posée plus bas placerait le MILIEU du label là où on veut son coin,
+		-- soit un décalage d'une demi-largeur de panneau.
+		flying.AnchorPoint = Vector2.new(0, 0)
+		-- Positionné en pixels : le label vit sous le ScreenGui, pas sous le compteur,
+		-- sinon le UIListLayout du compteur le rangerait dans sa liste et décalerait
+		-- l'icône. Il est large comme le PANNEAU et centre son texte, ce qui le pose
+		-- pile au milieu en X quelle que soit la résolution ; la hauteur reste celle du
+		-- compteur, donc il part du bandeau du haut.
+		local panelLeft = panel.AbsolutePosition.X - screenGui.AbsolutePosition.X
+		local originY = counter.AbsolutePosition.Y - screenGui.AbsolutePosition.Y
+		flying.Size = UDim2.new(0, panel.AbsoluteSize.X, 0, counter.AbsoluteSize.Y)
+		flying.Position = UDim2.new(0, panelLeft, 0, originY)
+		flying.TextXAlignment = Enum.TextXAlignment.Center
 		flying.BackgroundTransparency = 1
 		flying.Parent = screenGui
-		local rise = UDim2.new(0, origin.X, 0, origin.Y - SPEND_RISE)
+		local rise = UDim2.new(0, panelLeft, 0, originY - SPEND_RISE)
 		TweenService:Create(flying, SPEND_TWEEN, {
 			Position = rise,
 			TextTransparency = 1,
