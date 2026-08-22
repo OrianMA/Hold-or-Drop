@@ -21,8 +21,11 @@ export interface ScrollShopItem {
 	// Nom EXACT de la Frame dans QuestsPanel/BuyRewardBody/ScrollingFrame.
 	readonly frameName: string;
 	readonly price: number;
-	// Achetable une seule fois par joueur (effet permanent).
-	readonly oneShot?: boolean;
+	// Achetable une SEULE fois : nom de l'attribut joueur (persisté et répliqué) qui
+	// passe à 1 une fois l'objet acquis. Absent = objet rachetable à volonté.
+	// Le serveur s'en sert pour refuser le second achat, le client pour afficher
+	// CLAIM à la place du prix.
+	readonly ownedAttribute?: string;
 	// Bandeau affiché à l'acheteur après un achat validé. Le Mega Rocket n'en a pas :
 	// il diffuse déjà son propre bandeau Legendary à TOUT le serveur (§6.24).
 	readonly successText?: string;
@@ -44,7 +47,7 @@ export const SCROLL_SHOP_ITEMS: readonly ScrollShopItem[] = [
 		id: "MoneyMultiplier",
 		frameName: "BMoneyMultiplier",
 		price: 250_000,
-		oneShot: true,
+		ownedAttribute: SCROLL_MONEY_BOOST.attribute,
 		successText: "1.25x Money unlocked  permanent",
 	},
 	{ id: "MegaRocket", frameName: "CMegaRocket", price: 50_000 },
@@ -59,6 +62,9 @@ export function scrollShopItem(id: ScrollShopItemId): ScrollShopItem | undefined
 	}
 	return undefined;
 }
+
+// Ce que le bouton d'achat affiche à la place du prix quand l'objet est déjà acquis.
+export const SCROLL_SHOP_OWNED_LABEL = "CLAIM";
 
 // Bandeau serveur-large quand un joueur paie l'événement Mega Rocket.
 export function megaRocketPurchaseAnnounce(playerName: string): string {

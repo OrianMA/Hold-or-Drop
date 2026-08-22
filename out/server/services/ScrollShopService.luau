@@ -23,8 +23,12 @@ local function deny(player, message)
 		color = DENIED_COLOR,
 	})
 end
-local function hasMoneyBoost(player)
-	return PlayerDataService:get(player, "ScrollMoneyBoost") > 0
+-- Objet à achat unique déjà acquis ? Lit l'attribut déclaré par l'objet lui-même.
+local function isOwned(player, item)
+	if item.ownedAttribute == nil then
+		return false
+	end
+	return PlayerDataService:get(player, item.ownedAttribute) > 0
 end
 -- Applique l'effet. Retourne false quand l'achat doit être REFUSÉ (déjà possédé,
 -- stat au plafond…) — le débit n'a alors pas lieu.
@@ -36,10 +40,6 @@ local function applyEffect(player, item)
 		return true
 	end
 	if item.id == "MoneyMultiplier" then
-		if hasMoneyBoost(player) then
-			deny(player, "Already owned")
-			return false
-		end
 		PlayerDataService:set(player, SCROLL_MONEY_BOOST.attribute, 1)
 		-- Le boost entre dans MoneyMult / EffectiveBaseCash — il faut re-dériver tout de
 		-- suite, sinon il ne s'appliquerait qu'à la prochaine recompute.
@@ -68,7 +68,7 @@ local function handlePurchase(player, itemId)
 	if not item then
 		return nil
 	end
-	if item.oneShot == true and item.id == "MoneyMultiplier" and hasMoneyBoost(player) then
+	if isOwned(player, item) then
 		deny(player, "Already owned")
 		return nil
 	end

@@ -24,7 +24,7 @@ local SCROLL_SHOP_ITEMS = { {
 	id = "MoneyMultiplier",
 	frameName = "BMoneyMultiplier",
 	price = 250_000,
-	oneShot = true,
+	ownedAttribute = SCROLL_MONEY_BOOST.attribute,
 	successText = "1.25x Money unlocked  permanent",
 }, {
 	id = "MegaRocket",
@@ -54,6 +54,8 @@ local function scrollShopItem(id)
 	end
 	return nil
 end
+-- Ce que le bouton d'achat affiche à la place du prix quand l'objet est déjà acquis.
+local SCROLL_SHOP_OWNED_LABEL = "CLAIM"
 -- Bandeau serveur-large quand un joueur paie l'événement Mega Rocket.
 local function megaRocketPurchaseAnnounce(playerName)
 	return `{playerName} triggered the MEGA ROCKET  CASH ×8`
@@ -63,4 +65,5 @@ return {
 	megaRocketPurchaseAnnounce = megaRocketPurchaseAnnounce,
 	SCROLL_MONEY_BOOST = SCROLL_MONEY_BOOST,
 	SCROLL_SHOP_ITEMS = SCROLL_SHOP_ITEMS,
+	SCROLL_SHOP_OWNED_LABEL = SCROLL_SHOP_OWNED_LABEL,
 }

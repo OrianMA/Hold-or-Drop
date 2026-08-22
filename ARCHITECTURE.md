@@ -1579,7 +1579,7 @@ appelle un système existant.
 | Objet | Frame Studio | Prix | Effet |
 |-------|--------------|------|-------|
 | Skip rebirth | `ASafeRebirth` | 350K | `PlayerProgressionService.safeRebirth` — +1 rebirth, niveaux ET argent conservés (§6.9) |
-| 1.25x Money | `BMoneyMultiplier` | 250K | **Une seule fois**, permanent : `ScrollMoneyBoost` = 1 → +0.25 dans le facteur de boosts (§6.6) |
+| 1.25x Money | `BMoneyMultiplier` | 250K | **Une seule fois**, permanent : `ScrollMoneyBoost` = 1 → +0.25 dans le facteur de boosts (§6.6) ; la carte affiche alors `CLAIM` |
 | Mega rocket | `CMegaRocket` | 50K | `MegaRocketService.fireNow` — l'événement part tout de suite **pour tout le serveur** (§6.24) |
 | Rocket speed | `DRocketSpeed` | 15K | +1 niveau `RocketSpeed` |
 | Base cash | `ERocketBaseCash` | 20K | +1 niveau `BaseCash` |
@@ -1589,6 +1589,15 @@ appelle un système existant.
   `{Element}/BuyButtonFrame/DisplayElementFrame/TextLabel` au démarrage depuis
   `SCROLL_SHOP_ITEMS` : changer un prix dans `shared/ScrollShopConfig.ts` le change à l'écran
   **et** au débit, sans retoucher la GUI.
+- **Achat unique = un ATTRIBUT, pas un booléen de config.** Un objet non rachetable déclare
+  `ownedAttribute` (ici `ScrollMoneyBoost`, persisté par `PlayerDataService` donc répliqué).
+  Le serveur s'en sert pour refuser le second achat, le client pour afficher
+  **`CLAIM`** à la place du prix et masquer l'icône de token à côté (`ScrollTokenImage`) —
+  « CLAIM » n'est pas un prix. L'affichage suit l'attribut (rendu au démarrage **et** sur
+  `GetAttributeChangedSignal`), donc il est juste dès la connexion comme juste à l'instant de
+  l'achat, sans aller-retour. Le clic est aussi neutralisé côté client une fois l'objet
+  acquis : inutile d'envoyer au serveur un achat qu'il refusera et de faire clignoter un
+  bandeau. La garde serveur reste, elle, la seule qui compte.
 - **Achat immédiat, autorité serveur.** Le clic envoie `ScrollShopPurchaseEvent(itemId)` et
   rien d'autre : le client ne pré-valide rien (il ne connaît ni le solde exact ni les
   plafonds). Le serveur revalide solde / unicité / plafond de stat, **applique l'effet AVANT

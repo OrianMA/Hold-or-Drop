@@ -26,8 +26,10 @@ function deny(player: Player, message: string): void {
 	Events.InformationTextEvent.FireClient(player, message, { color: DENIED_COLOR });
 }
 
-function hasMoneyBoost(player: Player): boolean {
-	return PlayerDataService.get(player, "ScrollMoneyBoost") > 0;
+// Objet à achat unique déjà acquis ? Lit l'attribut déclaré par l'objet lui-même.
+function isOwned(player: Player, item: ScrollShopItem): boolean {
+	if (item.ownedAttribute === undefined) return false;
+	return PlayerDataService.get(player, item.ownedAttribute as "ScrollMoneyBoost") > 0;
 }
 
 // Applique l'effet. Retourne false quand l'achat doit être REFUSÉ (déjà possédé,
@@ -41,10 +43,6 @@ function applyEffect(player: Player, item: ScrollShopItem): boolean {
 	}
 
 	if (item.id === "MoneyMultiplier") {
-		if (hasMoneyBoost(player)) {
-			deny(player, "Already owned");
-			return false;
-		}
 		PlayerDataService.set(player, SCROLL_MONEY_BOOST.attribute as "ScrollMoneyBoost", 1);
 		// Le boost entre dans MoneyMult / EffectiveBaseCash — il faut re-dériver tout de
 		// suite, sinon il ne s'appliquerait qu'à la prochaine recompute.
@@ -72,7 +70,7 @@ function handlePurchase(player: Player, itemId: unknown): void {
 	const item = scrollShopItem(itemId as ScrollShopItemId);
 	if (!item) return;
 
-	if (item.oneShot === true && item.id === "MoneyMultiplier" && hasMoneyBoost(player)) {
+	if (isOwned(player, item)) {
 		deny(player, "Already owned");
 		return;
 	}
