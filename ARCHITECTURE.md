@@ -570,6 +570,39 @@ second time on screen and fire an end-game event unrelated to it.
     never pull the camera into the rocket.
 - `InGameUIController`: toggles the persistent HUD Frame named `HUD` (sibling of the
   popups inside the `InGameUI` ScreenGui) — hidden during active gameplay, re-enabled on quit / result.
+- `UiButtonAnimation` (`ui/UiButtonAnimation.ts`): the **global hover/press feel of every UI
+  button**. Same auto-hook pattern as `UiClickSound` (§6.10): on init it walks every `GuiButton`
+  descendant of `PlayerGui` and keeps listening via `DescendantAdded`, so a button authored in
+  Studio is animated with **no per-button wiring**. Roblox's generated `ProximityPrompts`
+  ScreenGui is skipped; opt out per button with the **`NoUiAnim`** attribute (mirrors
+  `NoUiClick`).
+  - **What grows is the parent Frame, not the button** (`resolveTarget`). In this UI the
+    `GuiButton` is nearly always a transparent hit area laid over a Frame that carries all the
+    visuals (`UICorner`, `UIStroke`, `UIGradient`, `TextLabel`, sub-frames) — `MoneyElementN/
+    Button`, `BuyButtonFrame/TextButton`, `QuestsFrame/ImageButton` — so scaling the button
+    alone moved nothing visible. The module climbs to the parent only when **(a)** the parent
+    holds exactly one `GuiButton` — otherwise hovering `BuyButton` would also grow
+    `RobuxButton` in `ShopMenu/…/ButtonsLayout` — **and (b)** the button fills it
+    (`Size` scale ≥ `FILL_THRESHOLD` 0.75, no positive offset) — otherwise it would grow a
+    whole `Header` (`ShopMenu/Header/CloseButton`) or a whole popup
+    (`ButtonMenu/StartButton`). Current split: 33 buttons animate their parent frame, 11
+    animate themselves.
+  - **It tweens a `UIScale` child (`UiAnimScale`), never `Size`.** An authored `UIScale` is
+    reused if present (Roblox honours only one per GuiObject). `Size` is already tweened by
+    other systems (the `ClaimButton` onboarding pulse §6.3, the progression bar §6.9) and
+    drives `UIListLayout`/`UIGridLayout`, so a scale-only animation can't collide or shift a
+    layout.
+  - **States**, relative to the target's authored scale: rest `1`, hover `HOVER_SCALE` 1.07
+    (Back/Out 0.14s in — slight overshoot; Quad/Out 0.16s out), press `PRESS_SCALE` 0.92
+    (Quad/Out 0.06s — snappy), release back to hover/rest with Back/Out 0.22s for the "pop".
+    `MouseEnter`/`MouseLeave` drive hover, `MouseButton1Down`/`Up` the press,
+    `SelectionGained`/`Lost` mirror hover for gamepad focus.
+  - **Two guards** keep the state honest: a global `UserInputService.InputEnded` un-presses
+    buttons when the click is released off them, and — because Roblox does **not** fire
+    `MouseLeave` when an *ancestor* goes `Visible = false` — a single `Heartbeat` watcher
+    (alive only while a button is hovered/pressed) checks effective visibility up to the
+    `LayerCollector` and snaps the target back to rest when its popup closes, so it never
+    reopens frozen at 1.07.
 - `CostTextRotator` (`ui/CostTextRotator.ts`): cosmetic — a single looping
   `TweenService` tween wobbles `HUD/BottomList/MultiplierBuyButton/CostMovingtext`
   between +10° and −10° (Sine in/out, reversing, `RepeatCount -1`) to draw the eye.

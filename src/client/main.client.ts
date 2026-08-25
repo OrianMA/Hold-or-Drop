@@ -27,6 +27,7 @@ import { init as initHudProgression } from "./behaviors/HudProgressionController
 import { init as initCostTextRotator } from "./ui/CostTextRotator";
 import { MusicController } from "./audio/MusicController";
 import { init as initUiClickSound } from "./audio/UiClickSound";
+import { init as initUiButtonAnimation } from "./ui/UiButtonAnimation";
 import { init as initAudioVisualizer } from "./ui/AudioVisualizer";
 import { init as initNeonPipePulse } from "./ui/NeonPipePulse";
 import { init as initMegaRocketVisuals } from "./ui/MegaRocketVisuals";
@@ -73,6 +74,7 @@ initHudProgression();
 initCostTextRotator();
 MusicController.init();
 initUiClickSound();
+initUiButtonAnimation();
 initAudioVisualizer();
 initNeonPipePulse();
 initMegaRocketVisuals();

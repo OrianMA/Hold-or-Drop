@@ -31,6 +31,7 @@ local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudPro
 local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
 local initUiClickSound = TS.import(script, script.Parent, "audio", "UiClickSound").init
+local initUiButtonAnimation = TS.import(script, script.Parent, "ui", "UiButtonAnimation").init
 local initAudioVisualizer = TS.import(script, script.Parent, "ui", "AudioVisualizer").init
 local initNeonPipePulse = TS.import(script, script.Parent, "ui", "NeonPipePulse").init
 local initMegaRocketVisuals = TS.import(script, script.Parent, "ui", "MegaRocketVisuals").init
@@ -75,6 +76,7 @@ initHudProgression()
 initCostTextRotator()
 MusicController:init()
 initUiClickSound()
+initUiButtonAnimation()
 initAudioVisualizer()
 initNeonPipePulse()
 initMegaRocketVisuals()
