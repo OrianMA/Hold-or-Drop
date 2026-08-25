@@ -14,7 +14,7 @@ local logExplosionForecast = false
 -- load in with the default profile every time, and the next regular save
 -- overwrites the DataStore with the new state. Useful for re-testing the
 -- onboarding flow.
-local resetData = true
+local resetData = false
 -- ── Critical Claim ────────────────────────────────────────────────────────────
 -- Passe la chance de Critical Claim de CRITICAL_CLAIM_CHANCE (5 %) à
 -- boostedCriticalClaimChance : le flash doré + la pluie d'icônes tombent presque une
@@ -28,7 +28,7 @@ local boostedCriticalClaimChance = 0.5
 -- player even on an account that owns every pass. A purchase made in Studio (and
 -- BoostService.devOwn) still adds to the set for the rest of the session.
 -- Takes priority over `simulateGamePasses`. MUST be false before publishing.
-local ignoreGamePasses = true
+local ignoreGamePasses = false
 -- When true, BoostService IGNORES real Roblox game-pass ownership and treats only
 -- the ids in `simulatedOwnedPassIds` as owned (empty = own nothing). Lets you test
 -- the buy flow from a not-owned state even on an account that owns every pass.
@@ -51,7 +51,7 @@ local megaRocketInterval = nil
 -- normale — l'événement suivant repart sur l'intervalle habituel.
 -- Le serveur n'écoute MegaRocketCheatEvent que si ce flag est vrai.
 -- MUST be false before publishing.
-local megaRocketCheatKey = true
+local megaRocketCheatKey = false
 local megaRocketCheatDelay = 3
 -- ── Daily reward ──────────────────────────────────────────────────────────────
 -- Ouvre le popup Daily Rewards à CHAQUE connexion, même si la récompense du jour a
@@ -67,7 +67,7 @@ local dailyRewardCheatKey = false
 -- de quoi tester la boutique ScrollToken sans farmer (§6.26/§6.27).
 -- Le serveur n'écoute QuestCheatEvent que si ce flag est vrai.
 -- MUST be false before publishing.
-local questCheatKey = true
+local questCheatKey = false
 local questCheatTokens = 100_000
 return {
 	invincible = invincible,

@@ -16,7 +16,7 @@ export const logExplosionForecast = false;
 // load in with the default profile every time, and the next regular save
 // overwrites the DataStore with the new state. Useful for re-testing the
 // onboarding flow.
-export const resetData = true;
+export const resetData = false;
 
 // ── Critical Claim ────────────────────────────────────────────────────────────
 // Passe la chance de Critical Claim de CRITICAL_CLAIM_CHANCE (5 %) à
@@ -32,7 +32,7 @@ export const boostedCriticalClaimChance = 0.5;
 // player even on an account that owns every pass. A purchase made in Studio (and
 // BoostService.devOwn) still adds to the set for the rest of the session.
 // Takes priority over `simulateGamePasses`. MUST be false before publishing.
-export const ignoreGamePasses = true;
+export const ignoreGamePasses = false;
 
 // When true, BoostService IGNORES real Roblox game-pass ownership and treats only
 // the ids in `simulatedOwnedPassIds` as owned (empty = own nothing). Lets you test
@@ -59,7 +59,7 @@ export const megaRocketInterval: number | undefined = undefined;
 // normale — l'événement suivant repart sur l'intervalle habituel.
 // Le serveur n'écoute MegaRocketCheatEvent que si ce flag est vrai.
 // MUST be false before publishing.
-export const megaRocketCheatKey = true;
+export const megaRocketCheatKey = false;
 export const megaRocketCheatDelay = 3;
 
 // ── Daily reward ──────────────────────────────────────────────────────────────
@@ -77,5 +77,5 @@ export const dailyRewardCheatKey = false;
 // de quoi tester la boutique ScrollToken sans farmer (§6.26/§6.27).
 // Le serveur n'écoute QuestCheatEvent que si ce flag est vrai.
 // MUST be false before publishing.
-export const questCheatKey = true;
+export const questCheatKey = false;
 export const questCheatTokens = 100_000;

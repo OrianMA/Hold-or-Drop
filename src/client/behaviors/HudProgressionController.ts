@@ -19,7 +19,7 @@ import { openRebirthMenu } from "./RebirthMenuBehavior";
 // inside CurrentProgressionFrame in Studio.
 //
 // Two display states:
-//  - filling  → RebirthImage + RebirthLevelText ("Rebirth N") + BackgroundFrame (money/cost)
+//  - filling  → RebirthFrame (RebirthImage + RebirthLevelText "Rebirth N") + BackgroundFrame (money/cost)
 //  - ready    → those hide, LevelUpText ("Click to rebirth") shows with a golden shimmer
 //               and RebirthButton (inside the now full-width fill) opens the rebirth popup.
 
@@ -53,8 +53,8 @@ export function init(): void {
 	const fill = progressionBar.WaitForChild("CurrentProgressionFrame") as Frame;
 	const backgroundFrame = progressionBar.WaitForChild("BackgroundFrame") as Frame;
 	const moneyNeededText = backgroundFrame.WaitForChild("MoneyNeededText") as TextLabel;
-	const rebirthImage = progressionBar.WaitForChild("RebirthImage") as ImageLabel;
-	const rebirthLevelText = progressionBar.WaitForChild("RebirthLevelText") as TextLabel;
+	const rebirthFrame = progressionBar.WaitForChild("RebirthFrame") as Frame;
+	const rebirthLevelText = rebirthFrame.WaitForChild("RebirthLevelText") as TextLabel;
 	const levelUpText = progressionBar.WaitForChild("LevelUpText") as TextLabel;
 	const rebirthButton = fill.WaitForChild("RebirthButton") as GuiButton;
 
@@ -84,8 +84,7 @@ export function init(): void {
 		if (ready === value) return;
 		ready = value;
 
-		rebirthImage.Visible = !value;
-		rebirthLevelText.Visible = !value;
+		rebirthFrame.Visible = !value;
 		backgroundFrame.Visible = !value;
 		levelUpText.Visible = value;
 		rebirthButton.Visible = value;

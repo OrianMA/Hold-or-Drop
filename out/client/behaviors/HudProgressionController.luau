@@ -22,7 +22,7 @@ local openRebirthMenu = TS.import(script, script.Parent, "RebirthMenuBehavior").
 -- inside CurrentProgressionFrame in Studio.
 --
 -- Two display states:
---  - filling  → RebirthImage + RebirthLevelText ("Rebirth N") + BackgroundFrame (money/cost)
+--  - filling  → RebirthFrame (RebirthImage + RebirthLevelText "Rebirth N") + BackgroundFrame (money/cost)
 --  - ready    → those hide, LevelUpText ("Click to rebirth") shows with a golden shimmer
 --               and RebirthButton (inside the now full-width fill) opens the rebirth popup.
 local player = Players.LocalPlayer
@@ -51,8 +51,8 @@ local function init()
 	local fill = progressionBar:WaitForChild("CurrentProgressionFrame")
 	local backgroundFrame = progressionBar:WaitForChild("BackgroundFrame")
 	local moneyNeededText = backgroundFrame:WaitForChild("MoneyNeededText")
-	local rebirthImage = progressionBar:WaitForChild("RebirthImage")
-	local rebirthLevelText = progressionBar:WaitForChild("RebirthLevelText")
+	local rebirthFrame = progressionBar:WaitForChild("RebirthFrame")
+	local rebirthLevelText = rebirthFrame:WaitForChild("RebirthLevelText")
 	local levelUpText = progressionBar:WaitForChild("LevelUpText")
 	local rebirthButton = fill:WaitForChild("RebirthButton")
 	local progressGradient = fill:FindFirstChild(PROGRESS_GRADIENT)
@@ -76,8 +76,7 @@ local function init()
 			return nil
 		end
 		ready = value
-		rebirthImage.Visible = not value
-		rebirthLevelText.Visible = not value
+		rebirthFrame.Visible = not value
 		backgroundFrame.Visible = not value
 		levelUpText.Visible = value
 		rebirthButton.Visible = value
