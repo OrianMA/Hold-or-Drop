@@ -79,6 +79,14 @@ function titleFor(metric: QuestMetric, target: number): string {
 // 1h40 / 5h / 16h par palier, au lieu d'un mur dès la difficulté Mid. Le cooldown
 // de 5 min (QUEST_RESET_SECONDS) fait le reste : les paliers bas se re-terminent en
 // boucle pendant que les hauts avancent en arrière-plan.
+//
+// RÉCOMPENSES : calibrées pour ~100K tokens en 20-30 min de jeu, soit le prix de
+// plusieurs améliorations de stat (15-25K) par session. Le calcul tient compte du
+// COOLDOWN, qui est le vrai plafond des petits paliers : une quête ne peut retomber
+// qu'une fois toutes les (temps de complétion + 5 min). Sur 25 min ça donne ~3
+// complétions par quête Easy, ~1 par quête Mid, ~1 quête Hard :
+//   Easy 3×(2K+2.5K+3K) = 22.5K · Mid 6K+10K+15K = 31K · Hard ~50K → ~100K.
+// Les trois derniers paliers ne tombent pas dans une session : ce sont des jackpots.
 const METRIC_ORDER: readonly QuestMetric[] = ["RocketsLaunched", "UpgradesBought", "MultiplierTotal"];
 
 interface DifficultyTuning {
@@ -93,37 +101,37 @@ const TUNING: readonly DifficultyTuning[] = [
 		difficulty: "Easy",
 		frames: ["B1_EasyQuestElement", "B2_EasyQuestElement", "B3_EasyQuestElement"],
 		targets: [5, 3, 10],
-		rewards: [50, 60, 70],
+		rewards: [2_000, 2_500, 3_000],
 	},
 	{
 		difficulty: "Mid",
 		frames: ["C2_QuestElement", "C3_QuestElement", "C4_QuestElement"],
 		targets: [25, 20, 100],
-		rewards: [150, 250, 375],
+		rewards: [6_000, 10_000, 15_000],
 	},
 	{
 		difficulty: "Hard",
 		frames: ["D2_QuestElement", "D3_QuestElement", "D4_QuestElement"],
 		targets: [75, 60, 1_000],
-		rewards: [1_000, 1_250, 1_570],
+		rewards: [40_000, 50_000, 60_000],
 	},
 	{
 		difficulty: "Insane",
 		frames: ["E1_QuestElement", "E2_QuestElement", "E3_QuestElement"],
 		targets: [250, 200, 10_000],
-		rewards: [5_000, 7_500, 8_000],
+		rewards: [200_000, 300_000, 320_000],
 	},
 	{
 		difficulty: "Impossible",
 		frames: ["F2_QuestElement", "F3_QuestElement", "F4_QuestElement"],
 		targets: [750, 600, 100_000],
-		rewards: [25_000, 30_000, 35_000],
+		rewards: [1_000_000, 1_200_000, 1_400_000],
 	},
 	{
 		difficulty: "Unknown", // la difficulté "???"
 		frames: ["H2_QuestElement", "H3_QuestElement", "H4_QuestElement"],
 		targets: [2_500, 2_000, 1_000_000],
-		rewards: [100_000, 125_000, 135_000],
+		rewards: [4_000_000, 5_000_000, 5_400_000],
 	},
 ];
 

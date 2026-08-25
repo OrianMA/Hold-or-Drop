@@ -1496,9 +1496,16 @@ accomplissement paie des **ScrollToken**, la seconde monnaie.
 | Buy N upgrades | `UpgradesBought` | `ShopService`, après un achat validé (NIVEAUX achetés) | 3 · 20 · 60 · 200 · 600 · 2 000 |
 | Obtain Nx multiplier in total | `MultiplierTotal` | `ButtonInGameModule`, au claim (`+= claimedMultiplier`) | 10 · 100 · 1 000 · 10 000 · 100 000 · 1 000 000 |
 
-Récompenses (Easy → ???) : 50/60/70 · 150/250/375 · 1K/1.25K/1.57K · 5K/7.5K/8K ·
-25K/30K/35K · 100K/125K/135K. **Tout se retouche dans `shared/QuestConfig.ts`** (table
+Récompenses (Easy → ???) : 2K/2.5K/3K · 6K/10K/15K · 40K/50K/60K · 200K/300K/320K ·
+1M/1.2M/1.4M · 4M/5M/5.4M. **Tout se retouche dans `shared/QuestConfig.ts`** (table
 `TUNING`, un bloc par difficulté) — c'est le seul fichier à éditer pour rééquilibrer.
+
+**Calibrage des gains : ~100K tokens pour 20-30 min de jeu**, soit plusieurs améliorations
+de stat (15-25K, §6.27) par session. Le plafond réel des petits paliers n'est pas leur
+objectif mais le **cooldown** : une quête ne retombe qu'une fois toutes les
+`(temps de complétion + 5 min)`. Sur 25 min ça donne ~3 complétions par quête Easy, ~1 par
+quête Mid et ~1 quête Hard, soit 22.5K + 31K + ~50K ≈ 100K. Les trois derniers paliers ne
+tombent pas dans une session : ce sont des jackpots (le ??? paie 14.4M à lui seul).
 
 **Rampe.** Décollages et améliorations montent d'environ **×3 par difficulté** : à ~2.5
 décollages/min et ~2 achats/min ça donne ~2 min / 10 min / 30 min / 1h40 / 5h / 16h par
@@ -1720,6 +1727,7 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `MEGA_ROCKET_SCALE` | `shared/MegaRocketConfig.ts` | 1.15 | Échelle de la fusée mega (`Model:ScaleTo`) |
 | `TUNING` (quêtes) | `shared/QuestConfig.ts` | 3 métriques × 6 difficultés | Objectifs + récompenses ScrollToken de chaque quête (§6.26) — LE fichier de rééquilibrage |
 | `QUEST_RESET_SECONDS` | `shared/QuestConfig.ts` | 300s | Cooldown avant qu'une quête accomplie ne reparte à zéro |
+| `TUNING.rewards` | `shared/QuestConfig.ts` | 2K…5.4M | Récompenses ScrollToken par quête — calibrées pour ~100K / 20-30 min (§6.26) |
 | `SCROLL_SHOP_ITEMS` | `shared/ScrollShopConfig.ts` | 350K/250K/50K/15K/20K/25K | Prix des 6 achats en ScrollToken (§6.27) — le prix affiché EST celui-ci |
 | `SCROLL_MONEY_BOOST` | `shared/ScrollShopConfig.ts` | ×1.25 | Boost d'argent permanent acheté en tokens, additif dans `moneyMult` |
 | `REFRESH_INTERVAL` | `shared/LeaderboardConfig.ts` | 60s | Leaderboard/podium refresh period |
