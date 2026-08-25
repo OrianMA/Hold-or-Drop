@@ -248,7 +248,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 	QuestService.report(player, "RocketsLaunched", 1);
 
 	// Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
-	AnalyticsService.custom(player, "RocketLaunched", rocketSpeed);
+	// Le champ Mega/Standard donne le NOMBRE de mega fusées réellement décollées et
+	// leur part des vols — la contrepartie de MegaRocketGranted (celles distribuées).
+	AnalyticsService.custom(player, "RocketLaunched", rocketSpeed, megaRun ? "Mega" : "Standard");
 	AnalyticsService.runStep(player, runId, 1, "Launch");
 	AnalyticsService.onboardingStep(player, 2, "Launch");
 
@@ -296,7 +298,18 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		QuestService.report(player, "MultiplierTotal", claimedMultiplier);
 
 		// Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
-		AnalyticsService.custom(player, "RunClaimed", claimedMultiplier);
+		// RunClaimed = TOUS les claims, découpé par qualité sur deux axes indépendants
+		// (Perfect et Critical peuvent tomber ensemble) → le dashboard lit directement
+		// le POURCENTAGE de perfect / de critical. PerfectClaim et CriticalClaim restent
+		// les compteurs bruts (leur nombre, sans avoir à additionner des combinaisons).
+		AnalyticsService.custom(
+			player,
+			"RunClaimed",
+			claimedMultiplier,
+			perfect ? "Perfect" : "Standard",
+			critical ? "Critical" : "Standard",
+			megaRun ? "Mega" : "Standard",
+		);
 		if (perfect) AnalyticsService.custom(player, "PerfectClaim", claimedMultiplier);
 		if (critical) AnalyticsService.custom(player, "CriticalClaim", claimedMultiplier);
 		AnalyticsService.runStep(player, runId, 2, "Claim");

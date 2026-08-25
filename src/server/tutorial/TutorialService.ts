@@ -111,7 +111,8 @@ function enterStep(player: Player, state: TutorialState, stepId: string): void {
 function finishTutorial(player: Player, state: TutorialState, skipped: boolean): void {
 	const lastStep = state.step;
 	const spent = closeStep(state);
-	if (skipped) TutorialAnalytics.skipped(player, lastStep, state.elapsed);
+	// L'index 0-based du step quitté EST le nombre de steps déjà accomplis avant lui.
+	if (skipped) TutorialAnalytics.skipped(player, lastStep, state.elapsed, stepIndexById(lastStep) ?? 0);
 	else {
 		// La durée du step (stepDone) a déjà été comptabilisée par l'appelant (advanceOne).
 		// Ne pas la re-logger ici pour éviter un doublon.
@@ -133,7 +134,7 @@ function advanceOne(player: Player, state: TutorialState): void {
 	}
 	const leaving = state.step;
 	const spent = closeStep(state);
-	TutorialAnalytics.stepDone(player, leaving, spent);
+	TutorialAnalytics.stepDone(player, leaving, spent, index);
 
 	const nextIndex = index + 1;
 	if (nextIndex >= TUTORIAL_STEPS.size()) {

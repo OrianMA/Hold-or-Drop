@@ -1,5 +1,6 @@
 import { AnalyticsService as RobloxAnalytics, HttpService, Players } from "@rbxts/services";
 import { PlayerProgressionService } from "./PlayerProgressionService";
+import { PlayerDataService } from "./PlayerDataService";
 
 // Thin, crash-proof wrapper around Roblox's official AnalyticsService (Creator Hub →
 // Analytics). NOTHING here needs any Studio setup — the events flow to the dashboard
@@ -17,7 +18,12 @@ import { PlayerProgressionService } from "./PlayerProgressionService";
 //   Funnel   "CoreRun"  → per-run progress: Launch → Claim → Banked (repeatable).
 //   Onboarding funnel   → first-session only: Joined → Launch → Claim → Purchase → Rebirth.
 //   Progression "Rebirth" → each rebirth completed (level = rebirth count).
-//   Custom   → per-event counters with a breakdown field (RocketLaunched, RunLost, …).
+//   Custom   → per-event counters with up to 3 breakdown fields (RocketLaunched, …).
+//
+// Naming convention for custom events: <Subject><PastTenseVerb> in PascalCase, one
+// event per real-world fact (RocketLaunched, QuestCompleted, DailyRewardClaimed).
+// A VARIANT of a fact is a breakdown FIELD, never a second event name — that's what
+// makes a percentage readable on the dashboard (e.g. RunClaimed × Perfect/Standard).
 
 const CURRENCY = "Cash";
 
@@ -53,34 +59,55 @@ function buildFields(...values: Array<string | number | undefined>): object | un
 // Onboarding steps already sent this session (per player) — a step is logged at most once.
 const onboardingSent = new Map<Player, Set<number>>();
 
+// Snapshot taken at join: persisted Playtime (seconds, all previous sessions) and the
+// os.clock() of the join. `playedSeconds` = snapshot + elapsed session time.
+// Why not read the Playtime attribute directly? LeaderboardService only folds the
+// session into it every flush, so a direct read lags by up to one flush interval.
+const playtimeAtJoin = new Map<Player, number>();
+const joinClock = new Map<Player, number>();
+
 // One funnel step, whatever the funnel. pcall'd: throttled analytics must never break
 // gameplay.
-function logFunnelStep(
-	player: Player,
-	funnelName: string,
-	sessionId: string,
-	step: number,
-	stepName: string,
-): void {
+function logFunnelStep(player: Player, funnelName: string, sessionId: string, step: number, stepName: string): void {
 	pcall(() => RobloxAnalytics.LogFunnelStepEvent(player, funnelName, sessionId, step, stepName));
 }
 
 export const AnalyticsService = {
 	init(): void {
 		const onJoin = (player: Player): void => {
+			joinClock.set(player, os.clock());
 			task.spawn(() => {
 				// Wait until progression finished loading (it sets Rebirths at the end of
 				// the async load), so isFirstSession is decided before the join step.
 				if (player.GetAttribute("Rebirths") === undefined) {
 					player.GetAttributeChangedSignal("Rebirths").Wait();
 				}
+				// Same for the persisted Playtime (PlayerDataService writes every numeric
+				// key once its load finishes) — the baseline of `playedSeconds`.
+				if (player.GetAttribute("Playtime") === undefined) {
+					player.GetAttributeChangedSignal("Playtime").Wait();
+				}
+				playtimeAtJoin.set(player, PlayerDataService.get(player, "Playtime"));
 				AnalyticsService.onboardingStep(player, 1, "Joined");
 			});
 		};
 		Players.PlayerAdded.Connect(onJoin);
 		for (const player of Players.GetPlayers()) onJoin(player);
 
-		Players.PlayerRemoving.Connect((player) => onboardingSent.delete(player));
+		Players.PlayerRemoving.Connect((player) => {
+			onboardingSent.delete(player);
+			playtimeAtJoin.delete(player);
+			joinClock.delete(player);
+		});
+	},
+
+	// Total seconds this player has EVER played, live (previous sessions + this one).
+	// Used as the clock of "time to first X" metrics, so they stay correct for a player
+	// who reaches the milestone several sessions after joining.
+	playedSeconds(player: Player): number {
+		const previous = playtimeAtJoin.get(player) ?? PlayerDataService.get(player, "Playtime");
+		const session = os.clock() - (joinClock.get(player) ?? os.clock());
+		return math.floor(previous + session);
 	},
 
 	// ── Run funnel (repeatable, one funnelSessionId per run) ────────────────────
@@ -156,8 +183,17 @@ export const AnalyticsService = {
 		);
 	},
 
-	// ── Custom counters (optional numeric value + one breakdown field) ──────────
-	custom(player: Player, eventName: string, value?: number, field?: string | number): void {
-		pcall(() => RobloxAnalytics.LogCustomEvent(player, eventName, value, buildFields(field)));
+	// ── Custom counters (optional numeric value + up to 3 breakdown fields) ─────
+	// The dashboard counts the events on its own, so `value` is the magnitude of the
+	// fact (reward, seconds, multiplier) and the fields are the dimensions to slice by.
+	custom(
+		player: Player,
+		eventName: string,
+		value?: number,
+		field?: string | number,
+		field2?: string | number,
+		field3?: string | number,
+	): void {
+		pcall(() => RobloxAnalytics.LogCustomEvent(player, eventName, value, buildFields(field, field2, field3)));
 	},
 };

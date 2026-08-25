@@ -5,6 +5,7 @@ local RobloxAnalytics = _services.AnalyticsService
 local HttpService = _services.HttpService
 local Players = _services.Players
 local PlayerProgressionService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerProgressionService").PlayerProgressionService
+local PlayerDataService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "PlayerDataService").PlayerDataService
 -- Thin, crash-proof wrapper around Roblox's official AnalyticsService (Creator Hub →
 -- Analytics). NOTHING here needs any Studio setup — the events flow to the dashboard
 -- automatically for a published experience (first data lands after ~24h).
@@ -21,7 +22,12 @@ local PlayerProgressionService = TS.import(script, game:GetService("ServerScript
 --   Funnel   "CoreRun"  → per-run progress: Launch → Claim → Banked (repeatable).
 --   Onboarding funnel   → first-session only: Joined → Launch → Claim → Purchase → Rebirth.
 --   Progression "Rebirth" → each rebirth completed (level = rebirth count).
---   Custom   → per-event counters with a breakdown field (RocketLaunched, RunLost, …).
+--   Custom   → per-event counters with up to 3 breakdown fields (RocketLaunched, …).
+--
+-- Naming convention for custom events: <Subject><PastTenseVerb> in PascalCase, one
+-- event per real-world fact (RocketLaunched, QuestCompleted, DailyRewardClaimed).
+-- A VARIANT of a fact is a breakdown FIELD, never a second event name — that's what
+-- makes a percentage readable on the dashboard (e.g. RunClaimed × Perfect/Standard).
 local CURRENCY = "Cash"
 -- Recommended transactionType buckets (free strings on the API; kept consistent here).
 local TxType = {
@@ -60,6 +66,12 @@ local function buildFields(...)
 end
 -- Onboarding steps already sent this session (per player) — a step is logged at most once.
 local onboardingSent = {}
+-- Snapshot taken at join: persisted Playtime (seconds, all previous sessions) and the
+-- os.clock() of the join. `playedSeconds` = snapshot + elapsed session time.
+-- Why not read the Playtime attribute directly? LeaderboardService only folds the
+-- session into it every flush, so a direct read lags by up to one flush interval.
+local playtimeAtJoin = {}
+local joinClock = {}
 -- One funnel step, whatever the funnel. pcall'd: throttled analytics must never break
 -- gameplay.
 local function logFunnelStep(player, funnelName, sessionId, step, stepName)
@@ -71,12 +83,23 @@ local AnalyticsService
 AnalyticsService = {
 	init = function(self)
 		local onJoin = function(player)
+			local _player = player
+			local _arg1 = os.clock()
+			joinClock[_player] = _arg1
 			task.spawn(function()
 				-- Wait until progression finished loading (it sets Rebirths at the end of
 				-- the async load), so isFirstSession is decided before the join step.
 				if player:GetAttribute("Rebirths") == nil then
 					player:GetAttributeChangedSignal("Rebirths"):Wait()
 				end
+				-- Same for the persisted Playtime (PlayerDataService writes every numeric
+				-- key once its load finishes) — the baseline of `playedSeconds`.
+				if player:GetAttribute("Playtime") == nil then
+					player:GetAttributeChangedSignal("Playtime"):Wait()
+				end
+				local _player_1 = player
+				local _arg1_1 = PlayerDataService:get(player, "Playtime")
+				playtimeAtJoin[_player_1] = _arg1_1
 				AnalyticsService:onboardingStep(player, 1, "Joined")
 			end)
 		end
@@ -86,12 +109,28 @@ AnalyticsService = {
 		end
 		Players.PlayerRemoving:Connect(function(player)
 			local _player = player
-			-- ▼ Map.delete ▼
-			local _valueExisted = onboardingSent[_player] ~= nil
 			onboardingSent[_player] = nil
-			-- ▲ Map.delete ▲
-			return _valueExisted
+			local _player_1 = player
+			playtimeAtJoin[_player_1] = nil
+			local _player_2 = player
+			joinClock[_player_2] = nil
 		end)
+	end,
+	playedSeconds = function(self, player)
+		local _player = player
+		local _condition = playtimeAtJoin[_player]
+		if _condition == nil then
+			_condition = PlayerDataService:get(player, "Playtime")
+		end
+		local previous = _condition
+		local _exp = os.clock()
+		local _player_1 = player
+		local _condition_1 = joinClock[_player_1]
+		if _condition_1 == nil then
+			_condition_1 = os.clock()
+		end
+		local session = _exp - _condition_1
+		return math.floor(previous + session)
 	end,
 	newRunId = function(self)
 		local ok, id = pcall(function()
@@ -150,9 +189,9 @@ AnalyticsService = {
 			return RobloxAnalytics:LogProgressionEvent(player, "Rebirth", Enum.AnalyticsProgressionType.Complete, rebirths, `Rebirth {rebirths}`)
 		end)
 	end,
-	custom = function(self, player, eventName, value, field)
+	custom = function(self, player, eventName, value, field, field2, field3)
 		pcall(function()
-			return RobloxAnalytics:LogCustomEvent(player, eventName, value, (buildFields(field)))
+			return RobloxAnalytics:LogCustomEvent(player, eventName, value, (buildFields(field, field2, field3)))
 		end)
 	end,
 }

@@ -11,6 +11,7 @@ local megaRocketCheatKey = _CheatConfig.megaRocketCheatKey
 local megaRocketInterval = _CheatConfig.megaRocketInterval
 local RocketLauncher = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketLauncher").RocketLauncher
 local RocketPlacer = TS.import(script, game:GetService("ServerScriptService"), "TS", "modules", "RocketPlacer").RocketPlacer
+local AnalyticsService = TS.import(script, game:GetService("ServerScriptService"), "TS", "services", "AnalyticsService").AnalyticsService
 local _MegaRocketConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MegaRocketConfig")
 local MEGA_ROCKET_ANNOUNCE = _MegaRocketConfig.MEGA_ROCKET_ANNOUNCE
 local MEGA_ROCKET_ATTR = _MegaRocketConfig.MEGA_ROCKET_ATTR
@@ -79,13 +80,21 @@ local function setPanelText(text)
 end
 -- Top de l'événement : tout le monde gagne sa Mega Rocket.
 -- `announce` remplace le bandeau par défaut — un déclenchement acheté annonce QUI l'a
--- payé plutôt que le message d'horloge.
-local function fireEvent(announce)
+-- payé plutôt que le message d'horloge. `source` n'est là que pour les analytics :
+-- l'horloge du serveur ("Timer") ou un achat en ScrollToken ("Purchase").
+local function fireEvent(announce, source)
 	if announce == nil then
 		announce = MEGA_ROCKET_ANNOUNCE
 	end
+	if source == nil then
+		source = "Timer"
+	end
 	for _, player in Players:GetPlayers() do
 		player:SetAttribute(MEGA_ROCKET_ATTR, true)
+		-- Une mega fusée distribuée = un événement, par joueur présent : le compte du
+		-- dashboard donne le nombre de mega fusées données (à comparer aux
+		-- RocketLaunched taggées "Mega", qui sont celles réellement volées).
+		AnalyticsService:custom(player, "MegaRocketGranted", 1, source)
 	end
 	-- Bandeau légendaire pour tout le serveur (§6.20).
 	Events.InformationTextEvent:FireAllClients(announce, {
@@ -141,7 +150,7 @@ local MegaRocketService = {
 	end,
 	fireNow = function(self, announce)
 		nextEventAt = os.clock() + INTERVAL
-		fireEvent(announce)
+		fireEvent(announce, "Purchase")
 		setPanelText(MEGA_ROCKET_PANEL_FIRED)
 		panelHoldUntil = os.clock() + FIRED_TEXT_DURATION
 	end,

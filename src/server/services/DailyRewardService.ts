@@ -93,7 +93,8 @@ function shouldOpenOnJoin(player: Player): boolean {
 
 // Credits the cash and reports it. `multiplier` is the streak multiplier, `bonus` the
 // product factor (1 or 3) — kept apart so the client can show which one paid.
-function payout(player: Player, multiplier: number, bonus: number): number {
+// `streak` ne sert qu'aux analytics (jour de série atteint).
+function payout(player: Player, multiplier: number, bonus: number, streak: number): number {
 	const baseCash = PlayerProgressionService.get(player, "EffectiveBaseCash");
 	const amount = math.floor(baseCash * multiplier * bonus);
 	if (amount <= 0) return 0;
@@ -109,7 +110,10 @@ function payout(player: Player, multiplier: number, bonus: number): number {
 		bonus > 1 ? TxType.IAP : TxType.Gameplay,
 		`DailyReward_x${multiplier}`,
 	);
-	AnalyticsService.custom(player, bonus > 1 ? "DailyRewardClaimedX3" : "DailyRewardClaimed", multiplier);
+	// Analytics : UN seul nom d'événement (son compte = le nombre de daily rewards
+	// pris), les variantes sont des champs → le dashboard donne le nombre ET le
+	// pourcentage de claims ×3, et la répartition par jour de série.
+	AnalyticsService.custom(player, "DailyRewardClaimed", multiplier, bonus > 1 ? "Paid3x" : "Free", `Day${streak}`);
 
 	Events.DailyRewardGrantedEvent.FireClient(player, amount, multiplier, bonus);
 	return amount;
@@ -129,7 +133,7 @@ function handleClaim(player: Player): void {
 	const multiplier = dailyMultiplier(streak);
 	commit(player, streak);
 	publish(player);
-	payout(player, multiplier, 1);
+	payout(player, multiplier, 1, streak);
 }
 
 export const DailyRewardService = {
@@ -190,7 +194,7 @@ export const DailyRewardService = {
 			commit(player, streak);
 			publish(player);
 		}
-		payout(player, multiplier, DAILY_X3_MULTIPLIER);
+		payout(player, multiplier, DAILY_X3_MULTIPLIER, streak);
 	},
 
 	// Called by RebirthService after a successful rebirth. Only meaningful for a player

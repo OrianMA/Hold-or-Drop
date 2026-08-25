@@ -4,6 +4,7 @@ import { RoomService } from "server/rooms/RoomService";
 import { megaRocketCheatDelay, megaRocketCheatKey, megaRocketInterval } from "server/modules/CheatConfig";
 import { RocketLauncher } from "server/modules/RocketLauncher";
 import { RocketPlacer } from "server/modules/RocketPlacer";
+import { AnalyticsService } from "./AnalyticsService";
 import {
 	MEGA_ROCKET_ANNOUNCE,
 	MEGA_ROCKET_ATTR,
@@ -62,9 +63,16 @@ function setPanelText(text: string): void {
 
 // Top de l'événement : tout le monde gagne sa Mega Rocket.
 // `announce` remplace le bandeau par défaut — un déclenchement acheté annonce QUI l'a
-// payé plutôt que le message d'horloge.
-function fireEvent(announce = MEGA_ROCKET_ANNOUNCE): void {
-	for (const player of Players.GetPlayers()) player.SetAttribute(MEGA_ROCKET_ATTR, true);
+// payé plutôt que le message d'horloge. `source` n'est là que pour les analytics :
+// l'horloge du serveur ("Timer") ou un achat en ScrollToken ("Purchase").
+function fireEvent(announce = MEGA_ROCKET_ANNOUNCE, source = "Timer"): void {
+	for (const player of Players.GetPlayers()) {
+		player.SetAttribute(MEGA_ROCKET_ATTR, true);
+		// Une mega fusée distribuée = un événement, par joueur présent : le compte du
+		// dashboard donne le nombre de mega fusées données (à comparer aux
+		// RocketLaunched taggées "Mega", qui sont celles réellement volées).
+		AnalyticsService.custom(player, "MegaRocketGranted", 1, source);
+	}
 
 	// Bandeau légendaire pour tout le serveur (§6.20).
 	Events.InformationTextEvent.FireAllClients(announce, { rarity: "Legendary" });
@@ -123,7 +131,7 @@ export const MegaRocketService = {
 	// juste avant l'échéance donnerait deux Mega Rockets à quelques secondes d'écart.
 	fireNow(announce: string): void {
 		nextEventAt = os.clock() + INTERVAL;
-		fireEvent(announce);
+		fireEvent(announce, "Purchase");
 		setPanelText(MEGA_ROCKET_PANEL_FIRED);
 		panelHoldUntil = os.clock() + FIRED_TEXT_DURATION;
 	},

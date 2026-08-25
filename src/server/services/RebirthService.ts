@@ -15,6 +15,28 @@ import { EndGameButtonModule } from "server/modules/EndGameButtonModule";
 
 const DENIED_COLOR = new Color3(1, 0.4, 0.4);
 
+// Tranche lisible pour la distribution du temps de première rebirth (la VALEUR de
+// l'événement reste la durée exacte en secondes, pour la moyenne).
+function playtimeBucket(seconds: number): string {
+	const minutes = seconds / 60;
+	if (minutes < 5) return "0-5min";
+	if (minutes < 15) return "5-15min";
+	if (minutes < 30) return "15-30min";
+	if (minutes < 60) return "30-60min";
+	if (minutes < 180) return "1-3h";
+	return "3h+";
+}
+
+// TEMPS DE LA PREMIÈRE REBIRTH. Seulement au passage de 0 → 1 rebirth, jamais après.
+// L'horloge est le temps de jeu TOTAL (sessions précédentes comprises) : un joueur qui
+// rebirth au bout de trois sessions est compté sur son vrai temps de jeu, pas sur les
+// deux minutes de la session en cours.
+function logFirstRebirthTime(player: Player, newRebirths: number, kind: string): void {
+	if (newRebirths !== 1) return;
+	const seconds = AnalyticsService.playedSeconds(player);
+	AnalyticsService.custom(player, "TimeToFirstRebirth", seconds, playtimeBucket(seconds), kind);
+}
+
 function handleRebirth(player: Player): void {
 	const rebirths = PlayerProgressionService.getRebirths(player);
 	const cost = rebirthCost(rebirths);
@@ -34,6 +56,7 @@ function handleRebirth(player: Player): void {
 	AnalyticsService.cashSink(player, money, 0, TxType.Rebirth, `Rebirth${newRebirths}`);
 	AnalyticsService.rebirth(player, newRebirths);
 	AnalyticsService.custom(player, "RebirthDone", newRebirths);
+	logFirstRebirthTime(player, newRebirths, "Standard");
 	AnalyticsService.onboardingStep(player, 5, "Rebirth");
 
 	// Drop any payout that was still animating: cancel the server credit so it can't
@@ -68,6 +91,7 @@ export const RebirthService = {
 		const newRebirths = PlayerProgressionService.getRebirths(player);
 		AnalyticsService.rebirth(player, newRebirths);
 		AnalyticsService.custom(player, "SafeRebirthDone", newRebirths);
+		logFirstRebirthTime(player, newRebirths, "Safe");
 
 		// Swap the pad rocket for the new rebirth-level one. Wrapped in pcall: this
 		// runs inside ProcessReceipt, and a throw AFTER the Rebirths increment would

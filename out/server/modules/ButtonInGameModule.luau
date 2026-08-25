@@ -239,7 +239,9 @@ local function startButtonGame(player, session)
 	-- Quêtes : un décollage compte, quelle que soit son issue (une perte aussi).
 	QuestService:report(player, "RocketsLaunched", 1)
 	-- Analytics: run started (custom counter + funnel step 1 + onboarding step 2).
-	AnalyticsService:custom(player, "RocketLaunched", rocketSpeed)
+	-- Le champ Mega/Standard donne le NOMBRE de mega fusées réellement décollées et
+	-- leur part des vols — la contrepartie de MegaRocketGranted (celles distribuées).
+	AnalyticsService:custom(player, "RocketLaunched", rocketSpeed, if megaRun then "Mega" else "Standard")
 	AnalyticsService:runStep(player, runId, 1, "Launch")
 	AnalyticsService:onboardingStep(player, 2, "Launch")
 	-- Claim : le joueur VERROUILLE le multiplicateur courant en gain garanti. La fusée ne
@@ -286,7 +288,11 @@ local function startButtonGame(player, session)
 		-- qui gonflent le base cash) s'ajoute au total cumulé. Une perte n'ajoute rien.
 		QuestService:report(player, "MultiplierTotal", claimedMultiplier)
 		-- Analytics: claim locked (custom counter + funnel step 2 + onboarding step 3).
-		AnalyticsService:custom(player, "RunClaimed", claimedMultiplier)
+		-- RunClaimed = TOUS les claims, découpé par qualité sur deux axes indépendants
+		-- (Perfect et Critical peuvent tomber ensemble) → le dashboard lit directement
+		-- le POURCENTAGE de perfect / de critical. PerfectClaim et CriticalClaim restent
+		-- les compteurs bruts (leur nombre, sans avoir à additionner des combinaisons).
+		AnalyticsService:custom(player, "RunClaimed", claimedMultiplier, if perfect then "Perfect" else "Standard", if critical then "Critical" else "Standard", if megaRun then "Mega" else "Standard")
 		if perfect then
 			AnalyticsService:custom(player, "PerfectClaim", claimedMultiplier)
 		end

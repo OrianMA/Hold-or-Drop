@@ -15,6 +15,7 @@ local InGameUIController = TS.import(script, script.Parent.Parent, "ui", "InGame
 local InformationText = TS.import(script, script.Parent.Parent, "ui", "InformationText").InformationText
 local CriticalRain = TS.import(script, script.Parent.Parent, "ui", "CriticalRain").CriticalRain
 local QuestsBodyAnimation = TS.import(script, script.Parent.Parent, "ui", "QuestsBodyAnimation").QuestsBodyAnimation
+local ShopRedDot = TS.import(script, script.Parent.Parent, "ui", "ShopRedDot").ShopRedDot
 local Events = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "Event").Events
 -- Ouvre / ferme le panneau des quêtes (InGameUI/QuestsPanel) et le peint.
 --   • HUD/ButtonsFrame/QuestsFrame/ImageButton ouvre
@@ -204,8 +205,11 @@ local function init()
 	local showQuests = function()
 		return showBody(questsBody, buyRewardBody)
 	end
+	-- Afficher la boutique VAUT accusé de réception de la pastille rouge : ce que le
+	-- joueur peut s'offrir à cet instant est désormais vu, achat ou pas.
 	local showShop = function()
-		return showBody(buyRewardBody, questsBody)
+		ShopRedDot:acknowledge()
+		showBody(buyRewardBody, questsBody)
 	end
 	local open = function()
 		popup.Visible = true

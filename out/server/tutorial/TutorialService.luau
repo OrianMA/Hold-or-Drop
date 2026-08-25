@@ -129,8 +129,15 @@ end
 local function finishTutorial(player, state, skipped)
 	local lastStep = state.step
 	local spent = closeStep(state)
+	-- L'index 0-based du step quitté EST le nombre de steps déjà accomplis avant lui.
 	if skipped then
-		TutorialAnalytics:skipped(player, lastStep, state.elapsed)
+		local _exp = player
+		local _exp_1 = state.elapsed
+		local _condition = stepIndexById(lastStep)
+		if _condition == nil then
+			_condition = 0
+		end
+		TutorialAnalytics:skipped(_exp, lastStep, _exp_1, _condition)
 	else
 		-- La durée du step (stepDone) a déjà été comptabilisée par l'appelant (advanceOne).
 		-- Ne pas la re-logger ici pour éviter un doublon.
@@ -153,7 +160,7 @@ local function advanceOne(player, state)
 	end
 	local leaving = state.step
 	local spent = closeStep(state)
-	TutorialAnalytics:stepDone(player, leaving, spent)
+	TutorialAnalytics:stepDone(player, leaving, spent, index)
 	local nextIndex = index + 1
 	if nextIndex >= #TUTORIAL_STEPS then
 		finishTutorial(player, state, false)

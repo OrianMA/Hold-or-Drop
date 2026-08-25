@@ -92,7 +92,8 @@ local function shouldOpenOnJoin(player)
 end
 -- Credits the cash and reports it. `multiplier` is the streak multiplier, `bonus` the
 -- product factor (1 or 3) — kept apart so the client can show which one paid.
-local function payout(player, multiplier, bonus)
+-- `streak` ne sert qu'aux analytics (jour de série atteint).
+local function payout(player, multiplier, bonus, streak)
 	local baseCash = PlayerProgressionService:get(player, "EffectiveBaseCash")
 	local amount = math.floor(baseCash * multiplier * bonus)
 	if amount <= 0 then
@@ -102,7 +103,10 @@ local function payout(player, multiplier, bonus)
 	-- Analytics: a faucet — cash entering the economy. Robux-paid claims are tagged
 	-- IAP so the free and the ×3 paths stay separable on the dashboard.
 	AnalyticsService:cashSource(player, amount, PlayerDataService:get(player, "Money"), if bonus > 1 then TxType.IAP else TxType.Gameplay, `DailyReward_x{multiplier}`)
-	AnalyticsService:custom(player, if bonus > 1 then "DailyRewardClaimedX3" else "DailyRewardClaimed", multiplier)
+	-- Analytics : UN seul nom d'événement (son compte = le nombre de daily rewards
+	-- pris), les variantes sont des champs → le dashboard donne le nombre ET le
+	-- pourcentage de claims ×3, et la répartition par jour de série.
+	AnalyticsService:custom(player, "DailyRewardClaimed", multiplier, if bonus > 1 then "Paid3x" else "Free", `Day{streak}`)
 	Events.DailyRewardGrantedEvent:FireClient(player, amount, multiplier, bonus)
 	return amount
 end
@@ -121,7 +125,7 @@ local function handleClaim(player)
 	local multiplier = dailyMultiplier(streak)
 	commit(player, streak)
 	publish(player)
-	payout(player, multiplier, 1)
+	payout(player, multiplier, 1, streak)
 end
 local DailyRewardService
 DailyRewardService = {
@@ -189,7 +193,7 @@ DailyRewardService = {
 			commit(player, streak)
 			publish(player)
 		end
-		payout(player, multiplier, DAILY_X3_MULTIPLIER)
+		payout(player, multiplier, DAILY_X3_MULTIPLIER, streak)
 	end,
 	onRebirth = function(self, player)
 		local _player = player

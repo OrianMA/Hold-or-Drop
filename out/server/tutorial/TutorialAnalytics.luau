@@ -9,6 +9,11 @@ local TUTORIAL_STEPS = TS.import(script, game:GetService("ReplicatedStorage"), "
 --   est le taux d'abandon PENDANT le step N. funnelSessionId = le runId persisté, donc
 --   un joueur qui revient après un relog reste dans le même funnel.
 local FUNNEL = "Tutorial"
+-- "Step03" — index 0-based → libellé 1-based zéro-paddé, pour que le dashboard trie
+-- les marches dans l'ordre du tutorial et pas dans l'ordre alphabétique.
+local function stepLabel(index)
+	return string.format("Step%02d", index + 1)
+end
 local TutorialAnalytics = {
 	started = function(self, player, resumed)
 		AnalyticsService:custom(player, "TutorialStarted", 1, if resumed then "Resumed" else "Fresh")
@@ -16,15 +21,15 @@ local TutorialAnalytics = {
 	stepEntered = function(self, player, runId, index, stepId)
 		AnalyticsService:funnelStep(player, FUNNEL, runId, index + 1, stepId)
 	end,
-	stepDone = function(self, player, stepId, seconds)
-		AnalyticsService:custom(player, "TutorialStepDone", seconds, stepId)
+	stepDone = function(self, player, stepId, seconds, index)
+		AnalyticsService:custom(player, "TutorialStepDone", seconds, stepId, stepLabel(index))
 	end,
 	completed = function(self, player, runId, totalSeconds)
 		AnalyticsService:funnelStep(player, FUNNEL, runId, #TUTORIAL_STEPS + 1, "Done")
-		AnalyticsService:custom(player, "TutorialCompleted", totalSeconds, "NoSkip")
+		AnalyticsService:custom(player, "TutorialCompleted", totalSeconds, "NoSkip", `{#TUTORIAL_STEPS}Steps`)
 	end,
-	skipped = function(self, player, stepId, seconds)
-		AnalyticsService:custom(player, "TutorialSkipped", seconds, stepId)
+	skipped = function(self, player, stepId, seconds, stepsDone)
+		AnalyticsService:custom(player, "TutorialSkipped", seconds, stepId, `{stepsDone}Steps`)
 	end,
 }
 return {

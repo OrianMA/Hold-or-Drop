@@ -18,7 +18,6 @@ local initCommunityMascot = TS.import(script, script.Parent, "rooms", "Community
 local initShopMenu = TS.import(script, script.Parent, "behaviors", "ShopBehavior").init
 local initShopItems = TS.import(script, script.Parent, "behaviors", "ShopItemsController").init
 local initShopMoneyBuy = TS.import(script, script.Parent, "behaviors", "ShopMoneyBuyBehavior").init
-local initBoostShop = TS.import(script, script.Parent, "behaviors", "BoostShopController").init
 local initMultiplierPass = TS.import(script, script.Parent, "behaviors", "MultiplierPassController").init
 local initMoneyBoost = TS.import(script, script.Parent, "behaviors", "MoneyBoostController").init
 local initRebirthMenu = TS.import(script, script.Parent, "behaviors", "RebirthMenuBehavior").init
@@ -27,6 +26,7 @@ local initDailyRewards = TS.import(script, script.Parent, "behaviors", "DailyRew
 local initQuests = TS.import(script, script.Parent, "behaviors", "QuestsBehavior").init
 local initScrollShop = TS.import(script, script.Parent, "behaviors", "ScrollShopController").init
 local ScrollTokenDisplay = TS.import(script, script.Parent, "ui", "ScrollTokenDisplay").ScrollTokenDisplay
+local ShopRedDot = TS.import(script, script.Parent, "ui", "ShopRedDot").ShopRedDot
 local initHudProgression = TS.import(script, script.Parent, "behaviors", "HudProgressionController").init
 local initCostTextRotator = TS.import(script, script.Parent, "ui", "CostTextRotator").init
 local MusicController = TS.import(script, script.Parent, "audio", "MusicController").MusicController
@@ -62,13 +62,13 @@ initButtonMenu(setupRocketLaunch)
 initShopMenu()
 initShopItems()
 initShopMoneyBuy()
-initBoostShop()
 initMultiplierPass()
 initMoneyBoost()
 initRebirthMenu()
 initRebirthController()
 initDailyRewards()
 ScrollTokenDisplay:init()
+ShopRedDot:init()
 initQuests()
 initScrollShop()
 initHudProgression()

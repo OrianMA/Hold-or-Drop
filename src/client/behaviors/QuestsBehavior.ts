@@ -12,6 +12,7 @@ import { InGameUIController } from "client/ui/InGameUIController";
 import { InformationText } from "client/ui/InformationText";
 import { CriticalRain } from "client/ui/CriticalRain";
 import { QuestsBodyAnimation } from "client/ui/QuestsBodyAnimation";
+import { ShopRedDot } from "client/ui/ShopRedDot";
 import { Events } from "shared/Event";
 
 // Ouvre / ferme le panneau des quêtes (InGameUI/QuestsPanel) et le peint.
@@ -181,7 +182,12 @@ export function init(): void {
 	};
 
 	const showQuests = (): void => showBody(questsBody, buyRewardBody);
-	const showShop = (): void => showBody(buyRewardBody, questsBody);
+	// Afficher la boutique VAUT accusé de réception de la pastille rouge : ce que le
+	// joueur peut s'offrir à cet instant est désormais vu, achat ou pas.
+	const showShop = (): void => {
+		ShopRedDot.acknowledge();
+		showBody(buyRewardBody, questsBody);
+	};
 
 	const open = (): void => {
 		popup.Visible = true;

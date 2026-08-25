@@ -136,7 +136,11 @@ function complete(player: Player, state: QuestState, quest: Quest): void {
 
 	// Présentation : le client s'occupe du bandeau Epic + de la pluie d'icônes.
 	Events.QuestCompletedEvent.FireClient(player);
-	AnalyticsService.custom(player, "QuestCompleted", quest.reward, quest.id);
+	// Analytics : une quête accomplie = un événement. Le compte du dashboard donne le
+	// NOMBRE de quêtes accomplies, les champs le découpage par DIFFICULTÉ et par
+	// métrique (l'id vaut difficulté_métrique, donc il n'est pas renvoyé en plus).
+	// La valeur est la récompense versée → somme = tokens émis par les quêtes.
+	AnalyticsService.custom(player, "QuestCompleted", quest.reward, quest.difficulty, quest.metric);
 }
 
 // Fin de cooldown : la quête repart de zéro et redevient "Enable".

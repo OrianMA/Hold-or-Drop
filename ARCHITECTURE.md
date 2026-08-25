@@ -682,15 +682,13 @@ second time on screen and fire an end-game event unrelated to it.
   Resistance RobuxButton is **refused at the cap** — no prompt, just an `InformationText` "Niveau
   maximum atteint" (and the button greys with `MAX`). It refreshes purely from replicated
   attributes (`Money` + the three level attributes) — no server→client response event.
-- **Multiplier readout** (`ShopMenu/Header/MultiplierText`): displays the current `MoneyMult`
-  and its breakdown as `Money ×T (Rebirth ×R × Boosts ×B)` — `T` = `MoneyMult`, `R` =
-  `MultRebirth`, `B` = the additive community + money-tier factor (`1 + …`, see §6.6) — so the
-  player can see the multiplicative-rebirth / additive-boosts split at a glance.
-- **`BoostShopController` (client)**: now **read-only** — it just drives the multiplier readout
-  above (refreshing on `MoneyMult` / `MultRebirth` / `MoneyTierMult` / `InCommunity`). The shop
-  RobuxButtons it used to wire (`AButtonMoney` money-tier upsell, `DSafety` resistance pass) were
-  repurposed for the level dev products (see `ShopItemsController` above); the money-tier
-  game-pass upsell now lives only on the HUD `MultiplierBuyButton` (`MultiplierPassController`).
+- **Multiplier readout** (`ShopMenu/Header/MultiplierText`): **removed** — the shop header no
+  longer shows the `MoneyMult` breakdown. The label is left in the ShopMenu but hidden
+  (`Visible = false`, empty `Text`), and the `BoostShopController` that computed and drove it was
+  deleted. The shop RobuxButtons it used to wire (`AButtonMoney` money-tier upsell, `DSafety`
+  resistance pass) had already been repurposed for the level dev products (see
+  `ShopItemsController` above); the money-tier game-pass upsell lives on the HUD
+  `MultiplierBuyButton` (`MultiplierPassController`).
 - **`MultiplierPassController` (client)** — the HUD "buy multiplier pass" button
   (`HUD/BottomList/MultiplierBuyButton`), separate from the shop. Offers the next unowned
   `MONEY_TIERS` pass via `nextMoneyTier(MoneyTierMult)`: writes
@@ -1117,10 +1115,46 @@ server at the exact point state truly changes.
   reaches step 3, so the drop-off between 2 and 3 is the loss rate.
 - **Progression** (`rebirth`, `LogProgressionEvent`, path `"Rebirth"`, status `Complete`, level =
   rebirth count) — logged by both normal and safe rebirths.
-- **Custom counters** (`custom`, `LogCustomEvent`, optional numeric value + one breakdown field mapped
-  to `Enum.AnalyticsCustomFieldKeys.CustomField01`): `RocketLaunched`, `RunClaimed`, `RunGoHome`,
-  `RunLost`, `ShopPurchase`, `RebirthDone`, `SafeRebirthDone`, `MoneyPackPurchased`,
-  `LevelProductPurchased`, `GamePassPurchased`, `CommunityJoined`.
+- **Playtime clock** (`playedSeconds`) — total seconds the player has **ever** played: the persisted
+  `Playtime` snapshotted at join + the elapsed session time. Not a direct read of the `Playtime`
+  attribute, which only catches up on each `LeaderboardService` flush. Backs the "time to first X"
+  metrics so they stay correct for a milestone reached several sessions after the first join.
+- **Custom counters** (`custom`, `LogCustomEvent`, optional numeric value + **up to 3** breakdown
+  fields mapped to `Enum.AnalyticsCustomFieldKeys.CustomField01..03`).
+  **Naming convention**: `<Subject><PastTenseVerb>` in PascalCase, **one event name per real-world
+  fact**. A *variant* of a fact is a breakdown **field**, never a second event name — that is what
+  makes a percentage readable on the dashboard (the event count is the denominator, the field slices
+  it). The dashboard counts events on its own, so `value` carries the *magnitude* of the fact.
+
+  | Event | Value | Fields (01 / 02 / 03) | Logged by |
+  |---|---|---|---|
+  | `RocketLaunched` | rocket speed | `Mega`\|`Standard` | `ButtonInGameModule` (launch) |
+  | `RunClaimed` | locked multiplier | `Perfect`\|`Standard` / `Critical`\|`Standard` / `Mega`\|`Standard` | `ButtonInGameModule` (claim) |
+  | `PerfectClaim` | locked multiplier | — | `ButtonInGameModule` (claim) |
+  | `CriticalClaim` | locked multiplier | — | `ButtonInGameModule` (claim) |
+  | `RunGoHome` | cash banked | — | `ButtonInGameModule` |
+  | `RunLost` | multiplier lost | — | `ButtonInGameModule` |
+  | `MegaRocketGranted` | 1 | `Timer`\|`Purchase` | `MegaRocketService` (once per player per event) |
+  | `QuestCompleted` | ScrollTokens paid | difficulty / metric | `QuestService` |
+  | `DailyRewardClaimed` | streak multiplier | `Free`\|`Paid3x` / `Day<N>` | `DailyRewardService` |
+  | `RebirthDone` | rebirth count | — | `RebirthService` |
+  | `SafeRebirthDone` | rebirth count | — | `RebirthService` |
+  | `TimeToFirstRebirth` | seconds played | bucket (`0-5min`…`3h+`) / `Standard`\|`Safe` | `RebirthService`, **only** on 0 → 1 |
+  | `TutorialStarted` | 1 | `Fresh`\|`Resumed` | `TutorialService` |
+  | `TutorialStepDone` | seconds on the step | step id / `Step<NN>` | `TutorialService` |
+  | `TutorialCompleted` | total seconds | `NoSkip` / `<N>Steps` | `TutorialService` |
+  | `TutorialSkipped` | total seconds | step id quit from / `<N>Steps` done | `TutorialService` |
+  | `ShopPurchase` | price | item id | `ShopService` |
+  | `ScrollShopPurchase` | price | item id | `ScrollShopService` |
+  | `MoneyPackPurchased` | cash granted | — | `MoneyProductService` |
+  | `LevelProductPurchased` | levels granted | stat | `MoneyProductService` |
+  | `GamePassPurchased` | pass id | pass id | `BoostService` |
+  | `CommunityJoined` | — | — | `BoostService` |
+
+  **Reading the ratios**: perfect-claim rate = `RunClaimed` sliced on field 01; critical-claim rate =
+  field 02; mega-rocket usage = field 03 (or `RocketLaunched` field 01 vs `MegaRocketGranted`).
+  `TutorialCompleted` and `TutorialSkipped` fire **at most once per player**, so their counts *are*
+  the number of players who finished / skipped, with `TutorialStarted` as the denominator.
 - **No new RemoteEvents** — everything is server-side (the economy is already server-authoritative),
   and no gameplay logic depends on analytics succeeding.
 
@@ -1623,6 +1657,24 @@ appelle un système existant.
   le rangerait dans sa liste et décalerait l'icône. Puis le bandeau propre à l'objet
   (`successText`). Le Mega Rocket n'en a pas : il diffuse déjà son bandeau **Legendary** à
   tout le serveur (« *X* triggered the MEGA ROCKET »), en dire plus ferait doublon.
+- **Pastille rouge « il y a de quoi acheter »** (`client/ui/ShopRedDot.ts`). Un seul état
+  pilote **deux** `RedDotNotificationImage` : `HUD/ButtonsFrame/QuestsFrame` (qui mène au
+  panneau) et `QuestsPanel/ButtonsFrame/ShopFrame` (qui mène à l'onglet boutique). La
+  pastille est allumée tant qu'il reste un objet **achetable non encore vu**. « Achetable »
+  reprend exactement les règles du serveur — solde ≥ prix, `ownedAttribute` à 0, stat pas au
+  plafond — sinon la pastille pointerait un achat que `ScrollShopService` refuserait.
+  « Vu » = le joueur a affiché l'onglet boutique pendant que l'objet était achetable :
+  `showShop()` appelle `ShopRedDot.acknowledge()`, qui mémorise l'ensemble achetable
+  **de l'instant**. Ouvrir la boutique éteint donc la pastille **même sans achat**, et elle
+  ne se rallume que quand un objet **de plus** devient achetable (typiquement le solde qui
+  monte). Un objet qui cesse d'être achetable sort de l'ensemble vu, donc le redevenir
+  (re-gagner des tokens après un achat) rallume bien la pastille. L'accusé de réception est
+  **client et non persisté** : à la reconnexion la pastille repart de zéro, ce qui évite un
+  champ sauvegardé et un RemoteEvent pour un point rouge. Animation : la pastille **reste
+  affichée**, seule une pulsation lente (échelle + balancement, ~1.4 s) se rejoue à
+  l'apparition puis **toutes les 40 s** — un rappel, pas un clignotement. Le `UIScale` est
+  posé à la volée côté client et l'`AnchorPoint` des deux images est centré en Studio, pour
+  que la pulsation grossisse **depuis le centre** du point.
 - **Le ×1.25 est ADDITIF** (`shared/ShopConfig.moneyMult`), comme la communauté et les
   game-passes : il ajoute +0.25 au facteur de boosts, lui-même multiplié par `MultRebirth`.
   Multiplié par-dessus, il resterait un vrai +25 % ; additionné, il ne peut pas écraser les
