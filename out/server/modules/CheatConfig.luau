@@ -16,7 +16,7 @@ local logExplosionForecast = false
 -- onboarding flow.
 local resetData = false
 -- ── Critical Claim ────────────────────────────────────────────────────────────
--- Passe la chance de Critical Claim de CRITICAL_CLAIM_CHANCE (5 %) à
+-- Passe la chance de Critical Claim de CRITICAL_CLAIM_CHANCE (12 %) à
 -- boostedCriticalClaimChance : le flash doré + la pluie d'icônes tombent presque une
 -- fois sur deux, donc plus besoin d'enchaîner vingt claims pour les voir.
 -- MUST be false before publishing.

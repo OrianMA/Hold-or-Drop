@@ -76,6 +76,10 @@ local multiplierTextSize = 0
 -- au rouge plein. Compteur explicite plutôt que déduit de TextSize — le label est en
 -- TextScaled dans Studio, donc sa TextSize ne veut plus rien dire visuellement.
 local multiplierHeat = 0
+-- Verrou de couleur : une fois le rouge plein atteint, on n'y retouche plus du tout de
+-- la partie (plus aucun tween sur TextColor3). Sans ça le label restait la cible d'un
+-- tween par tick jusqu'à la fin du vol, alors que la couleur ne bougeait plus.
+local multiplierColorLocked = false
 -- Aperçu live du gain "si je claim maintenant" (floor(EffectiveBaseCash × multiplicateur)).
 local resultBaseCash = 100
 local lastResultMultiplier = STARTING_MULTIPLIER
@@ -432,14 +436,26 @@ local function init()
 		multiplierTextSize = math.min(_exp, _condition + MAX_MULTIPLIER_SIZE_INCREASE)
 		multiplierHeat = math.min(multiplierHeat + 1, MULTIPLIER_HEAT_UPDATES)
 		local factor = multiplierHeat / MULTIPLIER_HEAT_UPDATES
-		local capturedColor = MULTIPLIER_COLOR_START:Lerp(MULTIPLIER_COLOR_FULL, factor)
+		-- Couleur : on chauffe du rouge clair vers le rouge plein, puis on VERROUILLE.
+		-- Au dernier palier on écrit MULTIPLIER_COLOR_FULL directement au lieu de le
+		-- tweener — UpgradeMultiplayerTI est en EasingStyle.Back, dont le dépassement
+		-- pousse les canaux sous zéro (mesuré : 190,-1,-1) avant de revenir.
+		local capturedColor = if multiplierColorLocked then MULTIPLIER_COLOR_FULL else MULTIPLIER_COLOR_START:Lerp(MULTIPLIER_COLOR_FULL, factor)
 		-- Snapshot pour la popup de fin (taille + couleur au moment de la fin)
 		MultiplierVisuals:capture(multiplierTextSize, capturedColor)
-		-- Bump de taille + virage au rouge (la valeur, elle, monte en continu)
-		TweenService:Create(multiplierText, UpgradeMultiplayerTI, {
+		if not multiplierColorLocked and factor >= 1 then
+			multiplierColorLocked = true
+			multiplierText.TextColor3 = MULTIPLIER_COLOR_FULL
+		end
+		-- Bump de taille (la valeur, elle, monte en continu). La couleur n'entre dans le
+		-- tween que tant qu'elle chauffe : une fois verrouillée, plus rien ne l'écrit.
+		local goal = {
 			TextSize = multiplierTextSize,
-			TextColor3 = capturedColor,
-		}):Play()
+		}
+		if not multiplierColorLocked then
+			goal.TextColor3 = capturedColor
+		end
+		TweenService:Create(multiplierText, UpgradeMultiplayerTI, goal):Play()
 		-- Effets ambiants : pas de vignette/teinte rouge ni de zoom FOV progressif pendant
 		-- le décollage ; juste un léger bloom. Le tremblement est géré (et atténué) dans la
 		-- boucle RenderStepped, pas ici.
@@ -457,7 +473,7 @@ local function init()
 		-- ne bouge pas). On ne l'annonce PAS tout de suite — le flash rouge part à
 		-- l'explosion, quelques dixièmes plus tard.
 		perfectClaimPending = perfect
-		-- Critical Claim (5 %) : le ×10 est déjà dans le base cash reçu, et il n'a
+		-- Critical Claim (12 %) : le ×10 est déjà dans le base cash reçu, et il n'a
 		-- rien à voir avec l'explosion — le flash doré part MAINTENANT, sur le claim. Si
 		-- un perfect suit, son flash rouge s'empilera sous celui-ci (ClaimFlashText).
 		-- La petite pluie d'icônes tombe sur la même frame que le texte.
@@ -630,6 +646,7 @@ local function setup(inGameUI)
 	multiplierText.TextColor3 = MULTIPLIER_COLOR_START
 	multiplierTextSize = multiplierTextOriginalSize
 	multiplierHeat = 0
+	multiplierColorLocked = false
 	-- Le compteur continu redémarre à 1.00x.
 	displayedMultiplier = STARTING_MULTIPLIER
 	multiplierFrom = STARTING_MULTIPLIER

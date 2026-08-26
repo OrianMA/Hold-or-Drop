@@ -74,18 +74,29 @@ export function multiplierAfter(speedValue: number, seconds: number): number {
 // elle s'élargit proportionnellement (sinon un vol long — donc plus imprévisible —
 // exigerait un timing bien plus dur qu'un vol court), plafonnée à
 // PERFECT_CLAIM_MAX_WINDOW pour que ça reste un coup de timing.
-//   vol 7s ou moins → 0.50 s   |   vol 14s → 1.00 s   |   vol 21s et plus → 1.50 s
+//   vol 7s ou moins → 0.75 s   |   vol 14s et plus → 1.50 s (plafond)
+// S'ajoute par-dessus (hors plafond) un bonus fixe PERFECT_CLAIM_HIGH_MULT_BONUS dès que le
+// multiplicateur dépasse PERFECT_CLAIM_HIGH_MULT : à ce stade la fusée file et le joueur a
+// beaucoup à perdre, la zone s'élargit donc légèrement.
+//   ×7 ou moins → 0.75 s sur un vol court   |   au-delà de ×7 → 1.00 s
 export const PERFECT_CLAIM_MULTIPLIER = 3;
-export const PERFECT_CLAIM_WINDOW = 0.5;
+export const PERFECT_CLAIM_WINDOW = 0.75;
 export const PERFECT_CLAIM_REFERENCE_TIME = 7;
 export const PERFECT_CLAIM_MAX_WINDOW = 1.5;
+export const PERFECT_CLAIM_HIGH_MULT = 7;
+export const PERFECT_CLAIM_HIGH_MULT_BONUS = 0.25;
 
 // Fenêtre de Perfect Claim (secondes avant l'explosion) pour un vol qui dure
-// `explosionTime` secondes. Pure — serveur (validation) et client (affichage).
-export function perfectClaimWindow(explosionTime: number): number {
-	if (explosionTime <= PERFECT_CLAIM_REFERENCE_TIME) return PERFECT_CLAIM_WINDOW;
-	const scaled = PERFECT_CLAIM_WINDOW * (explosionTime / PERFECT_CLAIM_REFERENCE_TIME);
-	return math.min(scaled, PERFECT_CLAIM_MAX_WINDOW);
+// `explosionTime` secondes et claimé à `multiplier`. Pure — serveur (validation) et
+// client (affichage).
+export function perfectClaimWindow(explosionTime: number, multiplier: number): number {
+	let seconds = PERFECT_CLAIM_WINDOW;
+	if (explosionTime > PERFECT_CLAIM_REFERENCE_TIME) {
+		const scaled = PERFECT_CLAIM_WINDOW * (explosionTime / PERFECT_CLAIM_REFERENCE_TIME);
+		seconds = math.min(scaled, PERFECT_CLAIM_MAX_WINDOW);
+	}
+	if (multiplier > PERFECT_CLAIM_HIGH_MULT) seconds += PERFECT_CLAIM_HIGH_MULT_BONUS;
+	return seconds;
 }
 
 // ── Critical Claim ──────────────────────────────────────────────────────────────
@@ -93,5 +104,5 @@ export function perfectClaimWindow(explosionTime: number): number {
 // multiplié par CRITICAL_CLAIM_MULTIPLIER. Rien à jouer, aucun timing — c'est la surprise
 // pure, annoncée au claim par le flash doré (client/ui/ClaimFlashText). Cumulable avec le
 // Perfect Claim : les deux facteurs se multiplient (×3 × ×10 = ×30).
-export const CRITICAL_CLAIM_CHANCE = 0.05;
+export const CRITICAL_CLAIM_CHANCE = 0.12;
 export const CRITICAL_CLAIM_MULTIPLIER = 10;

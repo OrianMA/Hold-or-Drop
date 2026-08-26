@@ -137,7 +137,9 @@ function playExplosionSoundAt(pos: Vector3): void {
 // Cheat `logExplosionForecast` : imprime l'issue précalculée du vol. Le multiplicateur
 // prévu est reconstruit par `multiplierAfter`, qui rejoue exactement la boucle
 // multiplicateur (même tick, même vitesse) — c'est donc la valeur que le joueur verra à
-// l'instant de l'explosion s'il ne claim pas avant.
+// l'instant de l'explosion s'il ne claim pas avant. La fenêtre de Perfect Claim est calculée
+// avec ce multiplicateur prévu (au-delà de ×7 elle s'élargit) — le claim réel tombe juste
+// avant, donc à un multiplicateur quasi identique.
 function logForecast(player: Player, deadline: number, effectiveSpeed: number, baseCash: number): void {
 	if (deadline === math.huge) {
 		print(`[CHEAT] ${player.Name} — la fusée n'explosera pas (invincible / run scripté sans risque)`);
@@ -151,7 +153,7 @@ function logForecast(player: Player, deadline: number, effectiveSpeed: number, b
 			deadline,
 			predicted,
 			math.floor(baseCash * predicted),
-			deadline - perfectClaimWindow(deadline),
+			deadline - perfectClaimWindow(deadline, predicted),
 		),
 	);
 }
@@ -274,9 +276,9 @@ export function startButtonGame(player: Player, session: ButtonSession): void {
 		// en tutorial (sinon un run scripté offrirait un perfect gratuit).
 		const deadline = scripted !== undefined ? scripted.explosionAt() : explosionAt;
 		const remaining = deadline - (os.clock() - launchClock);
-		const perfect = remaining <= perfectClaimWindow(deadline); // invincible ⇒ deadline ∞ ⇒ jamais perfect
+		const perfect = remaining <= perfectClaimWindow(deadline, currentMultiplier); // invincible ⇒ deadline ∞ ⇒ jamais perfect
 
-		// Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le base cash.
+		// Critical Claim : coup de dé pur à chaque claim (12 %) → ×10 sur le base cash.
 		// Indépendant du Perfect Claim : les deux peuvent tomber ensemble et se multiplient.
 		// Cheat de dev : `boostCriticalClaim` monte la chance à 50 % (voir CheatConfig).
 		const criticalChance = boostCriticalClaim ? boostedCriticalClaimChance : CRITICAL_CLAIM_CHANCE;

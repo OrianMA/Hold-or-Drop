@@ -130,14 +130,16 @@ end
 -- Cheat `logExplosionForecast` : imprime l'issue précalculée du vol. Le multiplicateur
 -- prévu est reconstruit par `multiplierAfter`, qui rejoue exactement la boucle
 -- multiplicateur (même tick, même vitesse) — c'est donc la valeur que le joueur verra à
--- l'instant de l'explosion s'il ne claim pas avant.
+-- l'instant de l'explosion s'il ne claim pas avant. La fenêtre de Perfect Claim est calculée
+-- avec ce multiplicateur prévu (au-delà de ×7 elle s'élargit) — le claim réel tombe juste
+-- avant, donc à un multiplicateur quasi identique.
 local function logForecast(player, deadline, effectiveSpeed, baseCash)
 	if deadline == math.huge then
 		print(`[CHEAT] {player.Name} — la fusée n'explosera pas (invincible / run scripté sans risque)`)
 		return nil
 	end
 	local predicted = multiplierAfter(effectiveSpeed, deadline)
-	print(string.format("[CHEAT] %s — explosion dans %.2fs | multiplicateur prévu ×%.2f (~$%d) | Perfect Claim si claim après %.2fs", player.Name, deadline, predicted, math.floor(baseCash * predicted), deadline - perfectClaimWindow(deadline)))
+	print(string.format("[CHEAT] %s — explosion dans %.2fs | multiplicateur prévu ×%.2f (~$%d) | Perfect Claim si claim après %.2fs", player.Name, deadline, predicted, math.floor(baseCash * predicted), deadline - perfectClaimWindow(deadline, predicted)))
 end
 -- ── Public API ────────────────────────────────────────────────────────────────
 -- Used by the ButtonMenu Quit flow — release/explosion endings transition
@@ -265,8 +267,8 @@ local function startButtonGame(player, session)
 		-- en tutorial (sinon un run scripté offrirait un perfect gratuit).
 		local deadline = if scripted ~= nil then scripted.explosionAt() else explosionAt
 		local remaining = deadline - (os.clock() - launchClock)
-		local perfect = remaining <= perfectClaimWindow(deadline)
-		-- Critical Claim : coup de dé pur à chaque claim (5 %) → ×10 sur le base cash.
+		local perfect = remaining <= perfectClaimWindow(deadline, currentMultiplier)
+		-- Critical Claim : coup de dé pur à chaque claim (12 %) → ×10 sur le base cash.
 		-- Indépendant du Perfect Claim : les deux peuvent tomber ensemble et se multiplient.
 		-- Cheat de dev : `boostCriticalClaim` monte la chance à 50 % (voir CheatConfig).
 		local criticalChance = if boostCriticalClaim then boostedCriticalClaimChance else CRITICAL_CLAIM_CHANCE

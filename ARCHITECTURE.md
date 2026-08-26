@@ -323,10 +323,13 @@ locked win. On `ClaimAcceptedEvent` the client also fires the **cash burst**
 scheduled explosion** multiplies the locked gain by `PERFECT_CLAIM_MULTIPLIER` (**×3**). The
 server compares the real flight time (`os.clock() - launchClock`, frame-accurate — the risk
 loop only advances by `TICK_RATE` steps) with the explosion deadline: `remaining ≤
-perfectClaimWindow(deadline)` ⇒ perfect. The window is `PERFECT_CLAIM_WINDOW` (0.5 s) on a
-short flight and **widens proportionally past `PERFECT_CLAIM_REFERENCE_TIME`** (7 s) —
-`0.5 × deadline/7`, capped at `PERFECT_CLAIM_MAX_WINDOW` (1.5 s) — so a long, less predictable
-flight isn't a harder timing test than a short one (30 s flight ⇒ 1.25 s window). The deadline
+perfectClaimWindow(deadline, currentMultiplier)` ⇒ perfect. The window is `PERFECT_CLAIM_WINDOW`
+(0.75 s) on a short flight and **widens proportionally past `PERFECT_CLAIM_REFERENCE_TIME`** (7 s) —
+`0.75 × deadline/7`, capped at `PERFECT_CLAIM_MAX_WINDOW` (1.5 s) — so a long, less predictable
+flight isn't a harder timing test than a short one (14 s flight and beyond ⇒ 1.5 s window). On top of
+that (and **outside** the cap), a locked multiplier above `PERFECT_CLAIM_HIGH_MULT` (×7) adds a flat
+`PERFECT_CLAIM_HIGH_MULT_BONUS` (0.25 s): late in a fast flight the player has much more to lose, so
+the zone gets slightly wider. The deadline
 is read **before** `scripted.onClaim()` (the tutorial rewrites it, which would otherwise hand
 out a free perfect), and `invincible` (deadline ∞) never triggers it. The ×3 is applied to
 the **base cash**, not the multiplier: `claimedBaseCash = EffectiveBaseCash × 3`, and every
@@ -477,6 +480,12 @@ second time on screen and fire an end-game event unrelated to it.
   `MULTIPLIER_COLOR_START` (light red) to `MULTIPLIER_COLOR_FULL` (deep red) over
   `MULTIPLIER_HEAT_UPDATES` server ticks (~5s). Both bounds live in code — the colour set on
   the label in Studio is *not* the ramp's start, so re-styling the GUI can't change the hue.
+  Once the ramp reaches `MULTIPLIER_COLOR_FULL` the colour is **locked for the rest of the
+  flight** (`multiplierColorLocked`): the final value is written directly and `TextColor3`
+  leaves the per-tick tween goal entirely. `UpgradeMultiplayerTI` uses `EasingStyle.Back`,
+  whose overshoot drives the channels out of gamut (measured on the label: `190,-1,-1`), and
+  a new tween was being started every tick — so the label never settled and flickered at
+  altitude. Only `TextSize` is tweened after the lock; it resets on each launch.
   The label is `TextScaled` in Studio, so the `TextSize` bump is invisible in flight; it is
   kept only because `MultiplierVisuals` hands it to the `ButtonFinishGame` popup (which is
   *not* `TextScaled`), and it is now capped at `MAX_MULTIPLIER_SIZE_INCREASE`.
@@ -1776,9 +1785,11 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `STEER_SPACE_HEIGHT` | `shared/RocketGameConfig.ts` | 50 | Studs above pad where roll authority reaches full |
 | `EXPLOSION_VIEW_DELAY` | `shared/RocketGameConfig.ts` | 1.5s | Camera lingers on the exploding rocket before restoring |
 | `PERFECT_CLAIM_MULTIPLIER` | `shared/RocketGameConfig.ts` | 3 | Base cash factor on a Perfect Claim — multiplies `claimedBaseCash`, not the multiplier (§6.3) |
-| `PERFECT_CLAIM_WINDOW` | `shared/RocketGameConfig.ts` | 0.5s | Perfect Claim window on a flight ≤ reference time |
+| `PERFECT_CLAIM_WINDOW` | `shared/RocketGameConfig.ts` | 0.75s | Perfect Claim window on a flight ≤ reference time |
 | `PERFECT_CLAIM_REFERENCE_TIME` | `shared/RocketGameConfig.ts` | 7s | Above this flight length the window widens proportionally |
-| `PERFECT_CLAIM_MAX_WINDOW` | `shared/RocketGameConfig.ts` | 1.5s | Hard cap on the widened window |
+| `PERFECT_CLAIM_MAX_WINDOW` | `shared/RocketGameConfig.ts` | 1.5s | Hard cap on the flight-length widening (the high-multiplier bonus adds on top) |
+| `PERFECT_CLAIM_HIGH_MULT` | `shared/RocketGameConfig.ts` | 7 | Above this locked multiplier the window gets the bonus below (§6.3) |
+| `PERFECT_CLAIM_HIGH_MULT_BONUS` | `shared/RocketGameConfig.ts` | 0.25s | Flat window bonus past ×7 |
 | `CRITICAL_CLAIM_CHANCE` | `shared/RocketGameConfig.ts` | 0.05 | Chance for any claim to roll a Critical Claim (§6.3) |
 | `CRITICAL_CLAIM_MULTIPLIER` | `shared/RocketGameConfig.ts` | 10 | Base cash factor on a Critical Claim — multiplies with the ×3 (§6.3) |
 | `FLIGHT_TIME_MEAN` | `ButtonInGameModule.ts` | 7s | Average flight length at Resistance 0 (§6.3) |

@@ -78,26 +78,37 @@ end
 -- elle s'élargit proportionnellement (sinon un vol long — donc plus imprévisible —
 -- exigerait un timing bien plus dur qu'un vol court), plafonnée à
 -- PERFECT_CLAIM_MAX_WINDOW pour que ça reste un coup de timing.
---   vol 7s ou moins → 0.50 s   |   vol 14s → 1.00 s   |   vol 21s et plus → 1.50 s
+--   vol 7s ou moins → 0.75 s   |   vol 14s et plus → 1.50 s (plafond)
+-- S'ajoute par-dessus (hors plafond) un bonus fixe PERFECT_CLAIM_HIGH_MULT_BONUS dès que le
+-- multiplicateur dépasse PERFECT_CLAIM_HIGH_MULT : à ce stade la fusée file et le joueur a
+-- beaucoup à perdre, la zone s'élargit donc légèrement.
+--   ×7 ou moins → 0.75 s sur un vol court   |   au-delà de ×7 → 1.00 s
 local PERFECT_CLAIM_MULTIPLIER = 3
-local PERFECT_CLAIM_WINDOW = 0.5
+local PERFECT_CLAIM_WINDOW = 0.75
 local PERFECT_CLAIM_REFERENCE_TIME = 7
 local PERFECT_CLAIM_MAX_WINDOW = 1.5
+local PERFECT_CLAIM_HIGH_MULT = 7
+local PERFECT_CLAIM_HIGH_MULT_BONUS = 0.25
 -- Fenêtre de Perfect Claim (secondes avant l'explosion) pour un vol qui dure
--- `explosionTime` secondes. Pure — serveur (validation) et client (affichage).
-local function perfectClaimWindow(explosionTime)
-	if explosionTime <= PERFECT_CLAIM_REFERENCE_TIME then
-		return PERFECT_CLAIM_WINDOW
+-- `explosionTime` secondes et claimé à `multiplier`. Pure — serveur (validation) et
+-- client (affichage).
+local function perfectClaimWindow(explosionTime, multiplier)
+	local seconds = PERFECT_CLAIM_WINDOW
+	if explosionTime > PERFECT_CLAIM_REFERENCE_TIME then
+		local scaled = PERFECT_CLAIM_WINDOW * (explosionTime / PERFECT_CLAIM_REFERENCE_TIME)
+		seconds = math.min(scaled, PERFECT_CLAIM_MAX_WINDOW)
 	end
-	local scaled = PERFECT_CLAIM_WINDOW * (explosionTime / PERFECT_CLAIM_REFERENCE_TIME)
-	return math.min(scaled, PERFECT_CLAIM_MAX_WINDOW)
+	if multiplier > PERFECT_CLAIM_HIGH_MULT then
+		seconds += PERFECT_CLAIM_HIGH_MULT_BONUS
+	end
+	return seconds
 end
 -- ── Critical Claim ──────────────────────────────────────────────────────────────
 -- Chaque claim tire un dé : CRITICAL_CLAIM_CHANCE de chance que le BASE CASH verrouillé soit
 -- multiplié par CRITICAL_CLAIM_MULTIPLIER. Rien à jouer, aucun timing — c'est la surprise
 -- pure, annoncée au claim par le flash doré (client/ui/ClaimFlashText). Cumulable avec le
 -- Perfect Claim : les deux facteurs se multiplient (×3 × ×10 = ×30).
-local CRITICAL_CLAIM_CHANCE = 0.05
+local CRITICAL_CLAIM_CHANCE = 0.12
 local CRITICAL_CLAIM_MULTIPLIER = 10
 return {
 	multiplierAfter = multiplierAfter,
@@ -116,6 +127,8 @@ return {
 	PERFECT_CLAIM_WINDOW = PERFECT_CLAIM_WINDOW,
 	PERFECT_CLAIM_REFERENCE_TIME = PERFECT_CLAIM_REFERENCE_TIME,
 	PERFECT_CLAIM_MAX_WINDOW = PERFECT_CLAIM_MAX_WINDOW,
+	PERFECT_CLAIM_HIGH_MULT = PERFECT_CLAIM_HIGH_MULT,
+	PERFECT_CLAIM_HIGH_MULT_BONUS = PERFECT_CLAIM_HIGH_MULT_BONUS,
 	CRITICAL_CLAIM_CHANCE = CRITICAL_CLAIM_CHANCE,
 	CRITICAL_CLAIM_MULTIPLIER = CRITICAL_CLAIM_MULTIPLIER,
 }
