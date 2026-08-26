@@ -77,5 +77,5 @@ export const dailyRewardCheatKey = false;
 // de quoi tester la boutique ScrollToken sans farmer (§6.26/§6.27).
 // Le serveur n'écoute QuestCheatEvent que si ce flag est vrai.
 // MUST be false before publishing.
-export const questCheatKey = true;
+export const questCheatKey = false;
 export const questCheatTokens = 100_000;

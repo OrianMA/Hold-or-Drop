@@ -67,7 +67,7 @@ local dailyRewardCheatKey = false
 -- de quoi tester la boutique ScrollToken sans farmer (§6.26/§6.27).
 -- Le serveur n'écoute QuestCheatEvent que si ce flag est vrai.
 -- MUST be false before publishing.
-local questCheatKey = true
+local questCheatKey = false
 local questCheatTokens = 100_000
 return {
 	invincible = invincible,
