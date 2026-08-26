@@ -13,7 +13,9 @@ import { ContentProvider, Players, RunService } from "@rbxts/services";
 // Même approche que MoneyBurst : pas de ParticleEmitter, c'est de la 2D écran, donc
 // une mini simulation en pixels dans RenderStepped.
 
-const RAIN_IMAGE = "rbxassetid://13506500866";
+// Icône dorée du Critical Claim. Exportée : l'escalade de paiement (PayoutTiers,
+// §6.4) s'en sert pour sa pluie d'or, et il ne doit y avoir qu'une source de vérité.
+export const RAIN_IMAGE = "rbxassetid://13506500866";
 
 // ── Tuning ──────────────────────────────────────────────────────────────────────
 // Les valeurs en pixels sont exprimées pour un écran de REFERENCE_HEIGHT px et
@@ -23,6 +25,11 @@ const REFERENCE_HEIGHT = 900;
 const PARTICLE_COUNT = 40; // pluie fournie, mais on doit encore voir passer les icônes, pas un rideau
 const ICON_SIZE = 60; // px (image carrée mise à l'échelle)
 const ICON_SIZE_JITTER = 0.3; // ±30 % de taille pour casser la régularité
+
+// Plafond de gouttes VIVANTES, tous appels confondus. L'escalade de paiement
+// (PayoutTiers, §6.4) empile jusqu'à trois pluies en une seconde : sans ce garde-fou
+// on ferait tomber 150+ ImageLabels simulés par frame sur mobile.
+const MAX_LIVE_DROPS = 70;
 
 // Les icônes ne sont pas lâchées par un timer : elles démarrent réparties dans une
 // bande AU-DESSUS de l'écran, donc elles entrent dans le champ les unes après les
@@ -123,6 +130,15 @@ function step(dt: number): void {
 
 // ── API ─────────────────────────────────────────────────────────────────────────
 
+export interface RainOptions {
+	count?: number; // nombre de gouttes (défaut PARTICLE_COUNT)
+	band?: number; // hauteur de la bande de départ en px (défaut SPAWN_BAND)
+	// Plan de rendu. Défaut Z_INDEX (55) = par-dessus le HUD, pour le flash de claim.
+	// L'écran de fin passe une valeur BASSE : la pluie tombe DERRIÈRE le montant, qui
+	// reste lisible (ButtonFinishGame et BaseCashText sont en ZIndex 1).
+	zIndex?: number;
+}
+
 export const CriticalRain = {
 	// Met l'image en cache pour que la première pluie de la session ne s'affiche pas
 	// vide. À appeler une fois au démarrage du client.
@@ -136,7 +152,11 @@ export const CriticalRain = {
 	},
 
 	// Lâche la pluie. Rejouable : les gouttes en vol continuent leur chute.
-	play(image = RAIN_IMAGE): void {
+	//
+	// `options.count` règle la densité (défaut PARTICLE_COUNT) et `options.band` la
+	// hauteur de la bande de départ, donc la DURÉE de la pluie : une bande courte fait
+	// une vague qui passe, une bande haute une averse qui traîne.
+	play(image = RAIN_IMAGE, options?: RainOptions): void {
 		const screenGui = getScreenGui();
 		if (!screenGui) return;
 
@@ -144,13 +164,23 @@ export const CriticalRain = {
 		if (viewport.X === 0 || viewport.Y === 0) return;
 
 		const scale = viewport.Y / REFERENCE_HEIGHT;
+		const band = options?.band ?? SPAWN_BAND;
+		const zIndex = options?.zIndex ?? Z_INDEX;
+		// Le plafond ÉVICTE les plus anciennes gouttes plutôt que de tronquer la
+		// nouvelle pluie : pendant l'escalade de paiement, c'est toujours le DERNIER
+		// palier (le plus gros) qui doit s'afficher en entier — tronquer ferait
+		// décroître l'effet à mesure que le gain grossit, exactement l'inverse du but.
+		const count = math.min(options?.count ?? PARTICLE_COUNT, MAX_LIVE_DROPS);
+		if (count <= 0) return;
+		const overflow = drops.size() + count - MAX_LIVE_DROPS;
+		for (let i = 0; i < overflow; i++) destroyDrop(0);
 
-		for (let i = 0; i < PARTICLE_COUNT; i++) {
+		for (let i = 0; i < count; i++) {
 			const sizeJitter = 1 + (math.random() * 2 - 1) * ICON_SIZE_JITTER;
 			const size = ICON_SIZE * sizeJitter * scale;
 			// X réparti en colonnes + bruit : la pluie couvre la largeur sans paquets.
-			const x = ((i + math.random()) / PARTICLE_COUNT) * viewport.X;
-			const y = -size - math.random() * SPAWN_BAND * scale;
+			const x = ((i + math.random()) / count) * viewport.X;
+			const y = -size - math.random() * band * scale;
 
 			const label = new Instance("ImageLabel");
 			label.Name = LABEL_NAME;
@@ -160,7 +190,7 @@ export const CriticalRain = {
 			label.Position = new UDim2(0, x, 0, y);
 			label.Size = new UDim2(0, size, 0, size);
 			label.Rotation = math.random() * 360;
-			label.ZIndex = Z_INDEX;
+			label.ZIndex = zIndex;
 			label.Active = false;
 			label.Parent = screenGui;
 

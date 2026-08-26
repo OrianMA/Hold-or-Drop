@@ -22,8 +22,8 @@ local playCashSound = TS.import(script, script.Parent.Parent, "audio", "CashSoun
 local ATTRIBUTE = "Money"
 local LABEL_NAME = "MoneyText"
 -- Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual).
-local function playMoneyGain()
-	playCashSound()
+local function playMoneyGain(options)
+	playCashSound(options)
 end
 -- Duration of the "count-up" animation. Quad-Out feels punchier than Linear.
 local TWEEN_INFO = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -144,9 +144,9 @@ local MoneyDisplay = {
 			end
 		end)
 	end,
-	addVisual = function(self, amount)
+	addVisual = function(self, amount, sound)
 		if amount > 0 then
-			playMoneyGain()
+			playMoneyGain(sound)
 		end
 		tweenTo(currentTarget + amount)
 	end,

@@ -1,6 +1,7 @@
 -- Compiled with roblox-ts v3.0.0
 local TS = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("RuntimeLib"))
 local _services = TS.import(script, game:GetService("ReplicatedStorage"), "rbxts_include", "node_modules", "@rbxts", "services")
+local Players = _services.Players
 local ReplicatedStorage = _services.ReplicatedStorage
 local TweenService = _services.TweenService
 local MultiplierVisuals = TS.import(script, script.Parent, "MultiplierVisuals").MultiplierVisuals
@@ -9,6 +10,18 @@ local MoneyDisplay = TS.import(script, script.Parent, "MoneyDisplay").MoneyDispl
 local FloatingCash = TS.import(script, script.Parent, "FloatingCash").FloatingCash
 local InformationText = TS.import(script, script.Parent, "InformationText").InformationText
 local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "NumberFormat").FormatCash
+local _MoneyBurst = TS.import(script, script.Parent, "MoneyBurst")
+local MONEY_IMAGE = _MoneyBurst.MONEY_IMAGE
+local MoneyBurst = _MoneyBurst.MoneyBurst
+local _CriticalRain = TS.import(script, script.Parent, "CriticalRain")
+local CriticalRain = _CriticalRain.CriticalRain
+local RAIN_IMAGE = _CriticalRain.RAIN_IMAGE
+local _CashSound = TS.import(script, script.Parent.Parent, "audio", "CashSound")
+local playBigPayout = _CashSound.playBigPayout
+local playCashSound = _CashSound.playCashSound
+local _PayoutTiers = TS.import(script, script.Parent, "PayoutTiers")
+local tiersCrossed = _PayoutTiers.tiersCrossed
+local topTierIndex = _PayoutTiers.topTierIndex
 -- ── ButtonFinishGame payout animation ───────────────────────────────────────────
 --
 -- Sequence (after the "Finish" flash + optional kill penalty):
@@ -16,24 +29,55 @@ local FormatCash = TS.import(script, game:GetService("ReplicatedStorage"), "TS",
 --       from the raw base to the boosted base with a golden bump — the bonus multiplies
 --       the BASE CASH, never the multiplier, and this phase is what shows it.
 --   1.  MultiplierText flies into BaseCashText and disappears.
---   2.  BaseCashText counts up by the in-game multiplier (grow + red).
+--   2.  BaseCashText counts up by the in-game multiplier, PAR PALIERS (PayoutTiers) :
+--       le count-up est découpé en segments qui s'arrêtent pile sur chaque palier
+--       franchi, et chaque arrivée déclenche son son + sa gerbe + sa pluie, de plus
+--       en plus fort. C'est ce qui rend l'ampleur du gain lisible en temps réel.
 --       EffectiveBaseCash already folds in every money multiplier, so no separate
 --       rebirth phase is needed.
 --   3.  BaseCashText stays put (showing the full total) and sprays N floating texts
---       toward the money HUD; each arrival banks one chunk of the total.
---   4.  After the chunks land, a short pause, then the whole BaseCashText label flies
---       to the HUD cash as the final move.
+--       toward the money HUD; each arrival banks one chunk of the total, avec un
+--       pitch qui monte chunk après chunk (crescendo). Le dernier chunk qui atterrit
+--       déclenche la gerbe finale sur le compteur.
+--
+-- `flyBaseCashToHud` / FINAL_MOVE_DELAY décrivent une phase 4 qui n'est PAS branchée :
+-- la phase 3 masque déjà le label sur son dernier chunk. Code mort conservé tel quel.
 -- ── Tuning ──────────────────────────────────────────────────────────────────────
 local FINISH_TEXT = "Finish"
 -- Phase 1 — MultiplierText merging into BaseCashText.
 local MULTIPLIER_MERGE_TI = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
--- Phase 2 — BaseCashText counting up to the total earned.
-local BASE_CASH_COUNTUP_TI = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- Phase 2 — count-up par paliers (PayoutTiers).
+-- La durée s'allonge avec le nombre de paliers pour qu'ils aient chacun la place de
+-- claquer, mais reste PLAFONNÉE : l'écran de fin ne doit pas traîner sur un gros run.
+local COUNTUP_BASE_TIME = 0.6
+local COUNTUP_TIME_PER_TIER = 0.2
+local COUNTUP_MAX_TIME = 1.2
+-- Valeur du compteur : linéaire. Chaque segment est court, et un easing par segment
+-- ferait ralentir/repartir le nombre à chaque palier.
+local COUNTUP_VALUE_STYLE = Enum.EasingStyle.Linear
+-- Taille + couleur : Quad-Out, sur le MÊME temps que la valeur. Pas de dépassement ici
+-- — c'est le UIScale qui porte le punch (TextSize est plafonné à 100 par Roblox, un
+-- dépassement sur la taille serait écrêté pile sur les gros paliers).
+local COUNTUP_STYLE_STYLE = Enum.EasingStyle.Quad
+-- Pluie des paliers : bande COURTE (une vague qui passe, pas une averse qui traîne) et
+-- plan de rendu BAS — ButtonFinishGame et BaseCashText sont en ZIndex 1, donc la pluie
+-- tombe derrière le montant, qui reste lisible.
+local TIER_RAIN_BAND = 700
+local TIER_RAIN_Z_INDEX = 0
 -- Phase 3 — how many floating texts BaseCashText sprays, and how fast.
 -- Both tweakable: COUNT splits the total earned into COUNT chunks of
 -- totalEarn / COUNT; INTERVAL is the delay between each spawn.
 local FLOATING_TEXT_COUNT = 8
 local FLOATING_TEXT_INTERVAL = 0.12
+-- Plus le run est gros, plus il y a de liasses à encaisser — plafonné pour que la
+-- rafale ne s'éternise pas (16 × 0.12 s ≈ 2 s).
+local FLOATING_TEXT_PER_TIER = 1
+local FLOATING_TEXT_MAX = 16
+-- Le pitch du son de dépôt monte de 1 à 1 + CHUNK_PITCH_RISE sur la rafale : les N
+-- ka-ching deviennent un arpège au lieu d'une répétition.
+local CHUNK_PITCH_RISE = 0.25
+-- Gerbe jouée sur le compteur quand la dernière liasse atterrit — le dernier "boum".
+local FINAL_BURST_BASE = 10
 -- Phase 0 — claim bonus (Perfect ×3 / Critical ×10) growing the BASE CASH.
 -- Le compteur monte en doré (couleur du flash Critical) et le texte gonfle, puis
 -- redescend à sa taille/couleur de base pour que la phase multiplicateur reparte propre.
@@ -45,9 +89,17 @@ local CLAIM_BONUS_HOLD = 0.35
 local CLAIM_BONUS_BANNER_HOLD = 1.6
 -- Penalty animation when the player died (lossMultiplier < 1).
 local LOSS_PENALTY_TI = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
--- BaseCash growth — red-tinge style matching the in-game multiplier label.
-local BASE_CASH_MAX_SIZE_INCREASE = 40
-local BASE_CASH_TARGET_COLOR = Color3.new(1, 0.25, 0.25)
+-- BaseCash growth — la TAILLE reste pilotée ici ; la COULEUR, elle, est posée par les
+-- paliers (PayoutTiers) et non plus par une cible fixe.
+-- 15 et pas plus : Roblox PLAFONNE TextSize à 100 et le label démarre à 85. Au-delà la
+-- croissance serait silencieusement écrêtée, et l'agrandissement s'arrêterait au milieu
+-- du count-up au lieu de suivre le nombre jusqu'au bout.
+local BASE_CASH_MAX_SIZE_INCREASE = 15
+-- Punch du palier : le UIScale saute à `tier.punch` puis se recale à 1. Instance
+-- SÉPARÉE du label, donc son tween ne croise jamais celui de la taille/couleur et peut
+-- se dérouler par-dessus le segment suivant sans le perturber.
+local PUNCH_NAME = "EndGamePunch"
+local PUNCH_SETTLE_TI = TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 -- Floating chunk: spawn on the origin, disperse in a random direction, hold,
 -- then fly to the target. Same feel as the in-game floating labels.
 local FLOATING_TEMPLATE_NAME = "FloatingMultiplierTemplate"
@@ -67,6 +119,19 @@ local function formatMultiplier(value)
 end
 local function formatCash(value)
 	return FormatCash(value)
+end
+-- ── Stats du joueur qui calibrent l'escalade ────────────────────────────────────
+-- Les paliers sont des CENTILES de la distribution de vol du joueur (PayoutTiers), donc
+-- ils dépendent de sa Rocket Speed ET de sa Resistance. Les deux sont des attributs
+-- répliqués par PlayerProgressionService — `Resistance` porte déjà la valeur EFFECTIVE
+-- (game pass inclus), c'est-à-dire celle que le modèle de risque serveur utilise.
+local function playerStat(name, fallback)
+	local value = Players.LocalPlayer:GetAttribute(name)
+	local _condition = value
+	if _condition == nil then
+		_condition = fallback
+	end
+	return _condition
 end
 -- ── Floating chunk ──────────────────────────────────────────────────────────────
 local cachedTemplate
@@ -150,7 +215,7 @@ end
 -- Tweens BaseCashText's value (via a NumberValue proxy so it re-formats every
 -- frame), text size and color from start to end in parallel, blocking until done,
 -- then snaps to the exact end values to avoid float drift.
-local function animateCash(label, startValue, endValue, startSize, endSize, startColor, endColor, ti)
+local function animateCash(label, startValue, endValue, startSize, endSize, startColor, endColor, ti, styleTi)
 	label.Text = formatCash(startValue)
 	label.TextSize = startSize
 	label.TextColor3 = startColor
@@ -162,7 +227,7 @@ local function animateCash(label, startValue, endValue, startSize, endSize, star
 	TweenService:Create(proxy, ti, {
 		Value = endValue,
 	}):Play()
-	local styleTween = TweenService:Create(label, ti, {
+	local styleTween = TweenService:Create(label, styleTi or ti, {
 		TextSize = endSize,
 		TextColor3 = endColor,
 	})
@@ -173,6 +238,119 @@ local function animateCash(label, startValue, endValue, startSize, endSize, star
 	label.Text = formatCash(endValue)
 	label.TextSize = endSize
 	label.TextColor3 = endColor
+end
+-- ── Phase 2: déclenchement d'un palier ──────────────────────────────────────────
+-- UIScale du punch, créé à la demande sous BaseCashText et réutilisé ensuite.
+local function getPunchScale(label)
+	local existing = label:FindFirstChild(PUNCH_NAME)
+	local _result = existing
+	if _result ~= nil then
+		_result = _result:IsA("UIScale")
+	end
+	if _result then
+		return existing
+	end
+	local scale = Instance.new("UIScale")
+	scale.Name = PUNCH_NAME
+	scale.Parent = label
+	return scale
+end
+-- Remet le montant à son échelle normale : un punch encore en vol ne doit pas laisser
+-- le label gonflé sur l'écran suivant.
+local function resetPunchScale(label)
+	local existing = label:FindFirstChild(PUNCH_NAME)
+	local _result = existing
+	if _result ~= nil then
+		_result = _result:IsA("UIScale")
+	end
+	if _result then
+		existing.Scale = 1
+	end
+end
+-- Tout ce qu'un palier fait claquer : le son (de plus en plus aigu et fort), la gerbe
+-- de billets qui part du montant, et la pluie qui tombe derrière. Les paliers hauts
+-- ajoutent le son "gros lot" et une pluie d'or par-dessus la pluie de billets.
+local function fireTier(tier, label)
+	playCashSound({
+		pitch = tier.pitch,
+		volume = tier.volume,
+	})
+	if tier.bigReward then
+		playBigPayout()
+	end
+	-- Saut instantané puis recalage : c'est le "snap" qui se lit comme un impact.
+	local punch = getPunchScale(label)
+	punch.Scale = tier.punch
+	TweenService:Create(punch, PUNCH_SETTLE_TI, {
+		Scale = 1,
+	}):Play()
+	-- Même convention de coordonnées que spawnFloatingChunk : les particules sont
+	-- parentées au ScreenGui et positionnées en offsets locaux.
+	local _absolutePosition = label.AbsolutePosition
+	local _arg0 = label.AbsoluteSize / 2
+	local center = _absolutePosition + _arg0
+	MoneyBurst:play(center, {
+		count = tier.burstCount,
+	})
+	local rain = {
+		count = tier.rainCount,
+		band = TIER_RAIN_BAND,
+		zIndex = TIER_RAIN_Z_INDEX,
+	}
+	if tier.ingotDownpour > 0 then
+		-- Climax d'une grosse escalade : déluge de lingots à la place des billets. Une
+		-- pluie d'or PURE se lit mieux qu'un mélange, et ça tient sous le plafond de
+		-- gouttes sans que le déluge ait à évincer sa propre pluie de billets.
+		local _object = table.clone(rain)
+		setmetatable(_object, nil)
+		_object.count = tier.ingotDownpour
+		CriticalRain:play(RAIN_IMAGE, _object)
+		return nil
+	end
+	CriticalRain:play(MONEY_IMAGE, rain)
+	if tier.goldRain then
+		local _object = table.clone(rain)
+		setmetatable(_object, nil)
+		_object.count = math.floor(tier.rainCount / 2)
+		CriticalRain:play(RAIN_IMAGE, _object)
+	end
+end
+-- ── Phase 2: découpage du count-up en segments ──────────────────────────────────
+-- Un tween unique regrouperait toutes les détonations au début : les seuils sont
+-- géométriques (×100, ×250, ×500) donc l'easing les traverse d'un coup, puis plus rien
+-- pendant la moitié de l'animation. On découpe donc le count-up en segments qui
+-- s'arrêtent PILE sur la valeur de chaque palier, et on donne à chacun la même durée —
+-- l'espacement des détonations est alors régulier par construction.
+local function buildSegments(effectiveBaseCash, totalEarn, tiers)
+	local immediate = {}
+	local segments = {}
+	local finalTier
+	for _, tier in tiers do
+		local value = effectiveBaseCash * tier.threshold
+		if value <= effectiveBaseCash then
+			-- Seuil déjà atteint au départ (le premier palier vaut ×1) : c'est le coup
+			-- d'envoi, il part avec le début du count-up.
+			table.insert(immediate, tier)
+		elseif value >= totalEarn then
+			-- Le palier tombe pile sur le total : c'est l'arrivée finale qui le joue.
+			finalTier = tier
+		else
+			local _arg0 = {
+				value = value,
+				tier = tier,
+			}
+			table.insert(segments, _arg0)
+		end
+	end
+	local _arg0 = {
+		value = totalEarn,
+		tier = finalTier,
+	}
+	table.insert(segments, _arg0)
+	return {
+		immediate = immediate,
+		segments = segments,
+	}
 end
 -- ── Phase 1: MultiplierText flies into BaseCashText, then disappears ─────────────
 local function mergeMultiplierIntoBaseCash(multiplierText, baseCashText)
@@ -279,6 +457,7 @@ local FLY_FRAME_NAMES = { "EndGameFloatingChunk", "EndGameBaseCashFly" }
 -- Puts the popup labels back to their Studio baseline so the next run starts clean.
 local function resetLabels(refs)
 	refs.baseCashText.Visible = false
+	resetPunchScale(refs.baseCashText)
 	if initialBaseCashSize ~= nil then
 		refs.baseCashText.TextSize = initialBaseCashSize
 	end
@@ -292,6 +471,13 @@ local function resetLabels(refs)
 	if initialMultiplierTransparency ~= nil then
 		refs.multiplierText.TextTransparency = initialMultiplierTransparency
 	end
+end
+-- Les particules de l'escalade vivent sur le ScreenGui, pas sur la popup, et la pluie
+-- tient jusqu'à 9 s alors que le paiement dure ~4 s : sans nettoyage explicite elle
+-- déborderait sur l'écran suivant.
+local function clearTierParticles()
+	MoneyBurst:clear()
+	CriticalRain:clear()
 end
 -- Stops a running payout animation and returns what has not been banked yet.
 -- Returns undefined when no animation is running (the popup never opened) — the caller
@@ -310,6 +496,7 @@ local function cancelActiveRun()
 		end
 	end
 	resetLabels(run.refs)
+	clearTierParticles()
 	InformationText:hide()
 	return math.max(run.totalEarn - run.banked, 0)
 end
@@ -436,21 +623,73 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 	if run.cancelled then
 		return nil
 	end
-	-- ── Phase 2: BaseCashText counts up by the in-game multiplier ─────────────────
+	-- ── Phase 2: count-up par paliers ─────────────────────────────────────────────
 	-- EffectiveBaseCash already includes every money multiplier (rebirth + tier +
 	-- community), so the start number shows the boost — no separate rebirth phase.
 	local grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE
-	animateCash(baseCashText, effectiveBaseCash, totalEarn, effectiveBaseSize, grownSize, baseColor, BASE_CASH_TARGET_COLOR, BASE_CASH_COUNTUP_TI)
-	if run.cancelled then
-		return nil
+	local rocketSpeed = playerStat("RocketSpeed", 1)
+	local resistance = playerStat("Resistance", 0)
+	local tiers = tiersCrossed(multiplier, rocketSpeed, resistance)
+	local _binding_1 = buildSegments(effectiveBaseCash, totalEarn, tiers)
+	local immediate = _binding_1.immediate
+	local segments = _binding_1.segments
+	local countUpTime = math.min(COUNTUP_BASE_TIME + COUNTUP_TIME_PER_TIER * #tiers, COUNTUP_MAX_TIME)
+	local segmentTime = countUpTime / #segments
+	local valueTi = TweenInfo.new(segmentTime, COUNTUP_VALUE_STYLE, Enum.EasingDirection.Out)
+	local styleTi = TweenInfo.new(segmentTime, COUNTUP_STYLE_STYLE, Enum.EasingDirection.Out)
+	-- La taille suit la VALEUR affichée (et non l'index du segment) : le texte grossit
+	-- donc au même rythme que le nombre, comme avant le découpage.
+	local valueSpan = totalEarn - effectiveBaseCash
+	local sizeAt = function(value)
+		return if valueSpan > 0 then effectiveBaseSize + (grownSize - effectiveBaseSize) * ((value - effectiveBaseCash) / valueSpan) else grownSize
 	end
+	-- Coup d'envoi : les paliers déjà atteints à la valeur de départ claquent tout de
+	-- suite, sinon le count-up démarrerait en silence.
+	local currentColor = baseColor
+	for _, tier in immediate do
+		fireTier(tier, baseCashText)
+		currentColor = tier.color
+	end
+	baseCashText.TextColor3 = currentColor
+	local currentValue = effectiveBaseCash
+	local currentSize = effectiveBaseSize
+	for _, segment in segments do
+		if run.cancelled then
+			return nil
+		end
+		local nextSize = sizeAt(segment.value)
+		local _result_2 = segment.tier
+		if _result_2 ~= nil then
+			_result_2 = _result_2.color
+		end
+		local _condition_2 = _result_2
+		if _condition_2 == nil then
+			_condition_2 = currentColor
+		end
+		local nextColor = _condition_2
+		animateCash(baseCashText, currentValue, segment.value, currentSize, nextSize, currentColor, nextColor, valueTi, styleTi)
+		if run.cancelled then
+			return nil
+		end
+		currentValue = segment.value
+		currentSize = nextSize
+		currentColor = nextColor
+		if segment.tier then
+			fireTier(segment.tier, baseCashText)
+		end
+	end
+	-- Couleur atteinte au sommet de l'escalade : la phase 3 redescend vers `baseColor`
+	-- depuis celle-ci, pas depuis une cible fixe.
+	local peakColor = currentColor
 	-- ── Phase 3: spray N floating texts into the money HUD ────────────────────────
 	local moneyParent = InGameUIController:getMoneyParent()
-	local n = FLOATING_TEXT_COUNT
+	local topTier = topTierIndex(multiplier, rocketSpeed, resistance)
+	local n = math.min(FLOATING_TEXT_COUNT + FLOATING_TEXT_PER_TIER * topTier, FLOATING_TEXT_MAX)
 	local chunk = if n > 0 then totalEarn / n else 0
 	local finishReset = function()
 		-- Leave BaseCashText hidden but reset to the Studio baseline for next run.
 		baseCashText.Visible = false
+		resetPunchScale(baseCashText)
 		if initialBaseCashSize ~= nil then
 			baseCashText.TextSize = initialBaseCashSize
 		end
@@ -481,52 +720,79 @@ local function runEndGameAnimation(frame, baseCash, multiplier, lossMultiplier, 
 		return nil
 	end
 	local arrived = 0
-	for i = 1, n do
-		if run.cancelled then
-			return nil
+	do
+		local i = 1
+		local _shouldIncrement = false
+		while true do
+			if _shouldIncrement then
+				i += 1
+			else
+				_shouldIncrement = true
+			end
+			if not (i <= n) then
+				break
+			end
+			if run.cancelled then
+				return nil
+			end
+			if FloatingCash:isStale(runGen) then
+				break
+			end
+			local isLast = i == n
+			local remaining = if isLast then 0 else totalEarn - i * chunk
+			spawnFloatingChunk(screenGui, chunk, baseCashText, moneyParent, {
+				onSpawn = function()
+					if run.cancelled then
+						return nil
+					end
+					-- Floating text leaving drops BaseCashText by one chunk (value + size).
+					baseCashText.Text = formatCash(remaining)
+					local ratio = if totalEarn > 0 then remaining / totalEarn else 0
+					baseCashText.TextSize = baseSize + (grownSize - baseSize) * ratio
+					baseCashText.TextColor3 = baseColor:Lerp(peakColor, ratio)
+					if isLast then
+						baseCashText.Visible = false
+					end
+				end,
+				onArrived = function()
+					if run.cancelled then
+						return nil
+					end
+					if FloatingCash:isStale(runGen) then
+						return nil
+					end
+					-- Pitch montant sur la rafale : la répétition devient un crescendo.
+					local pitch = 1 + (if n > 1 then (arrived / (n - 1)) * CHUNK_PITCH_RISE else 0)
+					MoneyDisplay:addVisual(chunk, {
+						pitch = pitch,
+					})
+					run.banked += chunk
+					arrived += 1
+					if arrived >= n then
+						-- Dernier "boum" : une gerbe part du compteur qui vient de tout encaisser.
+						local _absolutePosition = moneyParent.AbsolutePosition
+						local _arg0 = moneyParent.AbsoluteSize / 2
+						local hudCenter = _absolutePosition + _arg0
+						MoneyBurst:play(hudCenter, {
+							count = FINAL_BURST_BASE + topTier,
+						})
+						if #tiers > 0 and tiers[#tiers].bigReward then
+							playBigPayout()
+						end
+						finishReset()
+						task.delay(0.2, complete)
+					end
+				end,
+			})
+			task.wait(FLOATING_TEXT_INTERVAL)
 		end
-		if FloatingCash:isStale(runGen) then
-			break
-		end
-		local isLast = i == n
-		local remaining = if isLast then 0 else totalEarn - i * chunk
-		spawnFloatingChunk(screenGui, chunk, baseCashText, moneyParent, {
-			onSpawn = function()
-				if run.cancelled then
-					return nil
-				end
-				-- Floating text leaving drops BaseCashText by one chunk (value + size).
-				baseCashText.Text = formatCash(remaining)
-				local ratio = if totalEarn > 0 then remaining / totalEarn else 0
-				baseCashText.TextSize = baseSize + (grownSize - baseSize) * ratio
-				baseCashText.TextColor3 = baseColor:Lerp(BASE_CASH_TARGET_COLOR, ratio)
-				if isLast then
-					baseCashText.Visible = false
-				end
-			end,
-			onArrived = function()
-				if run.cancelled then
-					return nil
-				end
-				if FloatingCash:isStale(runGen) then
-					return nil
-				end
-				MoneyDisplay:addVisual(chunk)
-				run.banked += chunk
-				arrived += 1
-				if arrived >= n then
-					finishReset()
-					task.delay(0.2, complete)
-				end
-			end,
-		})
-		task.wait(FLOATING_TEXT_INTERVAL)
 	end
 	-- Rebirth broke out of the loop: the money is gone for good, so there is nothing
 	-- left to flush — drop the run instead of leaving it cancellable.
 	if activeRun == run and FloatingCash:isStale(runGen) then
 		activeRun = nil
 		finishReset()
+		clearTierParticles()
 	end
 end
 return {

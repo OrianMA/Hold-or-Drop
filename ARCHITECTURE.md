@@ -267,11 +267,20 @@ the session), **launches the rocket** (`RocketLauncher.launch(room)`, see §6.17
   but it can never produce a zero or negative duration and its long side stays open, which is
   what keeps a jackpot run possible. An additive bell is closed on both sides — holding the low
   tail above zero forces the high tail shut, and the ×5 run stops existing at all. Two knobs:
-  `FLIGHT_TIME_MEAN` (4s at Resistance 0) and `FLIGHT_TIME_SIGMA` (0.35, the width). The median
+  `FLIGHT_TIME_MEAN` (7s at Resistance 0) and `FLIGHT_TIME_SIGMA` (0.35, the width). The median
   is derived as `MEAN · e^(−σ²/2)` so **tuning σ does not move the mean** — σ is the single
-  "how unpredictable is this game" dial. Sampling is Box–Muller over two `math.random()` draws,
+  "how unpredictable is this game" dial. These three live in `shared/ResistanceCurve.ts` (the
+  server imports them): the **client** needs the same flight law to calibrate the payout
+  escalation on the player's real flight time (§6.4). Sampling is Box–Muller over two `math.random()` draws,
   clamped to `[FLIGHT_TIME_MIN, FLIGHT_TIME_MAX]` = 0.1s..60s (safety rails, not gameplay
   bounds).
+  Two pure helpers derive from the same law, both in `shared/ResistanceCurve.ts`:
+  `flightTimeAtZ(resistance, z)` = `safeWindow + median · riskScale^(−1/3) · e^(σz)`, the
+  **inverse** of the draw ("what flight time does this player beat X% of the time?"), and
+  `expectedFlightTime(resistance)` = `safeWindow + MEAN · riskScale^(−1/3)` — closed form, σ
+  cancels out because `E[e^(σZ)] = e^(σ²/2)` exactly undoes the median's `e^(−σ²/2)`. Verified
+  in game against every reference point of the Resistance table (L20 → 13.3s, L50 → 17.0s,
+  L100 → 22.5s).
   Reference points at Resistance 0: median 6.58s, mean 7.00s, 68% of flights in 4.7–9.3s, 95%
   in 3.3–13.0s, observed ceiling ~33s. Multiplier side: mean ×1.50, median ×1.40, p95 ×2.21,
   a ×3 every ~185 runs (a ×5 is effectively out of reach at level 0 — see the multiplier loop).
@@ -442,6 +451,65 @@ server credits `Money` and hides the popup.
   re-enables the HUD, jumps a single "+reward" text into the money display, then fires the
   **shared** `EndGameFinishedEvent` on arrival → the same handler credits `reward` and the HUD
   counter reconciles with no jump. One new server→client event, and no duplicate credit logic.
+
+**Escalade de paiement (`client/ui/PayoutTiers.ts`, §6.4.1).** La phase 2 (le count-up de
+`BaseCashText` vers le total) n'est plus un tween unique : elle est découpée en segments qui
+s'arrêtent **pile sur la valeur de chaque palier de multiplicateur franchi**, et chaque arrivée
+déclenche son son + son punch + ses particules, de plus en plus fort. C'est ce qui rend
+l'ampleur du gain lisible en temps réel : à ×1.8 un pop discret, à ×140 trois détonations qui
+montent en gamme sous une pluie de billets et d'or.
+
+- **Échelle : des CENTILES, pas des multiplicateurs fixes.** Le multiplicateur atteint dépend de
+  **deux** stats — la Rocket Speed (linéaire, `multiplierAfter` §6.2) et la Resistance (qui
+  allonge la durée de vol, §6.3). Des seuils fixes (×2/×10/×100) seraient inatteignables en
+  early et saturés en late. Un ratio à la moyenne ne marche pas non plus : la `safeWindow` de la
+  Resistance est **déterministe**, donc elle écrase la variance relative (à Resistance 0 le
+  meilleur centile vaut ~3.9× la moyenne, à Resistance 100 seulement ~1.5×) — acheter de la
+  Resistance rendrait les paiements *moins* spectaculaires. Chaque palier est donc un **centile
+  de la propre distribution de vol du joueur** : « ce run bat 90 % de tes runs » veut dire la
+  même chose à toute Rocket Speed et à toute Resistance. Calcul **analytique**, pas simulé — la
+  durée de vol au centile *p* est `flightTimeAtZ(resistance, z_p)` (§6.3), repassée dans
+  `multiplierAfter`. Centiles visés : 35 / 60 / 78 / 90 / 96 / 99 / 99.7 / 99.95, plus un palier
+  0 **toujours** franchi (seuil = `STARTING_MULTIPLIER`) pour que tout paiement ait au moins un
+  son et une pluie légère. Seuls les `MAX_PLAYED` (3) derniers paliers franchis se jouent.
+  Aucun seuil n'est jamais affiché au joueur — les paliers ne pilotent que le son et les
+  particules — donc abandonner les nombres ronds ne coûte aucune lisibilité.
+- **Intensité** — dérivée de l'**index absolu** du palier (0..8) par interpolation entre deux
+  bornes, jamais écrite palier par palier : la monotonie est garantie. Pitch 1.00→1.30, volume
+  0.5→1.0, gerbe 6→36 billets, pluie 8→40, punch 1.12→1.40, couleur rouge clair→or.
+  `GOLD_RAIN_INDEX` (3, centile 78) ajoute des lingots (`RAIN_IMAGE`) par-dessus la pluie de
+  billets (`MONEY_IMAGE`) ; `BIG_REWARD_INDEX` (4, centile 90) ajoute `sfx.bigPayout`.
+- **Déluge de lingots** — le **climax** d'une escalade qui atteint `INGOT_DOWNPOUR_INDEX`
+  (5, centile 96 → top 4 % des runs) **remplace** la pluie de billets par 40–62 lingots. Une
+  pluie d'or pure se lit mieux qu'un mélange, et comme le plafond de `CriticalRain` évince les
+  plus anciennes gouttes, l'écran bascule entièrement en or (vérifié : 70 lingots, 0 billet).
+  Au plus une fois par paiement, sur le dernier palier joué.
+- **Durée** — `0.6 s + 0.2 s × nb de paliers`, **plafonnée à 1.2 s** : l'écran de fin ne traîne
+  pas sur un gros run. Les segments se partagent ce temps à parts égales, ce qui espace les
+  détonations régulièrement — un tween unique les regrouperait au début, les seuils étant
+  géométriques.
+- **Stats lues côté client** — `EndGameAnimation` lit les attributs répliqués `RocketSpeed` et
+  `Resistance` du `LocalPlayer` (`PlayerProgressionService`). `Resistance` porte déjà la valeur
+  **effective** (game pass inclus), donc exactement celle que le modèle de risque serveur
+  utilise.
+- **Le punch passe par un `UIScale`, pas par `TextSize`.** Roblox **plafonne `TextSize` à 100**
+  et `BaseCashText` démarre à 85 : un dépassement sur la taille serait silencieusement écrêté,
+  pile sur les gros paliers. Le `UIScale` (instance séparée) n'a pas cette limite et son tween
+  ne croise jamais celui de la taille/couleur. Pour la même raison
+  `BASE_CASH_MAX_SIZE_INCREASE` vaut **15** (85 + 15 = 100 exactement, aucun écrêtage).
+- **Plan de rendu** — la pluie du paiement tombe en `zIndex: 0`, donc **derrière** le montant
+  (`ButtonFinishGame` et `BaseCashText` sont en `ZIndex` 1, `ZIndexBehavior = Sibling`). Sa
+  bande de départ est courte (700 px au lieu de 1600) pour lire comme une vague qui passe.
+- **Phase 3** — le nombre de liasses suit l'ampleur (`8 + index du palier max`, plafonné à 16)
+  et le pitch du son de dépôt monte de 1.00 à 1.25 sur la rafale : les N `ka-ching` deviennent
+  un arpège au lieu d'une répétition. La dernière liasse qui atterrit déclenche une gerbe
+  finale sur le compteur (+ `sfx.bigPayout` si le palier max est un gros lot).
+- **Nettoyage** — `cancelActiveRun()` appelle aussi `MoneyBurst.clear()` / `CriticalRain.clear()` :
+  la pluie vit jusqu'à 9 s alors que le paiement dure ~4 s, sans ça elle déborderait sur l'écran
+  suivant. Même traitement sur le chemin rebirth (`FloatingCash.isStale`).
+
+> `flyBaseCashToHud` / `FINAL_MOVE_DELAY` décrivent une **phase 4 qui n'est pas branchée** :
+> la phase 3 masque déjà le label sur son dernier chunk. Code mort conservé tel quel.
 
 **Flush — the finish screen never steals a screen the player just opened.** `UiService.Show`
 calls a registered `SetBeforeShow` hook for **any** popup other than `ButtonFinishGame`; the hook
@@ -1269,6 +1337,14 @@ so the burst reads the same on mobile. `MoneyBurst.preload()` (called from
 `RocketLaunchBehavior.init`) warms the image so the first claim of the session is not blank;
 `MoneyBurst.clear()` wipes bills still in flight.
 
+`play(origin?, { count })` surcharge le nombre de billets (défaut `PARTICLE_COUNT`) — c'est ce
+qui fait grossir la gerbe palier après palier pendant le paiement (§6.4). Un plafond
+`MAX_LIVE_BILLS` (60) borne les billets **vivants** tous appels confondus, et il **évince les
+plus anciens** au lieu de tronquer la nouvelle gerbe : pendant l'escalade c'est toujours le
+dernier palier, le plus gros, qui doit s'afficher en entier — tronquer ferait décroître l'effet
+à mesure que le gain grossit, exactement l'inverse du but. `MONEY_IMAGE` est exporté pour que
+la pluie de billets du paiement utilise la même source de vérité.
+
 **Variante "aspiration"** — `play(origin, { gatherTo })`. Le billet explose normalement
 pendant `GATHER_DELAY` (0.55 s), puis :
 1. **freinage** sur `GATHER_BRAKE` (0.2 s) — le billet continue sur sa lancée en ralentissant
@@ -1364,7 +1440,14 @@ burst, **under** the flash text (60). `CriticalRain.preload()` (called from
 
 `play(image?)` / `preload(image?)` prennent une **image optionnelle** : la même simulation
 sert la pluie jouée à l'accomplissement d'une quête (§6.26), qui doit être exactement le même
-effet avec une autre icône. Sans argument, c'est celle du Critical Claim.
+effet avec une autre icône. Sans argument, c'est celle du Critical Claim. `RAIN_IMAGE` est
+exporté pour que la pluie d'or du paiement (§6.4) utilise la même source de vérité.
+
+`play(image?, { count, band, zIndex })` surcharge la densité, la hauteur de la bande de départ
+(donc la **durée** de la pluie) et le plan de rendu. L'escalade de paiement s'en sert pour une
+pluie courte (`band` 700) qui tombe **derrière** le montant (`zIndex` 0). Un plafond
+`MAX_LIVE_DROPS` (70) borne les gouttes **vivantes**, et il **évince les plus anciennes** plutôt
+que de tronquer la nouvelle pluie, pour la même raison qu'en §6.21.
 
 ### 6.24 Mega Rocket (`shared/MegaRocketConfig.ts`, `server/services/MegaRocketService.ts`, `client/ui/MegaRocketVisuals.ts`)
 
@@ -1792,10 +1875,14 @@ products (money packs + progression products) through `PromptProductPurchase` + 
 | `PERFECT_CLAIM_HIGH_MULT_BONUS` | `shared/RocketGameConfig.ts` | 0.25s | Flat window bonus past ×7 |
 | `CRITICAL_CLAIM_CHANCE` | `shared/RocketGameConfig.ts` | 0.05 | Chance for any claim to roll a Critical Claim (§6.3) |
 | `CRITICAL_CLAIM_MULTIPLIER` | `shared/RocketGameConfig.ts` | 10 | Base cash factor on a Critical Claim — multiplies with the ×3 (§6.3) |
-| `FLIGHT_TIME_MEAN` | `ButtonInGameModule.ts` | 7s | Average flight length at Resistance 0 (§6.3) |
-| `FLIGHT_TIME_SIGMA` | `ButtonInGameModule.ts` | 0.35 | Width of the bell (multiplicative) — ↑ = extremes more reachable, mean unchanged |
+| `FLIGHT_TIME_MEAN` | `shared/ResistanceCurve.ts` | 7s | Average flight length at Resistance 0 (§6.3) — shared so the client can calibrate the payout escalation (§6.4) |
+| `FLIGHT_TIME_SIGMA` | `shared/ResistanceCurve.ts` | 0.35 | Width of the bell (multiplicative) — ↑ = extremes more reachable, mean unchanged |
 | `FLIGHT_TIME_MIN` / `_MAX` | `ButtonInGameModule.ts` | 0.1s / 60s | Safety clamps on the draw |
 | `TICK_RATE` | `ButtonInGameModule.ts` | 0.5s | Risk-loop interval |
+| `TIER_PERCENTILE_Z` | `client/ui/PayoutTiers.ts` | 8 z-quantiles | Centiles des paliers de paiement : 35/60/78/90/96/99/99.7/99.95 (§6.4) |
+| `MAX_PLAYED` | `client/ui/PayoutTiers.ts` | 3 | Paliers effectivement joués — les plus hauts franchis |
+| `GOLD_RAIN_INDEX` / `BIG_REWARD_INDEX` | `client/ui/PayoutTiers.ts` | 3 / 4 | Index à partir desquels tombent les lingots / claque `sfx.bigPayout` |
+| `INGOT_DOWNPOUR_INDEX` | `client/ui/PayoutTiers.ts` | 5 | Index où le **climax** bascule en déluge de lingots (top 4 % des runs) |
 | `RESISTANCE_MAX_REDUCTION` | `shared/ResistanceCurve.ts` | 0.45 | Risk floor at Resistance 100 (×0.55) — secondary lever |
 | `RESISTANCE_REDUCTION_CURVE` | `shared/ResistanceCurve.ts` | 1.2 | ↑ = more back-loaded `riskScale` reduction (power of `n`) |
 | `RESISTANCE_SAFE_WINDOW_BURST` | `shared/ResistanceCurve.ts` | 5s | Front-loaded part of `safeWindow` — ~+0.5s/level at the start, spent by ~L20 |

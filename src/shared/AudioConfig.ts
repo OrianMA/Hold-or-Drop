@@ -33,6 +33,10 @@ export const AudioConfig = {
 		// compteur, MoneyBurst), donc son volume doit pouvoir baisser sans toucher au
 		// clic de l'UI.
 		billPop: { id: "rbxassetid://72264591133889", volume: 0.2 }, // client, 2D — arrivée d'un billet dans le compteur (MoneyBurst, aspiration)
+		// Même asset que perfectClaim, mais un réglage à part : ce son marque les gros
+		// paliers de l'escalade de paiement (PayoutTiers, §6.4) et doit pouvoir être
+		// dosé sans toucher aux flashs de claim.
+		bigPayout: { id: "rbxassetid://3406813517", volume: 0.9 }, // client, 2D — palier de paiement ≥ ×25 (EndGameAnimation)
 		information: { id: "rbxassetid://130467592920597", volume: 0.5 }, // client, 2D — apparition d'un bandeau InformationText (Common/Rare/Epic)
 		informationLegendary: { id: "rbxassetid://137502807803779", volume: 0.6 }, // client, 2D — apparition d'un bandeau InformationText Legendary
 	},

@@ -13,12 +13,18 @@ local playBillPop = TS.import(script, script.Parent.Parent, "audio", "CashSound"
 --
 -- Pas de ParticleEmitter ici : c'est de la 2D écran (les billets doivent rester
 -- lisibles par-dessus le HUD), donc une mini simulation en pixels dans RenderStepped.
+-- Image du billet. Exportée : l'escalade de paiement (PayoutTiers, §6.4) s'en sert
+-- pour sa pluie de billets, et il ne doit y avoir qu'une source de vérité.
 local MONEY_IMAGE = "rbxassetid://18209585783"
 -- ── Tuning ──────────────────────────────────────────────────────────────────────
 -- Toutes les valeurs en pixels sont exprimées pour un écran de REFERENCE_HEIGHT px
 -- et remises à l'échelle du viewport réel (mobile compris).
 local REFERENCE_HEIGHT = 900
 local PARTICLE_COUNT = 26
+-- Plafond de billets VIVANTS, tous appels confondus. L'escalade de paiement
+-- (PayoutTiers, §6.4) empile jusqu'à trois gerbes en une seconde : sans ce garde-fou
+-- on simulerait 100+ ImageLabels par frame sur mobile.
+local MAX_LIVE_BILLS = 60
 local BILL_SIZE = 70
 local BILL_SIZE_JITTER = 0.35
 local SPEED_MIN = 700
@@ -229,55 +235,102 @@ local MoneyBurst = {
 		end
 		local scale = viewport.Y / REFERENCE_HEIGHT
 		local center = origin or viewport / 2
-		for i = 0, PARTICLE_COUNT - 1 do
-			-- Angles répartis sur le cercle complet + bruit : dispersion "d'un coup"
-			-- dans toutes les directions, sans trou visible dans la gerbe.
-			local angle = ((i + math.random()) / PARTICLE_COUNT) * math.pi * 2
-			local speed = (SPEED_MIN + math.random() * (SPEED_MAX - SPEED_MIN)) * scale
-			local sizeJitter = 1 + (math.random() * 2 - 1) * BILL_SIZE_JITTER
-			local label = Instance.new("ImageLabel")
-			label.Name = FRAME_NAME
-			label.Image = MONEY_IMAGE
-			label.BackgroundTransparency = 1
-			label.AnchorPoint = Vector2.new(0.5, 0.5)
-			label.Position = UDim2.new(0, center.X, 0, center.Y)
-			label.Size = UDim2.new(0, 0, 0, 0)
-			label.ZIndex = 50
-			label.Active = false
-			label.Parent = screenGui
-			local _object = {
-				label = label,
-				x = center.X,
-				y = center.Y,
-				vx = math.cos(angle) * speed,
-				vy = math.sin(angle) * speed,
-				size = BILL_SIZE * sizeJitter * scale,
-				scale = scale,
-				rotation = math.random() * 360,
-				spin = (math.random() * 2 - 1) * SPIN_MAX,
-				swayPhase = math.random() * math.pi * 2,
-				swaySpeed = SWAY_SPEED_MIN + math.random() * (SWAY_SPEED_MAX - SWAY_SPEED_MIN),
-				age = 0,
-			}
-			local _left = "gatherAt"
-			local _result
-			if options then
-				local _condition = options.gatherAfter
-				if _condition == nil then
-					_condition = GATHER_DELAY
+		-- Le plafond ÉVICTE les plus anciens billets plutôt que de tronquer la nouvelle
+		-- gerbe : pendant l'escalade de paiement, c'est toujours le DERNIER palier (le
+		-- plus gros) qui doit s'afficher en entier.
+		local _result = options
+		if _result ~= nil then
+			_result = _result.count
+		end
+		local _condition = _result
+		if _condition == nil then
+			_condition = PARTICLE_COUNT
+		end
+		local count = math.min(_condition, MAX_LIVE_BILLS)
+		if count <= 0 then
+			return nil
+		end
+		local overflow = #bills + count - MAX_LIVE_BILLS
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
 				end
-				_result = _condition + (i / PARTICLE_COUNT) * GATHER_SPREAD + math.random() * GATHER_JITTER
-			else
-				_result = nil
+				if not (i < overflow) then
+					break
+				end
+				destroyBill(0)
 			end
-			_object[_left] = _result
-			local _left_1 = "resolveTarget"
-			local _result_1 = options
-			if _result_1 ~= nil then
-				_result_1 = _result_1.gatherTo
+		end
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < count) then
+					break
+				end
+				-- Angles répartis sur le cercle complet + bruit : dispersion "d'un coup"
+				-- dans toutes les directions, sans trou visible dans la gerbe.
+				local angle = ((i + math.random()) / count) * math.pi * 2
+				local speed = (SPEED_MIN + math.random() * (SPEED_MAX - SPEED_MIN)) * scale
+				local sizeJitter = 1 + (math.random() * 2 - 1) * BILL_SIZE_JITTER
+				local label = Instance.new("ImageLabel")
+				label.Name = FRAME_NAME
+				label.Image = MONEY_IMAGE
+				label.BackgroundTransparency = 1
+				label.AnchorPoint = Vector2.new(0.5, 0.5)
+				label.Position = UDim2.new(0, center.X, 0, center.Y)
+				label.Size = UDim2.new(0, 0, 0, 0)
+				label.ZIndex = 50
+				label.Active = false
+				label.Parent = screenGui
+				local _object = {
+					label = label,
+					x = center.X,
+					y = center.Y,
+					vx = math.cos(angle) * speed,
+					vy = math.sin(angle) * speed,
+					size = BILL_SIZE * sizeJitter * scale,
+					scale = scale,
+					rotation = math.random() * 360,
+					spin = (math.random() * 2 - 1) * SPIN_MAX,
+					swayPhase = math.random() * math.pi * 2,
+					swaySpeed = SWAY_SPEED_MIN + math.random() * (SWAY_SPEED_MAX - SWAY_SPEED_MIN),
+					age = 0,
+				}
+				local _left = "gatherAt"
+				local _result_1 = options
+				if _result_1 ~= nil then
+					_result_1 = _result_1.gatherTo
+				end
+				local _result_2
+				if _result_1 then
+					local _condition_1 = options.gatherAfter
+					if _condition_1 == nil then
+						_condition_1 = GATHER_DELAY
+					end
+					_result_2 = _condition_1 + (i / count) * GATHER_SPREAD + math.random() * GATHER_JITTER
+				else
+					_result_2 = nil
+				end
+				_object[_left] = _result_2
+				local _left_1 = "resolveTarget"
+				local _result_3 = options
+				if _result_3 ~= nil then
+					_result_3 = _result_3.gatherTo
+				end
+				_object[_left_1] = _result_3
+				table.insert(bills, _object)
 			end
-			_object[_left_1] = _result_1
-			table.insert(bills, _object)
 		end
 		if not stepConn then
 			stepConn = RunService.RenderStepped:Connect(step)
@@ -296,5 +349,6 @@ local MoneyBurst = {
 	end,
 }
 return {
+	MONEY_IMAGE = MONEY_IMAGE,
 	MoneyBurst = MoneyBurst,
 }

@@ -35,7 +35,37 @@ local RESISTANCE_SAFE_WINDOW_BURST = 5
 local RESISTANCE_SAFE_WINDOW_CURVE = 9
 local RESISTANCE_SAFE_WINDOW_LINEAR = 9
 local RESISTANCE_MAX_SAFE_WINDOW = RESISTANCE_SAFE_WINDOW_BURST + RESISTANCE_SAFE_WINDOW_LINEAR
-local function resistanceRiskParams(resistance)
+-- ── Loi de durée de vol ─────────────────────────────────────────────────────────
+-- La durée d'un vol est tirée d'un coup au décollage dans une cloche de Gauss sur une
+-- échelle MULTIPLICATIVE du temps (voir `rollExplosionTime`, ButtonInGameModule) :
+--   vol = safeWindow + médiane × riskScale^(-1/3) × e^(σ·Z),  Z ~ N(0,1)
+--
+-- Ces constantes vivaient côté serveur. Elles sont ici parce que le CLIENT en a besoin
+-- pour calibrer l'escalade de paiement (client/ui/PayoutTiers, §6.4) sur la durée de vol
+-- RÉELLE du joueur — donc en tenant compte de sa Resistance, pas seulement de sa Rocket
+-- Speed. Une seule source de vérité : le serveur les importe d'ici.
+local FLIGHT_TIME_MEAN = 7
+local FLIGHT_TIME_SIGMA = 0.35
+-- Médiane telle que la MOYENNE vaille FLIGHT_TIME_MEAN — sur une échelle multiplicative,
+-- moyenne = médiane × e^(σ²/2). Régler σ ne déplace donc pas la moyenne.
+local FLIGHT_TIME_MEDIAN = FLIGHT_TIME_MEAN * math.exp(-(FLIGHT_TIME_SIGMA * FLIGHT_TIME_SIGMA) / 2)
+-- Durée de vol au quantile `z` de la loi normale centrée réduite (z = 0 → médiane,
+-- z = 1.28 → 90ᵉ centile…). C'est la fonction inverse du tirage : elle répond à
+-- "quelle durée de vol un joueur de cette Resistance bat-il X % du temps ?".
+local resistanceRiskParams
+local function flightTimeAtZ(resistance, z)
+	local params = resistanceRiskParams(resistance)
+	return params.safeWindow + FLIGHT_TIME_MEDIAN * params.riskScale ^ (-1 / 3) * math.exp(FLIGHT_TIME_SIGMA * z)
+end
+-- Durée de vol MOYENNE pour cette Resistance. Forme fermée : E[e^(σZ)] = e^(σ²/2)
+-- annule exactement le e^(-σ²/2) de la médiane, donc σ disparaît et il reste
+-- `safeWindow + MEAN × riskScale^(-1/3)`. Reproduit les repères du tableau ci-dessus
+-- (L20 → 13.3 s, L50 → 17.0 s, L100 → 22.5 s).
+local function expectedFlightTime(resistance)
+	local params = resistanceRiskParams(resistance)
+	return params.safeWindow + FLIGHT_TIME_MEAN * params.riskScale ^ (-1 / 3)
+end
+function resistanceRiskParams(resistance)
 	local n = math.clamp(resistance / RESISTANCE_MAX_LEVEL, 0, 1)
 	local reduction = RESISTANCE_MAX_REDUCTION * n ^ RESISTANCE_REDUCTION_CURVE
 	local safeWindow = RESISTANCE_SAFE_WINDOW_BURST * (1 - (1 - n) ^ RESISTANCE_SAFE_WINDOW_CURVE) + RESISTANCE_SAFE_WINDOW_LINEAR * n
@@ -45,6 +75,8 @@ local function resistanceRiskParams(resistance)
 	}
 end
 return {
+	flightTimeAtZ = flightTimeAtZ,
+	expectedFlightTime = expectedFlightTime,
 	resistanceRiskParams = resistanceRiskParams,
 	RESISTANCE_MAX_LEVEL = RESISTANCE_MAX_LEVEL,
 	RESISTANCE_MAX_REDUCTION = RESISTANCE_MAX_REDUCTION,
@@ -53,4 +85,7 @@ return {
 	RESISTANCE_SAFE_WINDOW_CURVE = RESISTANCE_SAFE_WINDOW_CURVE,
 	RESISTANCE_SAFE_WINDOW_LINEAR = RESISTANCE_SAFE_WINDOW_LINEAR,
 	RESISTANCE_MAX_SAFE_WINDOW = RESISTANCE_MAX_SAFE_WINDOW,
+	FLIGHT_TIME_MEAN = FLIGHT_TIME_MEAN,
+	FLIGHT_TIME_SIGMA = FLIGHT_TIME_SIGMA,
+	FLIGHT_TIME_MEDIAN = FLIGHT_TIME_MEDIAN,
 }

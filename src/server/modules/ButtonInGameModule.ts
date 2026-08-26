@@ -27,7 +27,12 @@ import {
 	multiplierAfter,
 } from "shared/RocketGameConfig";
 import { AudioConfig } from "shared/AudioConfig";
-import { RiskParams, resistanceRiskParams } from "shared/ResistanceCurve";
+import {
+	FLIGHT_TIME_MEDIAN,
+	FLIGHT_TIME_SIGMA,
+	RiskParams,
+	resistanceRiskParams,
+} from "shared/ResistanceCurve";
 import { MEGA_ROCKET_BASE_CASH_MULT, hasMegaRocket } from "shared/MegaRocketConfig";
 import { MegaRocketService } from "server/services/MegaRocketService";
 
@@ -57,17 +62,14 @@ const GO_HOME_RESET_DELAY = 0.6;
 // Repères à Resistance 0 (μ = 7 s, σ = 0.35) : 68 % des vols entre 4.7 et 9.3 s,
 // 95 % entre 3.3 et 13.0 s, plafond observé ~33 s. Côté gain : multiplicateur moyen
 // ×1.50, un ×3 tous les ~185 runs.
-const FLIGHT_TIME_MEAN = 7;
-const FLIGHT_TIME_SIGMA = 0.35;
+// FLIGHT_TIME_MEAN / SIGMA / MEDIAN vivent maintenant dans shared/ResistanceCurve : le
+// client en a besoin pour calibrer l'escalade de paiement sur la durée de vol réelle du
+// joueur (§6.4). Une seule source de vérité pour la loi de vol.
 
 // Garde-fous du tirage : la cloche n'est pas bornée, on coupe les deux queues bien
 // au-delà de ce qu'un joueur verra jamais.
 const FLIGHT_TIME_MIN = 0.1;
 const FLIGHT_TIME_MAX = 60;
-
-// Médiane telle que la MOYENNE vaille FLIGHT_TIME_MEAN — sur une échelle
-// multiplicative, moyenne = médiane × e^(σ²/2). Régler σ ne déplace donc pas la moyenne.
-const FLIGHT_TIME_MEDIAN = FLIGHT_TIME_MEAN * math.exp(-(FLIGHT_TIME_SIGMA * FLIGHT_TIME_SIGMA) / 2);
 
 const EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id;
 const EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume;

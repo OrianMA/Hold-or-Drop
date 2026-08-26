@@ -1,6 +1,6 @@
 import { Players, TweenService } from "@rbxts/services";
 import { FormatCash } from "shared/NumberFormat";
-import { playCashSound } from "client/audio/CashSound";
+import { playCashSound, SfxOptions } from "client/audio/CashSound";
 
 // Renders the local player's Money attribute into a TextLabel named "MoneyText"
 // sitting under MoneyParent inside the InGameUI HUD. The attribute is set by the server
@@ -21,8 +21,8 @@ const ATTRIBUTE = "Money";
 const LABEL_NAME = "MoneyText";
 
 // Son 2D joué à chaque dépôt d'argent dans le HUD (cf. addVisual).
-function playMoneyGain(): void {
-	playCashSound();
+function playMoneyGain(options?: SfxOptions): void {
+	playCashSound(options);
 }
 
 // Duration of the "count-up" animation. Quad-Out feels punchier than Linear.
@@ -139,8 +139,11 @@ export const MoneyDisplay = {
 	// Cosmetic: bump the displayed balance up by `amount` (count-up tween). The
 	// real Money attribute remains authoritative; refresh() reconciles when the
 	// server credit lands.
-	addVisual(amount: number): void {
-		if (amount > 0) playMoneyGain(); // son au moment exact du gain (chaque dépôt)
+	// `sound` fait varier la lecture sans changer le son : l'animation de paiement
+	// (§6.4) y passe un pitch qui monte chunk après chunk, ce qui transforme la
+	// rafale de dépôts en arpège au lieu d'une répétition.
+	addVisual(amount: number, sound?: SfxOptions): void {
+		if (amount > 0) playMoneyGain(sound); // son au moment exact du gain (chaque dépôt)
 		tweenTo(currentTarget + amount);
 	},
 

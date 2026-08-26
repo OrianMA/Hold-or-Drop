@@ -16,6 +16,8 @@ local RunService = _services.RunService
 --
 -- Même approche que MoneyBurst : pas de ParticleEmitter, c'est de la 2D écran, donc
 -- une mini simulation en pixels dans RenderStepped.
+-- Icône dorée du Critical Claim. Exportée : l'escalade de paiement (PayoutTiers,
+-- §6.4) s'en sert pour sa pluie d'or, et il ne doit y avoir qu'une source de vérité.
 local RAIN_IMAGE = "rbxassetid://13506500866"
 -- ── Tuning ──────────────────────────────────────────────────────────────────────
 -- Les valeurs en pixels sont exprimées pour un écran de REFERENCE_HEIGHT px et
@@ -24,6 +26,10 @@ local REFERENCE_HEIGHT = 900
 local PARTICLE_COUNT = 40
 local ICON_SIZE = 60
 local ICON_SIZE_JITTER = 0.3
+-- Plafond de gouttes VIVANTES, tous appels confondus. L'escalade de paiement
+-- (PayoutTiers, §6.4) empile jusqu'à trois pluies en une seconde : sans ce garde-fou
+-- on ferait tomber 150+ ImageLabels simulés par frame sur mobile.
+local MAX_LIVE_DROPS = 70
 -- Les icônes ne sont pas lâchées par un timer : elles démarrent réparties dans une
 -- bande AU-DESSUS de l'écran, donc elles entrent dans le champ les unes après les
 -- autres — c'est ce qui fait la pluie plutôt qu'une salve.
@@ -116,7 +122,7 @@ local CriticalRain = {
 			probe:Destroy()
 		end)
 	end,
-	play = function(self, image)
+	play = function(self, image, options)
 		if image == nil then
 			image = RAIN_IMAGE
 		end
@@ -129,38 +135,100 @@ local CriticalRain = {
 			return nil
 		end
 		local scale = viewport.Y / REFERENCE_HEIGHT
-		for i = 0, PARTICLE_COUNT - 1 do
-			local sizeJitter = 1 + (math.random() * 2 - 1) * ICON_SIZE_JITTER
-			local size = ICON_SIZE * sizeJitter * scale
-			-- X réparti en colonnes + bruit : la pluie couvre la largeur sans paquets.
-			local x = ((i + math.random()) / PARTICLE_COUNT) * viewport.X
-			local y = -size - math.random() * SPAWN_BAND * scale
-			local label = Instance.new("ImageLabel")
-			label.Name = LABEL_NAME
-			label.Image = image
-			label.BackgroundTransparency = 1
-			label.AnchorPoint = Vector2.new(0.5, 0.5)
-			label.Position = UDim2.new(0, x, 0, y)
-			label.Size = UDim2.new(0, size, 0, size)
-			label.Rotation = math.random() * 360
-			label.ZIndex = Z_INDEX
-			label.Active = false
-			label.Parent = screenGui
-			local _arg0 = {
-				label = label,
-				x = x,
-				y = y,
-				vx = (math.random() * 2 - 1) * DRIFT_MAX * scale,
-				vy = (FALL_SPEED_MIN + math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN)) * scale,
-				size = size,
-				scale = scale,
-				rotation = label.Rotation,
-				spin = (math.random() * 2 - 1) * SPIN_MAX,
-				swayPhase = math.random() * math.pi * 2,
-				swaySpeed = SWAY_SPEED_MIN + math.random() * (SWAY_SPEED_MAX - SWAY_SPEED_MIN),
-				age = 0,
-			}
-			table.insert(drops, _arg0)
+		local _result = options
+		if _result ~= nil then
+			_result = _result.band
+		end
+		local _condition = _result
+		if _condition == nil then
+			_condition = SPAWN_BAND
+		end
+		local band = _condition
+		local _result_1 = options
+		if _result_1 ~= nil then
+			_result_1 = _result_1.zIndex
+		end
+		local _condition_1 = _result_1
+		if _condition_1 == nil then
+			_condition_1 = Z_INDEX
+		end
+		local zIndex = _condition_1
+		-- Le plafond ÉVICTE les plus anciennes gouttes plutôt que de tronquer la
+		-- nouvelle pluie : pendant l'escalade de paiement, c'est toujours le DERNIER
+		-- palier (le plus gros) qui doit s'afficher en entier — tronquer ferait
+		-- décroître l'effet à mesure que le gain grossit, exactement l'inverse du but.
+		local _result_2 = options
+		if _result_2 ~= nil then
+			_result_2 = _result_2.count
+		end
+		local _condition_2 = _result_2
+		if _condition_2 == nil then
+			_condition_2 = PARTICLE_COUNT
+		end
+		local count = math.min(_condition_2, MAX_LIVE_DROPS)
+		if count <= 0 then
+			return nil
+		end
+		local overflow = #drops + count - MAX_LIVE_DROPS
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < overflow) then
+					break
+				end
+				destroyDrop(0)
+			end
+		end
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < count) then
+					break
+				end
+				local sizeJitter = 1 + (math.random() * 2 - 1) * ICON_SIZE_JITTER
+				local size = ICON_SIZE * sizeJitter * scale
+				-- X réparti en colonnes + bruit : la pluie couvre la largeur sans paquets.
+				local x = ((i + math.random()) / count) * viewport.X
+				local y = -size - math.random() * band * scale
+				local label = Instance.new("ImageLabel")
+				label.Name = LABEL_NAME
+				label.Image = image
+				label.BackgroundTransparency = 1
+				label.AnchorPoint = Vector2.new(0.5, 0.5)
+				label.Position = UDim2.new(0, x, 0, y)
+				label.Size = UDim2.new(0, size, 0, size)
+				label.Rotation = math.random() * 360
+				label.ZIndex = zIndex
+				label.Active = false
+				label.Parent = screenGui
+				local _arg0 = {
+					label = label,
+					x = x,
+					y = y,
+					vx = (math.random() * 2 - 1) * DRIFT_MAX * scale,
+					vy = (FALL_SPEED_MIN + math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN)) * scale,
+					size = size,
+					scale = scale,
+					rotation = label.Rotation,
+					spin = (math.random() * 2 - 1) * SPIN_MAX,
+					swayPhase = math.random() * math.pi * 2,
+					swaySpeed = SWAY_SPEED_MIN + math.random() * (SWAY_SPEED_MAX - SWAY_SPEED_MIN),
+					age = 0,
+				}
+				table.insert(drops, _arg0)
+			end
 		end
 		if not stepConn then
 			stepConn = RunService.RenderStepped:Connect(step)
@@ -179,5 +247,6 @@ local CriticalRain = {
 	end,
 }
 return {
+	RAIN_IMAGE = RAIN_IMAGE,
 	CriticalRain = CriticalRain,
 }

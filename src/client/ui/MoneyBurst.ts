@@ -10,7 +10,9 @@ import { playBillPop } from "client/audio/CashSound";
 // Pas de ParticleEmitter ici : c'est de la 2D écran (les billets doivent rester
 // lisibles par-dessus le HUD), donc une mini simulation en pixels dans RenderStepped.
 
-const MONEY_IMAGE = "rbxassetid://18209585783";
+// Image du billet. Exportée : l'escalade de paiement (PayoutTiers, §6.4) s'en sert
+// pour sa pluie de billets, et il ne doit y avoir qu'une source de vérité.
+export const MONEY_IMAGE = "rbxassetid://18209585783";
 
 // ── Tuning ──────────────────────────────────────────────────────────────────────
 // Toutes les valeurs en pixels sont exprimées pour un écran de REFERENCE_HEIGHT px
@@ -18,6 +20,12 @@ const MONEY_IMAGE = "rbxassetid://18209585783";
 const REFERENCE_HEIGHT = 900;
 
 const PARTICLE_COUNT = 26;
+
+// Plafond de billets VIVANTS, tous appels confondus. L'escalade de paiement
+// (PayoutTiers, §6.4) empile jusqu'à trois gerbes en une seconde : sans ce garde-fou
+// on simulerait 100+ ImageLabels par frame sur mobile.
+const MAX_LIVE_BILLS = 60;
+
 const BILL_SIZE = 70; // px (côté du billet, image carrée mise à l'échelle)
 const BILL_SIZE_JITTER = 0.35; // ±35 % de taille pour casser la régularité
 
@@ -90,11 +98,13 @@ interface Bill {
 
 export interface MoneyBurstOptions {
 	// Position ABSOLUE (écran) vers laquelle les billets convergent — typiquement le
-	// centre du compteur d'argent. Appelée au moment de l'aspiration ; renvoyer
-	// undefined refait un fondu normal, la gerbe ne reste jamais coincée.
-	gatherTo: () => Vector2 | undefined;
+	// centre du compteur d'argent. Omise, les billets retombent et s'effacent.
+	gatherTo?: () => Vector2 | undefined;
 	// Délai avant le départ de l'aspiration (défaut : GATHER_DELAY).
 	gatherAfter?: number;
+	// Nombre de billets (défaut : PARTICLE_COUNT). C'est ce qui fait grossir la gerbe
+	// palier après palier pendant le paiement.
+	count?: number;
 }
 
 // s de lévitation (explosion libre) avant que l'aspiration ne commence.
@@ -280,10 +290,18 @@ export const MoneyBurst = {
 		const scale = viewport.Y / REFERENCE_HEIGHT;
 		const center = origin ?? viewport.div(2);
 
-		for (let i = 0; i < PARTICLE_COUNT; i++) {
+		// Le plafond ÉVICTE les plus anciens billets plutôt que de tronquer la nouvelle
+		// gerbe : pendant l'escalade de paiement, c'est toujours le DERNIER palier (le
+		// plus gros) qui doit s'afficher en entier.
+		const count = math.min(options?.count ?? PARTICLE_COUNT, MAX_LIVE_BILLS);
+		if (count <= 0) return;
+		const overflow = bills.size() + count - MAX_LIVE_BILLS;
+		for (let i = 0; i < overflow; i++) destroyBill(0);
+
+		for (let i = 0; i < count; i++) {
 			// Angles répartis sur le cercle complet + bruit : dispersion "d'un coup"
 			// dans toutes les directions, sans trou visible dans la gerbe.
-			const angle = ((i + math.random()) / PARTICLE_COUNT) * math.pi * 2;
+			const angle = ((i + math.random()) / count) * math.pi * 2;
 			const speed = (SPEED_MIN + math.random() * (SPEED_MAX - SPEED_MIN)) * scale;
 			const sizeJitter = 1 + (math.random() * 2 - 1) * BILL_SIZE_JITTER;
 
@@ -314,9 +332,9 @@ export const MoneyBurst = {
 				// Départs étalés dans l'ordre d'émission (donc en vague autour du cercle)
 				// plutôt qu'au hasard : les billets ne basculent pas tous ensemble, et
 				// l'arrivée dans le compteur se fait en rafale au lieu d'un seul paquet.
-				gatherAt: options
+				gatherAt: options?.gatherTo
 					? (options.gatherAfter ?? GATHER_DELAY) +
-						(i / PARTICLE_COUNT) * GATHER_SPREAD +
+						(i / count) * GATHER_SPREAD +
 						math.random() * GATHER_JITTER
 					: undefined,
 				resolveTarget: options?.gatherTo,

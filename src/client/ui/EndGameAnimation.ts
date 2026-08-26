@@ -1,10 +1,14 @@
-import { ReplicatedStorage, TweenService } from "@rbxts/services";
+import { Players, ReplicatedStorage, TweenService } from "@rbxts/services";
 import { MultiplierVisuals } from "client/ui/MultiplierVisuals";
 import { InGameUIController } from "client/ui/InGameUIController";
 import { MoneyDisplay } from "client/ui/MoneyDisplay";
 import { FloatingCash } from "client/ui/FloatingCash";
 import { InformationText } from "client/ui/InformationText";
 import { FormatCash } from "shared/NumberFormat";
+import { MONEY_IMAGE, MoneyBurst } from "client/ui/MoneyBurst";
+import { CriticalRain, RAIN_IMAGE } from "client/ui/CriticalRain";
+import { playBigPayout, playCashSound } from "client/audio/CashSound";
+import { PayoutTier, tiersCrossed, topTierIndex } from "client/ui/PayoutTiers";
 
 // ── ButtonFinishGame payout animation ───────────────────────────────────────────
 //
@@ -13,13 +17,19 @@ import { FormatCash } from "shared/NumberFormat";
 //       from the raw base to the boosted base with a golden bump — the bonus multiplies
 //       the BASE CASH, never the multiplier, and this phase is what shows it.
 //   1.  MultiplierText flies into BaseCashText and disappears.
-//   2.  BaseCashText counts up by the in-game multiplier (grow + red).
+//   2.  BaseCashText counts up by the in-game multiplier, PAR PALIERS (PayoutTiers) :
+//       le count-up est découpé en segments qui s'arrêtent pile sur chaque palier
+//       franchi, et chaque arrivée déclenche son son + sa gerbe + sa pluie, de plus
+//       en plus fort. C'est ce qui rend l'ampleur du gain lisible en temps réel.
 //       EffectiveBaseCash already folds in every money multiplier, so no separate
 //       rebirth phase is needed.
 //   3.  BaseCashText stays put (showing the full total) and sprays N floating texts
-//       toward the money HUD; each arrival banks one chunk of the total.
-//   4.  After the chunks land, a short pause, then the whole BaseCashText label flies
-//       to the HUD cash as the final move.
+//       toward the money HUD; each arrival banks one chunk of the total, avec un
+//       pitch qui monte chunk après chunk (crescendo). Le dernier chunk qui atterrit
+//       déclenche la gerbe finale sur le compteur.
+//
+// `flyBaseCashToHud` / FINAL_MOVE_DELAY décrivent une phase 4 qui n'est PAS branchée :
+// la phase 3 masque déjà le label sur son dernier chunk. Code mort conservé tel quel.
 
 // ── Tuning ──────────────────────────────────────────────────────────────────────
 
@@ -28,14 +38,40 @@ const FINISH_TEXT = "Finish";
 // Phase 1 — MultiplierText merging into BaseCashText.
 const MULTIPLIER_MERGE_TI = new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 
-// Phase 2 — BaseCashText counting up to the total earned.
-const BASE_CASH_COUNTUP_TI = new TweenInfo(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+// Phase 2 — count-up par paliers (PayoutTiers).
+// La durée s'allonge avec le nombre de paliers pour qu'ils aient chacun la place de
+// claquer, mais reste PLAFONNÉE : l'écran de fin ne doit pas traîner sur un gros run.
+const COUNTUP_BASE_TIME = 0.6; // durée historique, sans palier
+const COUNTUP_TIME_PER_TIER = 0.2;
+const COUNTUP_MAX_TIME = 1.2;
+// Valeur du compteur : linéaire. Chaque segment est court, et un easing par segment
+// ferait ralentir/repartir le nombre à chaque palier.
+const COUNTUP_VALUE_STYLE = Enum.EasingStyle.Linear;
+// Taille + couleur : Quad-Out, sur le MÊME temps que la valeur. Pas de dépassement ici
+// — c'est le UIScale qui porte le punch (TextSize est plafonné à 100 par Roblox, un
+// dépassement sur la taille serait écrêté pile sur les gros paliers).
+const COUNTUP_STYLE_STYLE = Enum.EasingStyle.Quad;
+
+// Pluie des paliers : bande COURTE (une vague qui passe, pas une averse qui traîne) et
+// plan de rendu BAS — ButtonFinishGame et BaseCashText sont en ZIndex 1, donc la pluie
+// tombe derrière le montant, qui reste lisible.
+const TIER_RAIN_BAND = 700;
+const TIER_RAIN_Z_INDEX = 0;
 
 // Phase 3 — how many floating texts BaseCashText sprays, and how fast.
 // Both tweakable: COUNT splits the total earned into COUNT chunks of
 // totalEarn / COUNT; INTERVAL is the delay between each spawn.
 const FLOATING_TEXT_COUNT = 8;
 const FLOATING_TEXT_INTERVAL = 0.12; // seconds between each floating text
+// Plus le run est gros, plus il y a de liasses à encaisser — plafonné pour que la
+// rafale ne s'éternise pas (16 × 0.12 s ≈ 2 s).
+const FLOATING_TEXT_PER_TIER = 1;
+const FLOATING_TEXT_MAX = 16;
+// Le pitch du son de dépôt monte de 1 à 1 + CHUNK_PITCH_RISE sur la rafale : les N
+// ka-ching deviennent un arpège au lieu d'une répétition.
+const CHUNK_PITCH_RISE = 0.25;
+// Gerbe jouée sur le compteur quand la dernière liasse atterrit — le dernier "boum".
+const FINAL_BURST_BASE = 10;
 
 // Phase 0 — claim bonus (Perfect ×3 / Critical ×10) growing the BASE CASH.
 // Le compteur monte en doré (couleur du flash Critical) et le texte gonfle, puis
@@ -50,9 +86,18 @@ const CLAIM_BONUS_BANNER_HOLD = 1.6; // durée du bandeau "BASE CASH ×N" (Infor
 // Penalty animation when the player died (lossMultiplier < 1).
 const LOSS_PENALTY_TI = new TweenInfo(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
 
-// BaseCash growth — red-tinge style matching the in-game multiplier label.
-const BASE_CASH_MAX_SIZE_INCREASE = 40;
-const BASE_CASH_TARGET_COLOR = new Color3(1, 0.25, 0.25);
+// BaseCash growth — la TAILLE reste pilotée ici ; la COULEUR, elle, est posée par les
+// paliers (PayoutTiers) et non plus par une cible fixe.
+// 15 et pas plus : Roblox PLAFONNE TextSize à 100 et le label démarre à 85. Au-delà la
+// croissance serait silencieusement écrêtée, et l'agrandissement s'arrêterait au milieu
+// du count-up au lieu de suivre le nombre jusqu'au bout.
+const BASE_CASH_MAX_SIZE_INCREASE = 15;
+
+// Punch du palier : le UIScale saute à `tier.punch` puis se recale à 1. Instance
+// SÉPARÉE du label, donc son tween ne croise jamais celui de la taille/couleur et peut
+// se dérouler par-dessus le segment suivant sans le perturber.
+const PUNCH_NAME = "EndGamePunch";
+const PUNCH_SETTLE_TI = new TweenInfo(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 
 // Floating chunk: spawn on the origin, disperse in a random direction, hold,
 // then fly to the target. Same feel as the in-game floating labels.
@@ -77,6 +122,16 @@ function formatMultiplier(value: number): string {
 
 function formatCash(value: number): string {
 	return FormatCash(value);
+}
+
+// ── Stats du joueur qui calibrent l'escalade ────────────────────────────────────
+// Les paliers sont des CENTILES de la distribution de vol du joueur (PayoutTiers), donc
+// ils dépendent de sa Rocket Speed ET de sa Resistance. Les deux sont des attributs
+// répliqués par PlayerProgressionService — `Resistance` porte déjà la valeur EFFECTIVE
+// (game pass inclus), c'est-à-dire celle que le modèle de risque serveur utilise.
+function playerStat(name: string, fallback: number): number {
+	const value = Players.LocalPlayer.GetAttribute(name) as number | undefined;
+	return value ?? fallback;
 }
 
 // ── Floating chunk ──────────────────────────────────────────────────────────────
@@ -178,6 +233,10 @@ function animateCash(
 	startColor: Color3,
 	endColor: Color3,
 	ti: TweenInfo,
+	// Optionnel : courbe SÉPARÉE pour la taille et la couleur, sur la même durée. Sert
+	// au count-up par paliers, où le nombre doit monter proprement (linéaire) pendant
+	// que la taille dépasse et se cale (Back-Out) — le punch du palier.
+	styleTi?: TweenInfo,
 ): void {
 	label.Text = formatCash(startValue);
 	label.TextSize = startSize;
@@ -190,7 +249,7 @@ function animateCash(
 	});
 
 	TweenService.Create(proxy, ti, { Value: endValue }).Play();
-	const styleTween = TweenService.Create(label, ti, { TextSize: endSize, TextColor3: endColor });
+	const styleTween = TweenService.Create(label, styleTi ?? ti, { TextSize: endSize, TextColor3: endColor });
 	styleTween.Play();
 	styleTween.Completed.Wait();
 
@@ -199,6 +258,96 @@ function animateCash(
 	label.Text = formatCash(endValue);
 	label.TextSize = endSize;
 	label.TextColor3 = endColor;
+}
+
+// ── Phase 2: déclenchement d'un palier ──────────────────────────────────────────
+
+// UIScale du punch, créé à la demande sous BaseCashText et réutilisé ensuite.
+function getPunchScale(label: TextLabel): UIScale {
+	const existing = label.FindFirstChild(PUNCH_NAME);
+	if (existing?.IsA("UIScale")) return existing;
+	const scale = new Instance("UIScale");
+	scale.Name = PUNCH_NAME;
+	scale.Parent = label;
+	return scale;
+}
+
+// Remet le montant à son échelle normale : un punch encore en vol ne doit pas laisser
+// le label gonflé sur l'écran suivant.
+function resetPunchScale(label: TextLabel): void {
+	const existing = label.FindFirstChild(PUNCH_NAME);
+	if (existing?.IsA("UIScale")) existing.Scale = 1;
+}
+
+// Tout ce qu'un palier fait claquer : le son (de plus en plus aigu et fort), la gerbe
+// de billets qui part du montant, et la pluie qui tombe derrière. Les paliers hauts
+// ajoutent le son "gros lot" et une pluie d'or par-dessus la pluie de billets.
+function fireTier(tier: PayoutTier, label: TextLabel): void {
+	playCashSound({ pitch: tier.pitch, volume: tier.volume });
+	if (tier.bigReward) playBigPayout();
+
+	// Saut instantané puis recalage : c'est le "snap" qui se lit comme un impact.
+	const punch = getPunchScale(label);
+	punch.Scale = tier.punch;
+	TweenService.Create(punch, PUNCH_SETTLE_TI, { Scale: 1 }).Play();
+
+	// Même convention de coordonnées que spawnFloatingChunk : les particules sont
+	// parentées au ScreenGui et positionnées en offsets locaux.
+	const center = label.AbsolutePosition.add(label.AbsoluteSize.div(2));
+	MoneyBurst.play(center, { count: tier.burstCount });
+
+	const rain = { count: tier.rainCount, band: TIER_RAIN_BAND, zIndex: TIER_RAIN_Z_INDEX };
+	if (tier.ingotDownpour > 0) {
+		// Climax d'une grosse escalade : déluge de lingots à la place des billets. Une
+		// pluie d'or PURE se lit mieux qu'un mélange, et ça tient sous le plafond de
+		// gouttes sans que le déluge ait à évincer sa propre pluie de billets.
+		CriticalRain.play(RAIN_IMAGE, { ...rain, count: tier.ingotDownpour });
+		return;
+	}
+
+	CriticalRain.play(MONEY_IMAGE, rain);
+	if (tier.goldRain) {
+		CriticalRain.play(RAIN_IMAGE, { ...rain, count: math.floor(tier.rainCount / 2) });
+	}
+}
+
+// ── Phase 2: découpage du count-up en segments ──────────────────────────────────
+
+interface CountUpSegment {
+	value: number; // valeur de cash atteinte à la fin du segment
+	tier?: PayoutTier; // palier déclenché à l'arrivée, s'il y en a un
+}
+
+// Un tween unique regrouperait toutes les détonations au début : les seuils sont
+// géométriques (×100, ×250, ×500) donc l'easing les traverse d'un coup, puis plus rien
+// pendant la moitié de l'animation. On découpe donc le count-up en segments qui
+// s'arrêtent PILE sur la valeur de chaque palier, et on donne à chacun la même durée —
+// l'espacement des détonations est alors régulier par construction.
+function buildSegments(
+	effectiveBaseCash: number,
+	totalEarn: number,
+	tiers: PayoutTier[],
+): { immediate: PayoutTier[]; segments: CountUpSegment[] } {
+	const immediate: PayoutTier[] = [];
+	const segments: CountUpSegment[] = [];
+	let finalTier: PayoutTier | undefined;
+
+	for (const tier of tiers) {
+		const value = effectiveBaseCash * tier.threshold;
+		if (value <= effectiveBaseCash) {
+			// Seuil déjà atteint au départ (le premier palier vaut ×1) : c'est le coup
+			// d'envoi, il part avec le début du count-up.
+			immediate.push(tier);
+		} else if (value >= totalEarn) {
+			// Le palier tombe pile sur le total : c'est l'arrivée finale qui le joue.
+			finalTier = tier;
+		} else {
+			segments.push({ value, tier });
+		}
+	}
+
+	segments.push({ value: totalEarn, tier: finalTier });
+	return { immediate, segments };
 }
 
 // ── Phase 1: MultiplierText flies into BaseCashText, then disappears ─────────────
@@ -302,6 +451,7 @@ const FLY_FRAME_NAMES = ["EndGameFloatingChunk", "EndGameBaseCashFly"];
 // Puts the popup labels back to their Studio baseline so the next run starts clean.
 function resetLabels(refs: EndGameRefs): void {
 	refs.baseCashText.Visible = false;
+	resetPunchScale(refs.baseCashText);
 	if (initialBaseCashSize !== undefined) refs.baseCashText.TextSize = initialBaseCashSize;
 	if (initialBaseCashColor !== undefined) refs.baseCashText.TextColor3 = initialBaseCashColor;
 
@@ -310,6 +460,14 @@ function resetLabels(refs: EndGameRefs): void {
 	if (initialMultiplierTransparency !== undefined) {
 		refs.multiplierText.TextTransparency = initialMultiplierTransparency;
 	}
+}
+
+// Les particules de l'escalade vivent sur le ScreenGui, pas sur la popup, et la pluie
+// tient jusqu'à 9 s alors que le paiement dure ~4 s : sans nettoyage explicite elle
+// déborderait sur l'écran suivant.
+function clearTierParticles(): void {
+	MoneyBurst.clear();
+	CriticalRain.clear();
 }
 
 // Stops a running payout animation and returns what has not been banked yet.
@@ -326,6 +484,7 @@ export function cancelActiveRun(): number | undefined {
 		if (FLY_FRAME_NAMES.includes(desc.Name)) desc.Destroy();
 	}
 	resetLabels(run.refs);
+	clearTierParticles();
 	InformationText.hide(); // kill a still-showing "Finish" flash
 
 	return math.max(run.totalEarn - run.banked, 0);
@@ -451,30 +610,79 @@ export function runEndGameAnimation(
 	mergeMultiplierIntoBaseCash(multiplierText, baseCashText);
 	if (run.cancelled) return;
 
-	// ── Phase 2: BaseCashText counts up by the in-game multiplier ─────────────────
+	// ── Phase 2: count-up par paliers ─────────────────────────────────────────────
 	// EffectiveBaseCash already includes every money multiplier (rebirth + tier +
 	// community), so the start number shows the boost — no separate rebirth phase.
 	const grownSize = effectiveBaseSize + BASE_CASH_MAX_SIZE_INCREASE;
-	animateCash(
-		baseCashText,
-		effectiveBaseCash,
-		totalEarn,
-		effectiveBaseSize,
-		grownSize,
-		baseColor,
-		BASE_CASH_TARGET_COLOR,
-		BASE_CASH_COUNTUP_TI,
+
+	const rocketSpeed = playerStat("RocketSpeed", 1);
+	const resistance = playerStat("Resistance", 0);
+	const tiers = tiersCrossed(multiplier, rocketSpeed, resistance);
+	const { immediate, segments } = buildSegments(effectiveBaseCash, totalEarn, tiers);
+
+	const countUpTime = math.min(
+		COUNTUP_BASE_TIME + COUNTUP_TIME_PER_TIER * tiers.size(),
+		COUNTUP_MAX_TIME,
 	);
-	if (run.cancelled) return;
+	const segmentTime = countUpTime / segments.size();
+	const valueTi = new TweenInfo(segmentTime, COUNTUP_VALUE_STYLE, Enum.EasingDirection.Out);
+	const styleTi = new TweenInfo(segmentTime, COUNTUP_STYLE_STYLE, Enum.EasingDirection.Out);
+
+	// La taille suit la VALEUR affichée (et non l'index du segment) : le texte grossit
+	// donc au même rythme que le nombre, comme avant le découpage.
+	const valueSpan = totalEarn - effectiveBaseCash;
+	const sizeAt = (value: number) =>
+		valueSpan > 0
+			? effectiveBaseSize + (grownSize - effectiveBaseSize) * ((value - effectiveBaseCash) / valueSpan)
+			: grownSize;
+
+	// Coup d'envoi : les paliers déjà atteints à la valeur de départ claquent tout de
+	// suite, sinon le count-up démarrerait en silence.
+	let currentColor = baseColor;
+	for (const tier of immediate) {
+		fireTier(tier, baseCashText);
+		currentColor = tier.color;
+	}
+	baseCashText.TextColor3 = currentColor;
+
+	let currentValue = effectiveBaseCash;
+	let currentSize = effectiveBaseSize;
+	for (const segment of segments) {
+		if (run.cancelled) return;
+		const nextSize = sizeAt(segment.value);
+		const nextColor = segment.tier?.color ?? currentColor;
+		animateCash(
+			baseCashText,
+			currentValue,
+			segment.value,
+			currentSize,
+			nextSize,
+			currentColor,
+			nextColor,
+			valueTi,
+			styleTi,
+		);
+		if (run.cancelled) return;
+		currentValue = segment.value;
+		currentSize = nextSize;
+		currentColor = nextColor;
+		if (segment.tier) fireTier(segment.tier, baseCashText);
+	}
+
+	// Couleur atteinte au sommet de l'escalade : la phase 3 redescend vers `baseColor`
+	// depuis celle-ci, pas depuis une cible fixe.
+	const peakColor = currentColor;
 
 	// ── Phase 3: spray N floating texts into the money HUD ────────────────────────
 	const moneyParent = InGameUIController.getMoneyParent();
-	const n = FLOATING_TEXT_COUNT;
+	const topTier = topTierIndex(multiplier, rocketSpeed, resistance);
+	const n = math.min(FLOATING_TEXT_COUNT + FLOATING_TEXT_PER_TIER * topTier, FLOATING_TEXT_MAX);
 	const chunk = n > 0 ? totalEarn / n : 0;
 
 	const finishReset = () => {
 		// Leave BaseCashText hidden but reset to the Studio baseline for next run.
 		baseCashText.Visible = false;
+		resetPunchScale(baseCashText);
 		if (initialBaseCashSize !== undefined) baseCashText.TextSize = initialBaseCashSize;
 		if (initialBaseCashColor !== undefined) baseCashText.TextColor3 = initialBaseCashColor;
 	};
@@ -512,16 +720,22 @@ export function runEndGameAnimation(
 				baseCashText.Text = formatCash(remaining);
 				const ratio = totalEarn > 0 ? remaining / totalEarn : 0;
 				baseCashText.TextSize = baseSize + (grownSize - baseSize) * ratio;
-				baseCashText.TextColor3 = baseColor.Lerp(BASE_CASH_TARGET_COLOR, ratio);
+				baseCashText.TextColor3 = baseColor.Lerp(peakColor, ratio);
 				if (isLast) baseCashText.Visible = false;
 			},
 			onArrived: () => {
 				if (run.cancelled) return; // leftover is handled by the floating text instead
 				if (FloatingCash.isStale(runGen)) return; // payout cancelled by a rebirth — don't bank
-				MoneyDisplay.addVisual(chunk);
+				// Pitch montant sur la rafale : la répétition devient un crescendo.
+				const pitch = 1 + (n > 1 ? (arrived / (n - 1)) * CHUNK_PITCH_RISE : 0);
+				MoneyDisplay.addVisual(chunk, { pitch });
 				run.banked += chunk;
 				arrived += 1;
 				if (arrived >= n) {
+					// Dernier "boum" : une gerbe part du compteur qui vient de tout encaisser.
+					const hudCenter = moneyParent.AbsolutePosition.add(moneyParent.AbsoluteSize.div(2));
+					MoneyBurst.play(hudCenter, { count: FINAL_BURST_BASE + topTier });
+					if (tiers.size() > 0 && tiers[tiers.size() - 1].bigReward) playBigPayout();
 					finishReset();
 					task.delay(0.2, complete);
 				}
@@ -535,5 +749,6 @@ export function runEndGameAnimation(
 	if (activeRun === run && FloatingCash.isStale(runGen)) {
 		activeRun = undefined;
 		finishReset();
+		clearTierParticles();
 	}
 }

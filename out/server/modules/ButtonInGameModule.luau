@@ -29,7 +29,10 @@ local CRITICAL_CLAIM_MULTIPLIER = _RocketGameConfig.CRITICAL_CLAIM_MULTIPLIER
 local perfectClaimWindow = _RocketGameConfig.perfectClaimWindow
 local multiplierAfter = _RocketGameConfig.multiplierAfter
 local AudioConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "AudioConfig").AudioConfig
-local resistanceRiskParams = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ResistanceCurve").resistanceRiskParams
+local _ResistanceCurve = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "ResistanceCurve")
+local FLIGHT_TIME_MEDIAN = _ResistanceCurve.FLIGHT_TIME_MEDIAN
+local FLIGHT_TIME_SIGMA = _ResistanceCurve.FLIGHT_TIME_SIGMA
+local resistanceRiskParams = _ResistanceCurve.resistanceRiskParams
 local _MegaRocketConfig = TS.import(script, game:GetService("ReplicatedStorage"), "TS", "MegaRocketConfig")
 local MEGA_ROCKET_BASE_CASH_MULT = _MegaRocketConfig.MEGA_ROCKET_BASE_CASH_MULT
 local hasMegaRocket = _MegaRocketConfig.hasMegaRocket
@@ -58,15 +61,13 @@ local GO_HOME_RESET_DELAY = 0.6
 -- Repères à Resistance 0 (μ = 7 s, σ = 0.35) : 68 % des vols entre 4.7 et 9.3 s,
 -- 95 % entre 3.3 et 13.0 s, plafond observé ~33 s. Côté gain : multiplicateur moyen
 -- ×1.50, un ×3 tous les ~185 runs.
-local FLIGHT_TIME_MEAN = 7
-local FLIGHT_TIME_SIGMA = 0.35
+-- FLIGHT_TIME_MEAN / SIGMA / MEDIAN vivent maintenant dans shared/ResistanceCurve : le
+-- client en a besoin pour calibrer l'escalade de paiement sur la durée de vol réelle du
+-- joueur (§6.4). Une seule source de vérité pour la loi de vol.
 -- Garde-fous du tirage : la cloche n'est pas bornée, on coupe les deux queues bien
 -- au-delà de ce qu'un joueur verra jamais.
 local FLIGHT_TIME_MIN = 0.1
 local FLIGHT_TIME_MAX = 60
--- Médiane telle que la MOYENNE vaille FLIGHT_TIME_MEAN — sur une échelle
--- multiplicative, moyenne = médiane × e^(σ²/2). Régler σ ne déplace donc pas la moyenne.
-local FLIGHT_TIME_MEDIAN = FLIGHT_TIME_MEAN * math.exp(-(FLIGHT_TIME_SIGMA * FLIGHT_TIME_SIGMA) / 2)
 local EXPLOSION_SOUND_ID = AudioConfig.sfx.explosion.id
 local EXPLOSION_SOUND_VOLUME = AudioConfig.sfx.explosion.volume
 local EXPLOSION_SOUND_ROLLOFF = 120
